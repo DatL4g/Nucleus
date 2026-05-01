@@ -12,6 +12,7 @@
 build
 .kotlin
 site
+/tmp/
 
 # Claude Code per-user settings
 .claude/settings.local.json
