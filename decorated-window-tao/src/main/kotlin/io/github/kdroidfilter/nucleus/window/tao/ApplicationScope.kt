@@ -1,5 +1,9 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 /**
  * Scope exposed by [taoApplication]. Mirrors `androidx.compose.ui.window.ApplicationScope`
  * so call sites can stay nearly identical between the AWT-based backends
@@ -13,40 +17,11 @@ interface ApplicationScope {
     val taoApplication: TaoApplication
 }
 
-internal class ApplicationScopeImpl(
+internal class ComposableApplicationScope(
     override val taoApplication: TaoApplication,
 ) : ApplicationScope {
+    var isOpen by mutableStateOf(true)
     override fun exitApplication() {
-        taoApplication.exit()
-    }
-}
-
-/**
- * Top-level launcher for the Tao backend. Equivalent to Compose Desktop's
- * `application { }` block but driven by the Tao event loop instead of AWT.
- *
- * Must be called from the macOS main thread (process thread 0). In a GraalVM
- * native-image build this is automatic; on a regular JVM, launch with
- * `-XstartOnFirstThread`.
- *
- * The lambda body runs **once** when the Tao event loop has finished
- * initialising. Open one or more windows via [DecoratedWindow] (or the
- * lower-level [TaoApplication.openWindow]) and they will live until the user
- * closes them or [exitApplication] is called.
- */
-fun taoApplication(content: ApplicationScope.() -> Unit) {
-    // CRITICAL ORDER: force-load the Tao native library FIRST. Its `+load`
-    // method sets `ApplePressAndHoldEnabled = YES` in NSUserDefaults; that
-    // value is read by AppKit's `NSTextInputContext` the first time it
-    // initialises. If AWT touches AppKit before we do (e.g. through any
-    // Compose-Foundation static init), AppKit caches the press-and-hold
-    // flag as NO and the macOS accent picker never appears even after a
-    // later setBool flip.
-    check(NativeTaoBridge.isLoaded) {
-        "nucleus_tao native library is not available — did you run on macOS arm64/x86_64?"
-    }
-
-    TaoApplication.run { app ->
-        ApplicationScopeImpl(app).content()
+        isOpen = false
     }
 }

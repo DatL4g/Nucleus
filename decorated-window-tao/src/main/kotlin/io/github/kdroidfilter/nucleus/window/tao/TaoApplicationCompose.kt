@@ -1,33 +1,35 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Applier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Composition
 import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.runtime.Recomposer
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Composable variant of [taoApplication]. Mirrors Compose Desktop's
- * `awaitApplication` but pumps the Compose runtime through Tao's event loop
+ * Top-level launcher for the Tao backend. Mirrors Compose Desktop's
+ * `application { }` but pumps the Compose runtime through Tao's event loop
  * via [TaoMainDispatcher] (single-threaded model — no AWT EDT).
+ *
+ * Must be called from the macOS main thread (process thread 0). In a GraalVM
+ * native-image build this is automatic; on a regular JVM, launch with
+ * `-XstartOnFirstThread`.
  *
  * Inside [content] you may call `@Composable` [DecoratedWindow]s, use
  * `LaunchedEffect`/`DisposableEffect`, observe `MutableState`, etc. The
  * composition lives until [ApplicationScope.exitApplication] is called.
  */
-fun taoApplicationComposable(
+@OptIn(ExperimentalFoundationApi::class)
+fun taoApplication(
     content: @Composable ApplicationScope.() -> Unit,
 ) {
     check(NativeTaoBridge.isLoaded) {
@@ -109,16 +111,8 @@ private object NoOpApplier : Applier<Unit> {
     override fun insertTopDown(index: Int, instance: Unit) = Unit
     override fun insertBottomUp(index: Int, instance: Unit) = Unit
     override fun remove(index: Int, count: Int) = Unit
+    override fun removeAll() = Unit
     override fun move(from: Int, to: Int, count: Int) = Unit
     override fun clear() = Unit
     override fun onEndChanges() = Unit
-}
-
-private class ComposableApplicationScope(
-    override val taoApplication: TaoApplication,
-) : ApplicationScope {
-    var isOpen by mutableStateOf(true)
-    override fun exitApplication() {
-        isOpen = false
-    }
 }
