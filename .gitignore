@@ -13,6 +13,7 @@ build
 .kotlin
 site
 /tmp/
+/.tmp-compose-src/
 
 # Claude Code per-user settings
 .claude/settings.local.json
