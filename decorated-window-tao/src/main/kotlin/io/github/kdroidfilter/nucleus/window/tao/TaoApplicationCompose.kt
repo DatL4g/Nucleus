@@ -29,9 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * composition lives until [ApplicationScope.exitApplication] is called.
  */
 @OptIn(ExperimentalFoundationApi::class)
-fun taoApplication(
-    content: @Composable ApplicationScope.() -> Unit,
-) {
+fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
     check(NativeTaoBridge.isLoaded) {
         "nucleus_tao native library is not available — supported targets: " +
             "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."
@@ -42,9 +40,10 @@ fun taoApplication(
         // CoroutineScope pinned to the Tao main thread. Every `launch` posts
         // the block via TaoMainDispatcher, which queues onto the Tao event
         // loop and runs at the next `MainEventsCleared` pump tick.
-        val coroutineScope = CoroutineScope(
-            TaoMainDispatcher + TaoFrameClock + Job(),
-        )
+        val coroutineScope =
+            CoroutineScope(
+                TaoMainDispatcher + TaoFrameClock + Job(),
+            )
 
         // Snapshot apply observer: forwards state writes from any thread back
         // to the main thread so the Recomposer wakes up. Mirrors CMP's
@@ -78,9 +77,7 @@ fun taoApplication(
  * Tao events can be pumped. Mirrors Compose Desktop's `YieldFrameClock`.
  */
 private object TaoFrameClock : MonotonicFrameClock {
-    override suspend fun <R> withFrameNanos(
-        onFrame: (frameTimeNanos: Long) -> R,
-    ): R {
+    override suspend fun <R> withFrameNanos(onFrame: (frameTimeNanos: Long) -> R): R {
         kotlinx.coroutines.yield()
         return onFrame(System.nanoTime())
     }
@@ -107,13 +104,35 @@ private fun startGlobalSnapshotManager(scope: CoroutineScope) {
 
 private object NoOpApplier : Applier<Unit> {
     override val current: Unit = Unit
+
     override fun down(node: Unit) = Unit
+
     override fun up() = Unit
-    override fun insertTopDown(index: Int, instance: Unit) = Unit
-    override fun insertBottomUp(index: Int, instance: Unit) = Unit
-    override fun remove(index: Int, count: Int) = Unit
+
+    override fun insertTopDown(
+        index: Int,
+        instance: Unit,
+    ) = Unit
+
+    override fun insertBottomUp(
+        index: Int,
+        instance: Unit,
+    ) = Unit
+
+    override fun remove(
+        index: Int,
+        count: Int,
+    ) = Unit
+
     override fun removeAll() = Unit
-    override fun move(from: Int, to: Int, count: Int) = Unit
+
+    override fun move(
+        from: Int,
+        to: Int,
+        count: Int,
+    ) = Unit
+
     override fun clear() = Unit
+
     override fun onEndChanges() = Unit
 }
