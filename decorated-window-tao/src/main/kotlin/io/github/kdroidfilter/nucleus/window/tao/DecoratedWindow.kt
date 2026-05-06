@@ -19,6 +19,7 @@ import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
 import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
 import io.github.kdroidfilter.nucleus.window.TitleBarInfo
+import io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoPopupHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostLinux
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
@@ -206,6 +207,8 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalTaoPopupHost provides host.popupHost(),
+                LocalTaoNativeViewHost provides host.nativeViewHost(),
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     scopeFactory().content()
@@ -554,7 +557,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     window.onResized { w, h ->
         host.onResized(w, h)
         host.syncTitleBarHeight()
-        // Tao does not emit a dedicated "maximized state changed" event, but
+        // Tao does not emit a dedicated "fullscreen state changed" event, but
         // every maximize/restore cycle resizes the window. Re-query is_maximized
         // here to keep the Compose state (used by the maximize button icon
         // swap) in sync.
