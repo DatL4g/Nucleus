@@ -36,26 +36,16 @@ import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadGesture
 import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadPhase
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.shouldApplyLargeCornerRadius
-<<<<<<< HEAD
+import org.jetbrains.skia.DirectContext
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import org.jetbrains.skia.BackendRenderTarget
-import org.jetbrains.skia.ColorSpace
-import org.jetbrains.skia.DirectContext
-import org.jetbrains.skia.Surface
-import org.jetbrains.skia.SurfaceColorFormat
-import org.jetbrains.skia.SurfaceOrigin
-import java.awt.Cursor
-=======
-import org.jetbrains.skia.DirectContext
->>>>>>> 3c6996c6 (refactor(decorated-window-tao): extract Metal render loop into one helper)
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
@@ -122,7 +112,7 @@ internal class TaoComposeSceneHost(
      * controller. Forwarded through the [TaoPlatformContext] so Compose's
      * BaseComposeScene picks it up. Set once before [attach].
      */
-    var semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null
+    var semanticsOwnerListener: PlatformContext.SemanticsOwnerListener? = null
 
     // Mirrors `PlatformWindowContext.desktop.kt` — Compose's `Popup` framework
     // reads `LocalWindowInfo.current.containerSize` to know how large the host
@@ -151,6 +141,35 @@ internal class TaoComposeSceneHost(
 
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
+
+    // ── Interop transaction (mirrors UIKitInteropTransaction) ────────
+    //
+    // AppKit subview mutations made via the `NativeView` composable are
+    // queued here and drained once per frame, atomically with the Metal
+    // present, so a frame change on the embedded NSView can't visually
+    // lag the Compose frame by one tick. Lifecycle:
+    //  1. NativeView.attach/detach/setFrame/... on this host's
+    //     `nativeViewHost()` → `transaction.add { ... }`
+    //  2. onRedrawRequested retrieves + swaps the queue, sets
+    //     `presentsWithTransaction` on the layer, and either drives
+    //     `nativePresentWithInterop` (sync path) or the regular
+    //     async `nativePresent` when no interop is active.
+
+    private var transaction = MutableTaoInteropTransaction(isInteropActive = false)
+    private var interopAttachCount: Int = 0
+    /** Renderer's view of whether interop is currently active — lags the
+     *  transaction's flag by one frame on the OFF transition so the
+     *  final sync flush still goes through `presentsWithTransaction`. */
+    private var rendererIsInteropActive: Boolean = false
+    /** Cached state of `CAMetalLayer.presentsWithTransaction` to avoid
+     *  redundant JNI calls on every frame. */
+    private var layerPresentsWithTransaction: Boolean = false
+
+    private fun retrieveTransaction(): TaoInteropTransaction {
+        val result = transaction
+        transaction = MutableTaoInteropTransaction(isInteropActive = interopAttachCount > 0)
+        return result
+    }
 
     // Tracks whether Compose's pointer state believes the mouse is currently
     // down. We can't simply forward every Press / Release Tao gives us — on
@@ -558,20 +577,56 @@ internal class TaoComposeSceneHost(
         val outer = this
         return object : TaoNativeViewHost {
             override fun attach(childHandle: Long) {
+                // Eager. NativeView.kt's DisposableEffect relies on the
+                // ordering `host.attach() -> overlay.attach()` so the
+                // overlay's `nativeCreateOverlay` lands ABOVE the user's
+                // subview in the parent's subview list (NSView z-order
+                // = order of addition for siblings positioned with
+                // NSWindowAbove relativeTo:nil). Deferring this would
+                // re-order the adds and bury the overlay behind the
+                // WKWebView. The visual-sync win we want is for
+                // *reposition*, not for mount, so subview list mutation
+                // stays eager.
+                if (outer.interopAttachCount == 0) {
+                    outer.transaction.isInteropActive = true
+                }
+                outer.interopAttachCount++
                 NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
             }
             override fun detach(childHandle: Long) {
                 NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
+                outer.interopAttachCount--
+                if (outer.interopAttachCount == 0) {
+                    outer.transaction.isInteropActive = false
+                }
             }
             override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
-                NativeTaoMacOsNativeViewBridge
-                    .nativeSetSubviewFrame(outer.nsViewHandle, handle, xPx, yPx, widthPx, heightPx)
+                outer.scheduleInteropAction {
+                    NativeTaoMacOsNativeViewBridge
+                        .nativeSetSubviewFrame(outer.nsViewHandle, handle, xPx, yPx, widthPx, heightPx)
+                }
             }
             override fun setCornerRadius(handle: Long, radiusPx: Float) {
-                NativeTaoMacOsNativeViewBridge
-                    .nativeSetSubviewCornerRadius(outer.nsViewHandle, handle, radiusPx)
+                outer.scheduleInteropAction {
+                    NativeTaoMacOsNativeViewBridge
+                        .nativeSetSubviewCornerRadius(outer.nsViewHandle, handle, radiusPx)
+                }
+            }
+            override fun scheduleInterop(action: () -> Unit) {
+                outer.scheduleInteropAction(action)
             }
         }
+    }
+
+    /**
+     * Enqueues an AppKit mutation to be drained inside the next frame's
+     * transaction. Accessible to the overlay controller so its own
+     * `nativeSetOverlayFrame` calls share the same atomic CATransaction
+     * as the user's subview frame change.
+     */
+    internal fun scheduleInteropAction(action: TaoInteropAction) {
+        transaction.add(action)
+        window.requestRedraw()
     }
 
     fun popupHost(): TaoPopupHost? {
@@ -616,32 +671,29 @@ internal class TaoComposeSceneHost(
     fun onRedrawRequested() {
         val ctx = directContext ?: return
         val sc = scene ?: return
+
+        // Snapshot the interop transaction state for this frame. The
+        // queue is swapped here, so any further mutation calls after
+        // this point land in the next frame's transaction.
+        val tx = retrieveTransaction()
+        val needsTransaction = tx.actions.isNotEmpty() ||
+            rendererIsInteropActive != tx.isInteropActive
+        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
+            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
+            layerPresentsWithTransaction = needsTransaction
+        }
+        // Flip ON early so the layer is configured for this frame; the
+        // OFF flip happens lazily after the transaction has been drained
+        // (mirrors MetalRedrawer.ios.kt:337-339).
+        if (tx.isInteropActive) rendererIsInteropActive = true
+
+        // If the present lambda never fires (e.g. nativeBeginFrame
+        // returned null) we still need to apply the queued AppKit
+        // mutations — otherwise add/remove/setFrame would silently leak
+        // until the next successful frame.
+        var transactionDrained = false
+
         try {
-<<<<<<< HEAD
-            val rt = BackendRenderTarget.makeMetal(frame.widthPx, frame.heightPx, frame.texturePtr)
-            val surface =
-                Surface.makeFromBackendRenderTarget(
-                    context = ctx,
-                    rt = rt,
-                    origin = SurfaceOrigin.TOP_LEFT,
-                    colorFormat = SurfaceColorFormat.BGRA_8888,
-                    colorSpace = ColorSpace.sRGB,
-                ) ?: return
-            try {
-                // CAMetalLayer drawables are not auto-cleared between frames; an
-                // uninitialised texture on Apple Silicon shows up as undefined
-                // memory (often magenta-ish). Clear to the title-bar background
-                // (pushed in by TitleBar) so any Compose region without an
-                // explicit background — most visibly the gap above the offset
-                // title bar during the fullscreen menu-bar slide-in — matches
-                // the chrome color rather than flashing white.
-                surface.canvas.clear(clearColorArgbState.value)
-                val nanoTime = System.nanoTime()
-                sc.render(surface.canvas.asComposeCanvas(), nanoTime)
-                surface.flushAndSubmit(syncCpu = false)
-                NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
-                presented = true
-=======
             // CAMetalLayer drawables aren't auto-cleared between frames;
             // on Apple Silicon an uninitialised texture surfaces as
             // undefined memory (often magenta). Clear to opaque white so
@@ -652,7 +704,22 @@ internal class TaoComposeSceneHost(
                 directContext = ctx,
                 scene = sc,
                 clearColor = 0xFFFFFFFF.toInt(),
->>>>>>> 3c6996c6 (refactor(decorated-window-tao): extract Metal render loop into one helper)
+                present = { handle, drawablePtr ->
+                    if (needsTransaction) {
+                        NativeMetalBridge.nativePresentWithInterop(
+                            handle,
+                            drawablePtr,
+                            Runnable {
+                                tx.performTransaction()
+                                transactionDrained = true
+                                if (!tx.isInteropActive) rendererIsInteropActive = false
+                            },
+                        )
+                    } else {
+                        NativeMetalBridge.nativePresent(handle, drawablePtr)
+                        transactionDrained = true
+                    }
+                },
                 // Drain Compose's async work (sendFrame continuations,
                 // recomposer steps) synchronously so their state writes
                 // happen now and trigger invalidate → next requestRedraw
@@ -663,6 +730,13 @@ internal class TaoComposeSceneHost(
                 onAfterPresent = TaoMainDispatcher::pump,
             )
         } finally {
+            if (!transactionDrained && tx.actions.isNotEmpty()) {
+                // Render path bailed before our present lambda fired
+                // (nativeBeginFrame returned null). Apply mutations
+                // best-effort without atomic sync so they aren't lost.
+                tx.performTransaction()
+                if (!tx.isInteropActive) rendererIsInteropActive = false
+            }
             // Drive every registered popup's per-frame render after the
             // main present so each popup CAMetalLayer stays in lock-step
             // with the host. Iterate by token + look up live so that a
@@ -1137,9 +1211,9 @@ private class TaoPlatformContext(
     private val windowHandle: Long,
     private val topInsetPx: () -> Int,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
-    override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
+    override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
-) : androidx.compose.ui.platform.PlatformContext.Empty() {
+) : PlatformContext.Empty() {
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic
     // then operates inside `windowSize - insets`, so a `top` inset matching our
