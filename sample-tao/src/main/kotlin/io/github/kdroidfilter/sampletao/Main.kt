@@ -347,7 +347,6 @@ private fun runApp() =
                 }
 
                 Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F1115))) {
-                    Phase1PopupTest(window = taoWindow, onLog = { logEvent(events, it) })
                     DnDStage0Banner(onLog = { logEvent(events, it) })
                     TabBar(selectedTab, onSelect = { selectedTab = it })
                     Box(modifier = Modifier.weight(1f).fillMaxSize()) {
