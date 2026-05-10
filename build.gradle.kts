@@ -77,6 +77,28 @@ tasks.register("clean", Delete::class.java) {
     delete(rootProject.layout.buildDirectory)
 }
 
+tasks.register("cleanNativeLibs", Delete::class.java) {
+    group = "cleanup"
+    description = "Cleans all native libraries from resources and system cache"
+
+    allprojects.forEach { p ->
+        delete(p.layout.projectDirectory.dir("src/main/resources/nucleus/native"))
+    }
+
+    val os = System.getProperty("os.name").lowercase()
+    val userHome = System.getProperty("user.home")
+    val cachePath = when {
+        os.contains("win") -> System.getenv("LOCALAPPDATA") ?: "${userHome}/AppData/Local"
+        os.contains("mac") -> "${userHome}/Library/Caches"
+        else -> System.getenv("XDG_CACHE_HOME") ?: "${userHome}/.cache"
+    }
+    delete(file(cachePath).resolve("nucleus/native"))
+
+    doFirst {
+        println("Cleaning all native libraries from resources and system cache...")
+    }
+}
+
 tasks.register("reformatAll") {
     description = "Reformat all the Kotlin Code"
 
