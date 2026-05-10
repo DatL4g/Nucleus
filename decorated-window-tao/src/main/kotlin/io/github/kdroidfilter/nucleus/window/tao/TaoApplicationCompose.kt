@@ -124,8 +124,6 @@ private object NoOpApplier : Applier<Unit> {
         count: Int,
     ) = Unit
 
-    override fun removeAll() = Unit
-
     override fun move(
         from: Int,
         to: Int,
