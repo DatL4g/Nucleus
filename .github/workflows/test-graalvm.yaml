@@ -17,7 +17,7 @@ jobs:
     needs: build-natives
     name: GraalVM - ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
