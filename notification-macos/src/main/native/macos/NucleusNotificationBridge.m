@@ -144,12 +144,10 @@ API_AVAILABLE(macos(10.14))
         }
         releaseEnv(didAttach);
 
-        // If Kotlin callback failed (exception → result=0), fall back to defaults
+        // If Kotlin callback failed, fall back to defaults.
+        // A zero result without an exception intentionally suppresses presentation.
         UNNotificationPresentationOptions options = hadException ? defaultOptions
             : (UNNotificationPresentationOptions)result;
-        if (options == UNNotificationPresentationOptionNone) {
-            options = defaultOptions;
-        }
         completionHandler(options);
     }
 }
