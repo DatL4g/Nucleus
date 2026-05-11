@@ -66,9 +66,10 @@ internal fun SwiftUITab(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxSize().background(Color(0xFF0F1115)).padding(16.dp),
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(12.dp)),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp)),
         ) {
             NativeView(
                 factory = {
@@ -78,6 +79,7 @@ internal fun SwiftUITab(modifier: Modifier = Modifier) {
                     val nsViewAddress = nsViewSegment.address()
                     object : NucleusPlatformView.NsView {
                         override val nsViewHandle: Long = nsViewAddress
+
                         override fun dispose() {
                             SampleSwiftUIBridge.release(h)
                             swiftHandle = null
@@ -88,16 +90,20 @@ internal fun SwiftUITab(modifier: Modifier = Modifier) {
                 cornerRadius = 12.dp,
             ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
                     contentAlignment = Alignment.BottomCenter,
                 ) {
                     SwiftUIControlPill(
                         counter = counter,
                         onIncrement = { counter++ },
                         onDecrement = { counter-- },
-                        onReset = { counter = 0; hue = 0.55f },
+                        onReset = {
+                            counter = 0
+                            hue = 0.55f
+                        },
                     )
                 }
             }
@@ -113,21 +119,23 @@ private fun SwiftUIControlPill(
     onReset: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .consumeOverlayPointerEvents()
-            .background(Color(0xCC0F172A), shape = CircleShape)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier =
+            Modifier
+                .consumeOverlayPointerEvents()
+                .background(Color(0xCC0F172A), shape = CircleShape)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         PillButton(symbol = "−", onClick = onDecrement)
         BasicText(
             text = "counter = $counter",
-            style = TextStyle(
-                color = Color(0xFFE6E6E6),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-            ),
+            style =
+                TextStyle(
+                    color = Color(0xFFE6E6E6),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
             modifier = Modifier.padding(horizontal = 8.dp),
         )
         PillButton(symbol = "+", onClick = onIncrement)
@@ -136,25 +144,30 @@ private fun SwiftUIControlPill(
 }
 
 @Composable
-private fun PillButton(symbol: String, onClick: () -> Unit) {
+private fun PillButton(
+    symbol: String,
+    onClick: () -> Unit,
+) {
     // `background(color, shape = CircleShape)` keeps the hit-test
     // rectangular. `Modifier.clip(CircleShape).background(...)` would
     // restrict pointer hit-testing to the inscribed circle, so clicks
     // landing in the 36×36 layout box's corners would silently miss.
     Box(
-        modifier = Modifier
-            .size(36.dp)
-            .background(Color.White.copy(alpha = 0.10f), shape = CircleShape)
-            .clickable(onClick = onClick),
+        modifier =
+            Modifier
+                .size(36.dp)
+                .background(Color.White.copy(alpha = 0.10f), shape = CircleShape)
+                .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         BasicText(
             text = symbol,
-            style = TextStyle(
-                color = Color(0xFFE6E6E6),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            ),
+            style =
+                TextStyle(
+                    color = Color(0xFFE6E6E6),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
         )
     }
 }
@@ -167,11 +180,12 @@ private fun UnsupportedSwiftUIPlatform(modifier: Modifier) {
     ) {
         BasicText(
             text = "SwiftUI demo — macOS only (run ./build-swiftui.sh first)",
-            style = TextStyle(
-                color = Color(0xFFE6E6E6),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-            ),
+            style =
+                TextStyle(
+                    color = Color(0xFFE6E6E6),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
         )
     }
 }

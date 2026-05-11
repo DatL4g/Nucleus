@@ -49,16 +49,17 @@ internal inline fun renderMetalFrame(
     var presented = false
     try {
         val rt = BackendRenderTarget.makeMetal(frame.widthPx, frame.heightPx, frame.texturePtr)
-        val surface = Surface.makeFromBackendRenderTarget(
-            context = directContext,
-            rt = rt,
-            origin = SurfaceOrigin.TOP_LEFT,
-            colorFormat = SurfaceColorFormat.BGRA_8888,
-            colorSpace = ColorSpace.sRGB,
-        ) ?: run {
-            rt.close()
-            return
-        }
+        val surface =
+            Surface.makeFromBackendRenderTarget(
+                context = directContext,
+                rt = rt,
+                origin = SurfaceOrigin.TOP_LEFT,
+                colorFormat = SurfaceColorFormat.BGRA_8888,
+                colorSpace = ColorSpace.sRGB,
+            ) ?: run {
+                rt.close()
+                return
+            }
         try {
             surface.canvas.clear(clearColor)
             scene.render(surface.canvas.asComposeCanvas(), System.nanoTime())

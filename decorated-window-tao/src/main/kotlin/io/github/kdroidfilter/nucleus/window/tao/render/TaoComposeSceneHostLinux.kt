@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao.render
 
 import androidx.compose.runtime.BroadcastFrameClock
@@ -73,6 +75,7 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
  * area — same shape as the macOS path before custom-chrome was added.
  */
 @OptIn(InternalComposeUiApi::class)
+@Suppress("LargeClass")
 internal class TaoComposeSceneHostLinux(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -940,7 +943,10 @@ internal class TaoComposeSceneHostLinux(
         // are sent and the hover modifier naturally stays inactive.
     }
 
-    fun onPointerButton(buttonCode: Int, pressed: Boolean) {
+    fun onPointerButton(
+        buttonCode: Int,
+        pressed: Boolean,
+    ) {
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
@@ -1035,8 +1041,9 @@ internal class TaoComposeSceneHostLinux(
     fun nativeViewHost(): io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost? {
         if (window.handle == 0L) return null
         if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge.isLoaded) return null
-        val gtkWindow = io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
-            .nativeLinuxGtkWindow(window.handle)
+        val gtkWindow =
+            io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+                .nativeLinuxGtkWindow(window.handle)
         if (gtkWindow == 0L) return null
         val outer = this
         return object : io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost {
@@ -1050,7 +1057,13 @@ internal class TaoComposeSceneHostLinux(
                     .nativeDetach(childHandle)
             }
 
-            override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+            override fun setFrame(
+                handle: Long,
+                xPx: Int,
+                yPx: Int,
+                widthPx: Int,
+                heightPx: Int,
+            ) {
                 // Compose feeds physical pixels; GTK 3 lays out in
                 // logical pixels (the compositor applies the device
                 // scale on its own).
@@ -1063,7 +1076,10 @@ internal class TaoComposeSceneHostLinux(
                     .nativeSetFrame(gtkWindow, handle, xLogical, yLogical, wLogical, hLogical)
             }
 
-            override fun setCornerRadius(handle: Long, radiusPx: Float) {
+            override fun setCornerRadius(
+                handle: Long,
+                radiusPx: Float,
+            ) {
                 // Per-widget rounded clipping isn't trivial in GTK 3
                 // (would need a GtkCssProvider with a unique class
                 // name and a `border-radius` declaration). Leaving as
@@ -1091,9 +1107,12 @@ internal class TaoComposeSceneHostLinux(
             // stable after attach() but Tao may not have wired it
             // yet at host construction time.
             gtkWindowProvider = {
-                if (window.handle == 0L) 0L
-                else io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
-                    .nativeLinuxGtkWindow(window.handle)
+                if (window.handle == 0L) {
+                    0L
+                } else {
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+                        .nativeLinuxGtkWindow(window.handle)
+                }
             },
             scaleProvider = { scale },
             hostSizeProvider = { IntSize(widthPx, heightPx) },
@@ -1132,7 +1151,9 @@ internal class TaoComposeSceneHostLinux(
                 //    outside any Compose interactive widget in the
                 //    sample, so no other onClick fires.
                 val sc = scene ?: return@TaoLinuxOverlayControllerImpl
-                val dismissPos = androidx.compose.ui.geometry.Offset(1f, 1f)
+                val dismissPos =
+                    androidx.compose.ui.geometry
+                        .Offset(1f, 1f)
                 sc.sendPointerEvent(
                     eventType = androidx.compose.ui.input.pointer.PointerEventType.Move,
                     position = dismissPos,
@@ -1304,6 +1325,7 @@ internal class TaoComposeSceneHostLinux(
             join(50)
         }
 
+        @Suppress("NestedBlockDepth", "TooGenericExceptionCaught", "PrintStackTrace")
         override fun run() {
             try {
                 while (true) {

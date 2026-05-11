@@ -45,7 +45,7 @@ private val isKde = LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.K
 // `NucleusDecoratedWindowTheme` to get correctly-sized native chrome.
 private val LINUX_BUTTON_SIZE: DpSize = if (isKde) DpSize(28.dp, 28.dp) else DpSize(40.dp, 40.dp)
 
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "LoopWithTooManyJumpStatements")
 @Composable
 internal fun TitleBarScope.WindowControlsLinux(
     win: TaoWindow,
@@ -141,7 +141,7 @@ private fun TitleBarScope.LinuxControlButton(
     iconPressed: Painter,
     contentDescription: String,
     alignment: Alignment.Horizontal,
-    isCloseButton: Boolean = false,
+    @Suppress("UnusedParameter") isCloseButton: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
 

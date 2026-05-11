@@ -47,7 +47,7 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
      * loop immediately — the delay only applies when the queue is non-empty
      * *after* a drain (i.e. blocks added by the just-run blocks).
      */
-    private val pumpReArmIntervalNs = 1_000_000_000L / 60
+    private const val PUMP_RE_ARM_INTERVAL_NS = 1_000_000_000L / 60
     private var lastPumpNs = 0L
     private val pumpScheduler by lazy {
         Executors.newSingleThreadScheduledExecutor { r ->
@@ -76,6 +76,7 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         // re-dispatches itself synchronously.
         var remaining = pending.size
         var ranAnything = false
+        @Suppress("TooGenericExceptionCaught", "PrintStackTrace")
         while (remaining-- > 0) {
             val block = pending.poll() ?: break
             ranAnything = true
@@ -110,7 +111,7 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         // Blocks added during drain need a fresh wake to schedule the next
         // pump. Throttle the re-arm: if we just pumped synchronously and
         // pending is non-empty due to a re-dispatch, defer the next wake
-        // by `pumpReArmIntervalNs` instead of waking immediately. External
+        // by `PUMP_RE_ARM_INTERVAL_NS` instead of waking immediately. External
         // dispatches arriving in the meantime go through the regular
         // [dispatch] path and wake the loop straight away.
         val sinceLast = pumpEndNs - lastPumpNs
@@ -119,8 +120,8 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
             NativeTaoBridge.isLoaded &&
             wakePending.compareAndSet(false, true)
         ) {
-            if (sinceLast < pumpReArmIntervalNs) {
-                val delayNs = pumpReArmIntervalNs - sinceLast
+            if (sinceLast < PUMP_RE_ARM_INTERVAL_NS) {
+                val delayNs = PUMP_RE_ARM_INTERVAL_NS - sinceLast
                 pumpScheduler.schedule(
                     { if (NativeTaoBridge.isLoaded) NativeTaoBridge.nativeWake() },
                     delayNs,

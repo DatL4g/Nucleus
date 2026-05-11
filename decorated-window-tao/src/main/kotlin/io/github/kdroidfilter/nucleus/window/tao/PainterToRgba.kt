@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.ui.geometry.Size

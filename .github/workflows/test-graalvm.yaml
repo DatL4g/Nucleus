@@ -17,7 +17,7 @@ jobs:
     needs: build-natives
     name: GraalVM - ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -185,6 +185,13 @@ jobs:
         with:
           path: media-control/src/main/resources/nucleus/native/
           pattern: 'media-control-*'
+          merge-multiple: true
+
+      - name: Download decorated-window-tao artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-tao/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-tao-*'
           merge-multiple: true
 
       - name: Setup Nucleus (GraalVM)

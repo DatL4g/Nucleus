@@ -31,7 +31,10 @@ internal object NativeTaoMacOsNativeViewBridge {
     // ── Generic NSView interop ────────────────────────────────────────
 
     @JvmStatic
-    external fun nativeAddSubview(parentNsView: Long, childNsView: Long)
+    external fun nativeAddSubview(
+        parentNsView: Long,
+        childNsView: Long,
+    )
 
     @JvmStatic
     external fun nativeRemoveSubview(childNsView: Long)
@@ -72,15 +75,31 @@ internal object NativeTaoMacOsNativeViewBridge {
     interface OverlayEventCallback {
         /** [type] = 1 down, 2 up, 3 move. [button] = 0 none, 1 primary, 2 secondary. */
         @Suppress("FunctionParameterNaming")
-        fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int)
+        fun onPointerEvent(
+            type: Int,
+            x: Float,
+            y: Float,
+            button: Int,
+            modifiers: Int,
+        )
 
         /** AppKit `scrollingDelta*` units. */
         @Suppress("FunctionParameterNaming")
-        fun onScroll(x: Float, y: Float, dx: Float, dy: Float)
+        fun onScroll(
+            x: Float,
+            y: Float,
+            dx: Float,
+            dy: Float,
+        )
 
         /** [type] = 1 down, 2 up. */
         @Suppress("FunctionParameterNaming")
-        fun onKeyEvent(type: Int, vkCode: Int, codePoint: Int, modifiers: Int)
+        fun onKeyEvent(
+            type: Int,
+            vkCode: Int,
+            codePoint: Int,
+            modifiers: Int,
+        )
 
         /**
          * Fired when the overlay NSView ceases to be the host window's
@@ -114,7 +133,10 @@ internal object NativeTaoMacOsNativeViewBridge {
 
     /** Installs the JNI [OverlayEventCallback]. Pass `null` to remove. */
     @JvmStatic
-    external fun nativeSetOverlayCallback(overlayNsView: Long, callback: OverlayEventCallback?)
+    external fun nativeSetOverlayCallback(
+        overlayNsView: Long,
+        callback: OverlayEventCallback?,
+    )
 
     /**
      * Replaces the overlay's interactive-region list. [rectsPx] is a
@@ -124,7 +146,11 @@ internal object NativeTaoMacOsNativeViewBridge {
      * of these rects; `count = 0` clears the list (full passthrough).
      */
     @JvmStatic
-    external fun nativeSetOverlayRegions(overlayNsView: Long, rectsPx: FloatArray, count: Int)
+    external fun nativeSetOverlayRegions(
+        overlayNsView: Long,
+        rectsPx: FloatArray,
+        count: Int,
+    )
 
     /** Detaches the overlay NSView and drops the JNI global ref on its callback. */
     @JvmStatic

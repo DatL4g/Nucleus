@@ -11,7 +11,10 @@ internal object SampleWebViewBridge {
     external fun nativeCreate(): Long
 
     @JvmStatic
-    external fun nativeLoadUrl(viewPtr: Long, url: String)
+    external fun nativeLoadUrl(
+        viewPtr: Long,
+        url: String,
+    )
 
     @JvmStatic
     external fun nativeGoBack(viewPtr: Long)

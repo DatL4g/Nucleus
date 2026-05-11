@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.runtime.Composable
@@ -6,14 +8,14 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
-import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
@@ -24,8 +26,8 @@ import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneContextWi
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoNativeWireFormat
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupHostWindows
 import io.github.kdroidfilter.nucleus.window.tao.render.renderGlFrame
-import kotlin.coroutines.CoroutineContext
 import org.jetbrains.skia.DirectContext
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Windows port of the macOS [NativeViewOverlayController]. Owns the
@@ -109,85 +111,120 @@ internal class NativeViewOverlayControllerWindows(
      * coords; the layer adds the offset before talking to the popup
      * bridge so the popup HWND lands at the correct screen position.
      */
-    private val overlayPopupHost: TaoPopupHostWindows = object : TaoPopupHostWindows {
-        override val parentHwnd: Long get() = popupHost.parentHwnd
-        override val scale: Float get() = popupHost.scale
-        override val parentWindowSize: IntSize get() = popupHost.parentWindowSize
-        override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
-        override val hostDirectContext: DirectContext get() = popupHost.hostDirectContext
-        override val coordinateOffset: IntOffset
-            get() = IntOffset(overlayOffsetX, overlayOffsetY)
-        override fun requestRedraw() = popupHost.requestRedraw()
-        override fun registerRenderer(token: Any, render: () -> Unit) =
-            popupHost.registerRenderer(token, render)
-        override fun unregisterRenderer(token: Any) = popupHost.unregisterRenderer(token)
-        override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) =
-            popupHost.registerKeyHandler(token, handler)
-        override fun unregisterKeyHandler(token: Any) = popupHost.unregisterKeyHandler(token)
-        override fun registerOwnerMoveListener(token: Any, onMoved: () -> Unit) =
-            popupHost.registerOwnerMoveListener(token, onMoved)
-        override fun unregisterOwnerMoveListener(token: Any) =
-            popupHost.unregisterOwnerMoveListener(token)
-        override fun registerOwnerFocusLostListener(token: Any, onLost: () -> Unit) =
-            popupHost.registerOwnerFocusLostListener(token, onLost)
-        override fun unregisterOwnerFocusLostListener(token: Any) =
-            popupHost.unregisterOwnerFocusLostListener(token)
-        override fun registerOwnerFocusGainedListener(token: Any, onGained: () -> Unit) =
-            popupHost.registerOwnerFocusGainedListener(token, onGained)
-        override fun unregisterOwnerFocusGainedListener(token: Any) =
-            popupHost.unregisterOwnerFocusGainedListener(token)
-        override fun notifyPopupClosing() = popupHost.notifyPopupClosing()
-        override fun registerPopupClosingListener(token: Any, onClosing: () -> Unit) =
-            popupHost.registerPopupClosingListener(token, onClosing)
-        override fun unregisterPopupClosingListener(token: Any) =
-            popupHost.unregisterPopupClosingListener(token)
-    }
+    @Suppress("TooManyFunctions")
+    private val overlayPopupHost: TaoPopupHostWindows =
+        object : TaoPopupHostWindows {
+            override val parentHwnd: Long get() = popupHost.parentHwnd
+            override val scale: Float get() = popupHost.scale
+            override val parentWindowSize: IntSize get() = popupHost.parentWindowSize
+            override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
+            override val hostDirectContext: DirectContext get() = popupHost.hostDirectContext
+            override val coordinateOffset: IntOffset
+                get() = IntOffset(overlayOffsetX, overlayOffsetY)
+
+            override fun requestRedraw() = popupHost.requestRedraw()
+
+            override fun registerRenderer(
+                token: Any,
+                render: () -> Unit,
+            ) = popupHost.registerRenderer(token, render)
+
+            override fun unregisterRenderer(token: Any) = popupHost.unregisterRenderer(token)
+
+            override fun registerKeyHandler(
+                token: Any,
+                handler: (KeyEvent) -> Boolean,
+            ) = popupHost.registerKeyHandler(token, handler)
+
+            override fun unregisterKeyHandler(token: Any) = popupHost.unregisterKeyHandler(token)
+
+            override fun registerOwnerMoveListener(
+                token: Any,
+                onMoved: () -> Unit,
+            ) = popupHost.registerOwnerMoveListener(token, onMoved)
+
+            override fun unregisterOwnerMoveListener(token: Any) = popupHost.unregisterOwnerMoveListener(token)
+
+            override fun registerOwnerFocusLostListener(
+                token: Any,
+                onLost: () -> Unit,
+            ) = popupHost.registerOwnerFocusLostListener(token, onLost)
+
+            override fun unregisterOwnerFocusLostListener(token: Any) =
+                popupHost.unregisterOwnerFocusLostListener(token)
+
+            override fun registerOwnerFocusGainedListener(
+                token: Any,
+                onGained: () -> Unit,
+            ) = popupHost.registerOwnerFocusGainedListener(token, onGained)
+
+            override fun unregisterOwnerFocusGainedListener(token: Any) =
+                popupHost.unregisterOwnerFocusGainedListener(token)
+
+            override fun notifyPopupClosing() = popupHost.notifyPopupClosing()
+
+            override fun registerPopupClosingListener(
+                token: Any,
+                onClosing: () -> Unit,
+            ) = popupHost.registerPopupClosingListener(token, onClosing)
+
+            override fun unregisterPopupClosingListener(token: Any) = popupHost.unregisterPopupClosingListener(token)
+        }
     // (overlayPopupHost still exposes both register/unregister focus-gained
     // for downstream popups that may want them; this controller no longer
     // uses them — see the OverlayCallback Press path below.)
 
-    private val overlayWindowInfo: WindowInfo = object : WindowInfo {
-        override val isWindowFocused: Boolean = true
-        override val containerSize: IntSize
-            get() {
-                val parent = popupHost.parentWindowSize
-                return IntSize(
-                    (parent.width - overlayOffsetX).coerceAtLeast(1),
-                    (parent.height - overlayOffsetY).coerceAtLeast(1),
-                )
-            }
-    }
+    private val overlayWindowInfo: WindowInfo =
+        object : WindowInfo {
+            override val isWindowFocused: Boolean = true
+            override val containerSize: IntSize
+                get() {
+                    val parent = popupHost.parentWindowSize
+                    return IntSize(
+                        (parent.width - overlayOffsetX).coerceAtLeast(1),
+                        (parent.height - overlayOffsetY).coerceAtLeast(1),
+                    )
+                }
+        }
 
     private inner class OverlayCallback : NativeTaoWindowsOverlayBridge.OverlayEventCallback {
-        override fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int) {
+        override fun onPointerEvent(
+            type: Int,
+            x: Float,
+            y: Float,
+            button: Int,
+            modifiers: Int,
+        ) {
             val sc = scene ?: return
-            val pointerButton = when (button) {
-                TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
-                TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
-                else -> null
-            }
+            val pointerButton =
+                when (button) {
+                    TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
+                    TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
+                    else -> null
+                }
             lastPointerX = x
             lastPointerY = y
-            val eventType = when (type) {
-                TaoNativeWireFormat.PTR_DOWN -> {
-                    if (pointerButton != null) pressedButtons += pointerButton
-                    PointerEventType.Press
-                }
-                TaoNativeWireFormat.PTR_UP -> {
-                    if (pointerButton != null && pointerButton !in pressedButtons) {
-                        // Orphan Release — typically the trailing
-                        // WM_LBUTTONUP after a popup-dismiss outside-click,
-                        // whose Press was eaten by the popup HWND. Letting
-                        // it through corrupts Compose's gesture detector
-                        // and breaks subsequent focus-on-tap on
-                        // BasicTextFields in the overlay scene.
-                        return
+            val eventType =
+                when (type) {
+                    TaoNativeWireFormat.PTR_DOWN -> {
+                        if (pointerButton != null) pressedButtons += pointerButton
+                        PointerEventType.Press
                     }
-                    if (pointerButton != null) pressedButtons -= pointerButton
-                    PointerEventType.Release
+                    TaoNativeWireFormat.PTR_UP -> {
+                        if (pointerButton != null && pointerButton !in pressedButtons) {
+                            // Orphan Release — typically the trailing
+                            // WM_LBUTTONUP after a popup-dismiss outside-click,
+                            // whose Press was eaten by the popup HWND. Letting
+                            // it through corrupts Compose's gesture detector
+                            // and breaks subsequent focus-on-tap on
+                            // BasicTextFields in the overlay scene.
+                            return
+                        }
+                        if (pointerButton != null) pressedButtons -= pointerButton
+                        PointerEventType.Release
+                    }
+                    else -> PointerEventType.Move
                 }
-                else -> PointerEventType.Move
-            }
             sc.sendPointerEvent(
                 eventType = eventType,
                 position = Offset(x, y),
@@ -196,7 +233,12 @@ internal class NativeViewOverlayControllerWindows(
             )
         }
 
-        override fun onScroll(x: Float, y: Float, dx: Float, dy: Float) {
+        override fun onScroll(
+            x: Float,
+            y: Float,
+            dx: Float,
+            dy: Float,
+        ) {
             scene?.sendPointerEvent(
                 eventType = PointerEventType.Scroll,
                 position = Offset(x, y),
@@ -207,6 +249,7 @@ internal class NativeViewOverlayControllerWindows(
     }
 
     private var overlayHandle: Long = 0
+
     /**
      * Single-HGLRC architecture: all overlays + popups + the host
      * share the host's `DirectContext`. The overlay controller doesn't
@@ -230,16 +273,20 @@ internal class NativeViewOverlayControllerWindows(
         get() = if (manualCursorByKey.isEmpty()) null else manualCursorByKey.values.last()
 
     private fun applyCursor(icon: PointerIcon) {
-        val code = when (icon) {
-            PointerIcon.Text -> NativeTaoWindowsOverlayBridge.CURSOR_TEXT
-            PointerIcon.Hand -> NativeTaoWindowsOverlayBridge.CURSOR_HAND
-            PointerIcon.Crosshair -> NativeTaoWindowsOverlayBridge.CURSOR_CROSSHAIR
-            else -> NativeTaoWindowsOverlayBridge.CURSOR_DEFAULT
-        }
+        val code =
+            when (icon) {
+                PointerIcon.Text -> NativeTaoWindowsOverlayBridge.CURSOR_TEXT
+                PointerIcon.Hand -> NativeTaoWindowsOverlayBridge.CURSOR_HAND
+                PointerIcon.Crosshair -> NativeTaoWindowsOverlayBridge.CURSOR_CROSSHAIR
+                else -> NativeTaoWindowsOverlayBridge.CURSOR_DEFAULT
+            }
         if (overlayHandle != 0L) NativeTaoWindowsOverlayBridge.nativeSetCursor(overlayHandle, code)
     }
 
-    fun pushManualCursor(key: Any, icon: PointerIcon) {
+    fun pushManualCursor(
+        key: Any,
+        icon: PointerIcon,
+    ) {
         manualCursorByKey.remove(key)
         manualCursorByKey[key] = icon
         applyCursor(icon)
@@ -266,7 +313,11 @@ internal class NativeViewOverlayControllerWindows(
         popupHost.registerOwnerMoveListener(moveListenerToken) {
             if (overlayHandle != 0L && firstBoundsApplied) {
                 NativeTaoWindowsOverlayBridge.nativeSetOverlayFrame(
-                    overlayHandle, lastFrameX, lastFrameY, widthPx, heightPx,
+                    overlayHandle,
+                    lastFrameX,
+                    lastFrameY,
+                    widthPx,
+                    heightPx,
                 )
             }
         }
@@ -319,7 +370,12 @@ internal class NativeViewOverlayControllerWindows(
         pendingBounds = null
     }
 
-    fun setBounds(xPx: Int, yPx: Int, widthPxNew: Int, heightPxNew: Int) {
+    fun setBounds(
+        xPx: Int,
+        yPx: Int,
+        widthPxNew: Int,
+        heightPxNew: Int,
+    ) {
         if (overlayHandle == 0L) {
             pendingBounds = intArrayOf(xPx, yPx, widthPxNew, heightPxNew)
             return
@@ -330,14 +386,26 @@ internal class NativeViewOverlayControllerWindows(
     private var lastFrameX: Int = Int.MIN_VALUE
     private var lastFrameY: Int = Int.MIN_VALUE
 
-    private fun setBoundsInternal(xPx: Int, yPx: Int, widthPxNew: Int, heightPxNew: Int) {
-        val frameUnchanged = firstBoundsApplied &&
-            xPx == lastFrameX && yPx == lastFrameY &&
-            widthPxNew == widthPx && heightPxNew == heightPx
+    private fun setBoundsInternal(
+        xPx: Int,
+        yPx: Int,
+        widthPxNew: Int,
+        heightPxNew: Int,
+    ) {
+        val frameUnchanged =
+            firstBoundsApplied &&
+                xPx == lastFrameX &&
+                yPx == lastFrameY &&
+                widthPxNew == widthPx &&
+                heightPxNew == heightPx
         if (frameUnchanged) return
 
         NativeTaoWindowsOverlayBridge.nativeSetOverlayFrame(
-            overlayHandle, xPx, yPx, widthPxNew, heightPxNew,
+            overlayHandle,
+            xPx,
+            yPx,
+            widthPxNew,
+            heightPxNew,
         )
 
         lastFrameX = xPx
@@ -358,18 +426,20 @@ internal class NativeViewOverlayControllerWindows(
             // resetGLAll on the shared directContext to re-sync Skia's
             // GL state cache for the new framebuffer.
 
-            val ourPlatformContext = object : PlatformContext.Empty() {
-                override val windowInfo: WindowInfo get() = overlayWindowInfo
-                override fun setPointerIcon(pointerIcon: PointerIcon) {
-                    // While a manual cursor override is active (consumeOverlayPointerEvents
-                    // with a `cursor` hint), ignore Compose's resolution. BasicTextField
-                    // applies its own pointerHoverIcon(Default, overrideDescendants=true)
-                    // on the click area surrounding the text glyphs, which would otherwise
-                    // overwrite the I-beam mid-hover.
-                    if (manualCursor != null) return
-                    applyCursor(pointerIcon)
+            val ourPlatformContext =
+                object : PlatformContext.Empty() {
+                    override val windowInfo: WindowInfo get() = overlayWindowInfo
+
+                    override fun setPointerIcon(pointerIcon: PointerIcon) {
+                        // While a manual cursor override is active (consumeOverlayPointerEvents
+                        // with a `cursor` hint), ignore Compose's resolution. BasicTextField
+                        // applies its own pointerHoverIcon(Default, overrideDescendants=true)
+                        // on the click area surrounding the text glyphs, which would otherwise
+                        // overwrite the I-beam mid-hover.
+                        if (manualCursor != null) return
+                        applyCursor(pointerIcon)
+                    }
                 }
-            }
             // PlatformLayersComposeScene + TaoComposeSceneContextWindows
             // routes popups originating in this overlay scene
             // (text-field context menus, dropdowns, tooltips) through
@@ -377,18 +447,23 @@ internal class NativeViewOverlayControllerWindows(
             // HWND owned by the host main HWND. They can extend beyond
             // the overlay's bounds, intercept their own clicks, and
             // dismiss on outside-click via the popup's SetCapture monitor.
-            scene = PlatformLayersComposeScene(
-                density = Density(scale),
-                layoutDirection = LayoutDirection.Ltr,
-                size = IntSize(widthPx, heightPx),
-                coroutineContext = popupHost.sceneCoroutineContext,
-                composeSceneContext = TaoComposeSceneContextWindows(
-                    platformContext = ourPlatformContext,
-                    popupHost = overlayPopupHost,
-                ),
-                invalidate = { popupHost.requestRedraw() },
-            )
-            pendingContent?.let { scene?.setContent(it); pendingContent = null }
+            scene =
+                PlatformLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = LayoutDirection.Ltr,
+                    size = IntSize(widthPx, heightPx),
+                    coroutineContext = popupHost.sceneCoroutineContext,
+                    composeSceneContext =
+                        TaoComposeSceneContextWindows(
+                            platformContext = ourPlatformContext,
+                            popupHost = overlayPopupHost,
+                        ),
+                    invalidate = { popupHost.requestRedraw() },
+                )
+            pendingContent?.let {
+                scene?.setContent(it)
+                pendingContent = null
+            }
         } else {
             scene?.size = IntSize(widthPx, heightPx)
         }
@@ -411,12 +486,23 @@ internal class NativeViewOverlayControllerWindows(
         popupHost.requestRedraw()
     }
 
-    fun registerRegion(key: Any, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+    @Suppress("ComplexCondition")
+    fun registerRegion(
+        key: Any,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+    ) {
         val previous = regions[key]
         if (previous != null &&
-            previous[0] == xPx && previous[1] == yPx &&
-            previous[2] == widthPx && previous[3] == heightPx
-        ) return
+            previous[0] == xPx &&
+            previous[1] == yPx &&
+            previous[2] == widthPx &&
+            previous[3] == heightPx
+        ) {
+            return
+        }
         regions[key] = intArrayOf(xPx, yPx, widthPx, heightPx)
         flushRegions()
     }

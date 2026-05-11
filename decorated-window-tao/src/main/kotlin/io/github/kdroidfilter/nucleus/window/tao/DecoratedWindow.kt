@@ -1,3 +1,4 @@
+@file:Suppress("MagicNumber")
 @file:OptIn(androidx.compose.ui.InternalComposeUiApi::class)
 
 package io.github.kdroidfilter.nucleus.window.tao
@@ -67,7 +68,7 @@ val LocalTaoWindow = staticCompositionLocalOf<TaoWindow?> { null }
  * `tao::Window::set_focusable(false)`, which prevents the window from ever
  * becoming key (useful for HUD/overlay windows).
  */
-@Suppress("LongParameterList", "FunctionNaming")
+@Suppress("LongParameterList", "FunctionNaming", "CyclomaticComplexMethod", "LongMethod")
 internal fun ApplicationScope.openDecoratedWindow(
     onCloseRequest: () -> Unit,
     title: String = "",
@@ -268,9 +269,12 @@ internal fun ApplicationScope.openDecoratedWindow(
         // window tree (Alt-Tab to another app, etc.). The bridge below
         // is no-op on platforms where its DLL isn't loaded (isLoaded is
         // false on macOS), so this is safe to share across paths.
-        val effective = focused ||
-            (NativeTaoWindowsNativeViewBridge.isLoaded &&
-                NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle))
+        val effective =
+            focused ||
+                (
+                    NativeTaoWindowsNativeViewBridge.isLoaded &&
+                        NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle)
+                )
         stateHolder.value = stateHolder.value.copy(active = effective)
         host.onFocusChanged(focused)
     }
@@ -289,7 +293,7 @@ internal fun ApplicationScope.openDecoratedWindow(
  * Native GTK decorations are kept; the user's [TitleBar] composable still
  * works as a sub-bar inside the content area.
  */
-@Suppress("FunctionNaming", "LongParameterList")
+@Suppress("FunctionNaming", "LongParameterList", "LongMethod")
 private fun ApplicationScope.openDecoratedWindowLinux(
     window: TaoWindow,
     title: String,
@@ -461,6 +465,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
  * widgets as window-relative, which is a regression from
  * pixel-perfect highlights but keeps the app running.
  */
+@Suppress("UnusedParameter")
 private fun pushA11yBoundsLinux(
     xid: Long,
     windowHandle: Long,
@@ -490,7 +495,7 @@ private fun pushA11yBoundsLinux(
  * the entire title bar zone — never HTMINBUTTON/HTMAXBUTTON/HTCLOSE — so DWM
  * doesn't repaint native buttons on top of our Compose UI.
  */
-@Suppress("FunctionNaming", "LongParameterList")
+@Suppress("FunctionNaming", "LongParameterList", "LongMethod")
 private fun ApplicationScope.openDecoratedWindowWindows(
     window: TaoWindow,
     title: String,
@@ -611,9 +616,12 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         // window tree (Alt-Tab to another app, etc.). The bridge below
         // is no-op on platforms where its DLL isn't loaded (isLoaded is
         // false on macOS), so this is safe to share across paths.
-        val effective = focused ||
-            (NativeTaoWindowsNativeViewBridge.isLoaded &&
-                NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle))
+        val effective =
+            focused ||
+                (
+                    NativeTaoWindowsNativeViewBridge.isLoaded &&
+                        NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle)
+                )
         stateHolder.value = stateHolder.value.copy(active = effective)
         host.onFocusChanged(focused)
     }

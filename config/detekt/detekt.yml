@@ -113,7 +113,7 @@ complexity:
     allowedLines: 600
   LongMethod:
     active: true
-    excludes: ['**/jewel-sample/**', '**/example/**']
+    excludes: ['**/jewel-sample/**', '**/example/**', '**/sample-tao/**', '**/sample-shared/**', '**/sample-jni/**', '**/sample-cmp/**']
     allowedLines: 100
   LongParameterList:
     active: true
@@ -670,7 +670,7 @@ style:
     maxJumpCount: 1
   MagicNumber:
     active: true
-    excludes: ['**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**', '**/*.kts', '**/example/**', '**/jewel-sample/**', '**/icons/**']
+    excludes: ['**/test/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**', '**/*.kts', '**/example/**', '**/jewel-sample/**', '**/sample-tao/**', '**/sample-shared/**', '**/sample-jni/**', '**/sample-cmp/**', '**/icons/**']
     ignoreNumbers:
       - '-1'
       - '0'

@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao
 
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
@@ -11,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * event loop, which executes them on the platform event-loop thread. Listener
  * registration is also safe to call across threads.
  */
+@Suppress("TooManyFunctions")
 class TaoWindow internal constructor(
     val handle: Long,
     /**

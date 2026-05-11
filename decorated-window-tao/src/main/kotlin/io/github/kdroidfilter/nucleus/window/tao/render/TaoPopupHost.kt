@@ -45,7 +45,11 @@ internal interface TaoPopupHost {
 
     fun requestRedraw()
 
-    fun registerRenderer(token: Any, render: () -> Unit)
+    fun registerRenderer(
+        token: Any,
+        render: () -> Unit,
+    )
+
     fun unregisterRenderer(token: Any)
 
     /**
@@ -55,7 +59,11 @@ internal interface TaoPopupHost {
      * AppKit's responder chain, so overlays can't receive `keyDown:`
      * natively and must piggy-back on this forwarding path.
      */
-    fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean)
+    fun registerKeyHandler(
+        token: Any,
+        handler: (KeyEvent) -> Boolean,
+    )
+
     fun unregisterKeyHandler(token: Any)
 
     /**

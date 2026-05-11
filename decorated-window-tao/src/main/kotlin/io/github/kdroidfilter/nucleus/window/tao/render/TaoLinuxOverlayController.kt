@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao.render
 
 import androidx.compose.runtime.compositionLocalOf
@@ -35,7 +37,6 @@ import io.github.kdroidfilter.nucleus.window.tao.TaoMouseButton
  * Threading: every method runs on the GTK main thread.
  */
 internal interface TaoLinuxOverlayController {
-
     /**
      * Marks `(xPx, yPx, widthPx, heightPx)` as an interactive region
      * keyed by [key]. Re-registering the same key replaces the rect.
@@ -97,7 +98,6 @@ internal class TaoLinuxOverlayControllerImpl(
      */
     private val focusReleaseDispatcher: () -> Unit,
 ) : TaoLinuxOverlayController {
-
     /** key → GtkEventBox pointer (0 if creation failed). */
     private val boxes: MutableMap<Any, Long> = LinkedHashMap()
 
@@ -107,8 +107,16 @@ internal class TaoLinuxOverlayControllerImpl(
      * `LogicalPosition::to_physical(scale)` would have produced) and
      * dispatches into the host. Logical px → physical px = ×scale.
      */
-    private inner class InputCallback(private val ownerKey: Any) : NativeTaoLinuxWidgetBridge.OverlayInputCallback {
-        override fun onEvent(type: Int, xLogical: Int, yLogical: Int, button: Int, pressed: Int) {
+    private inner class InputCallback(
+        private val ownerKey: Any,
+    ) : NativeTaoLinuxWidgetBridge.OverlayInputCallback {
+        override fun onEvent(
+            type: Int,
+            xLogical: Int,
+            yLogical: Int,
+            button: Int,
+            pressed: Int,
+        ) {
             if (type == 3) {
                 // FOCUS_OUT — coords are 0/0 placeholders.
                 // Skip the synthetic outside-click dispatch when the
@@ -178,7 +186,10 @@ internal class TaoLinuxOverlayControllerImpl(
      */
     private var capturePressPending = false
 
-    private fun handlePressForPopupCapture(button: Int, sourceKey: Any) {
+    private fun handlePressForPopupCapture(
+        button: Int,
+        sourceKey: Any,
+    ) {
         if (sourceKey === popupCaptureKey) {
             // Press came through the capture box — defer teardown to
             // the matching release so Compose sees a complete
@@ -191,7 +202,11 @@ internal class TaoLinuxOverlayControllerImpl(
         }
     }
 
-    private fun handleReleaseForPopupCapture(button: Int, sourceKey: Any) {
+    @Suppress("UnusedParameter")
+    private fun handleReleaseForPopupCapture(
+        button: Int,
+        sourceKey: Any,
+    ) {
         if (sourceKey === popupCaptureKey && capturePressPending) {
             capturePressPending = false
             // Capture click cycle complete — popup has dismissed
