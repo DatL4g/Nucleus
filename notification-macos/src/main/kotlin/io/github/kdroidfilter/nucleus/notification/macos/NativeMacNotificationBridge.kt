@@ -15,14 +15,25 @@ import io.github.kdroidfilter.nucleus.notification.RegisteredCategoryInfo
 import io.github.kdroidfilter.nucleus.notification.ShowPreviewsSetting
 import io.github.kdroidfilter.nucleus.notification.toMask
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.logging.Level
+import java.util.logging.Logger
 
 private const val LIBRARY_NAME = "nucleus_notification"
 
 @Suppress("TooManyFunctions", "LongParameterList")
 internal object NativeMacNotificationBridge {
+    private val logger = Logger.getLogger(NativeMacNotificationBridge::class.java.simpleName)
     private val callbackCounter = AtomicLong(0)
+    private val callbackThreadCounter = AtomicInteger(0)
     private val callbacks = ConcurrentHashMap<Long, Any>()
+    private val callbackExecutor =
+        Executors.newCachedThreadPool { runnable ->
+            val threadNumber = callbackThreadCounter.incrementAndGet()
+            Thread(runnable, "NucleusNotificationCallback-$threadNumber").apply { isDaemon = true }
+        }
 
     @Volatile
     var delegate: NotificationCenterDelegate? = null
@@ -41,6 +52,18 @@ internal object NativeMacNotificationBridge {
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> consumeCallback(id: Long): T? = callbacks.remove(id) as? T
+
+    private fun dispatchCallback(callback: () -> Unit) {
+        callbackExecutor.execute {
+            try {
+                callback()
+            } catch (
+                @Suppress("TooGenericExceptionCaught") e: RuntimeException,
+            ) {
+                logger.log(Level.WARNING, "Error in notification callback", e)
+            }
+        }
+    }
 
     // -- Native method declarations --
 
@@ -141,7 +164,8 @@ internal object NativeMacNotificationBridge {
         granted: Boolean,
         error: String?,
     ) {
-        consumeCallback<(Boolean, String?) -> Unit>(callbackId)?.invoke(granted, error)
+        val callback = consumeCallback<(Boolean, String?) -> Unit>(callbackId) ?: return
+        dispatchCallback { callback(granted, error) }
     }
 
     @JvmStatic
@@ -178,7 +202,8 @@ internal object NativeMacNotificationBridge {
                 directMessagesSetting = NotificationSetting.fromRawValue(directMessagesSetting),
                 scheduledDeliverySetting = NotificationSetting.fromRawValue(scheduledDeliverySetting),
             )
-        consumeCallback<(NotificationSettings) -> Unit>(callbackId)?.invoke(settings)
+        val callback = consumeCallback<(NotificationSettings) -> Unit>(callbackId) ?: return
+        dispatchCallback { callback(settings) }
     }
 
     @JvmStatic
@@ -186,7 +211,8 @@ internal object NativeMacNotificationBridge {
         callbackId: Long,
         error: String?,
     ) {
-        consumeCallback<(String?) -> Unit>(callbackId)?.invoke(error)
+        val callback = consumeCallback<(String?) -> Unit>(callbackId) ?: return
+        dispatchCallback { callback(error) }
     }
 
     @JvmStatic
@@ -217,8 +243,8 @@ internal object NativeMacNotificationBridge {
                     triggerInterval = triggerIntervals[i],
                 )
             }
-        consumeCallback<(List<PendingNotificationInfo>) -> Unit>(callbackId)
-            ?.invoke(requests)
+        val callback = consumeCallback<(List<PendingNotificationInfo>) -> Unit>(callbackId) ?: return
+        dispatchCallback { callback(requests) }
     }
 
     @JvmStatic
@@ -245,7 +271,8 @@ internal object NativeMacNotificationBridge {
                     threadIdentifier = threadIdentifiers[i],
                 )
             }
-        consumeCallback<(List<DeliveredNotification>) -> Unit>(callbackId)?.invoke(notifications)
+        val callback = consumeCallback<(List<DeliveredNotification>) -> Unit>(callbackId) ?: return
+        dispatchCallback { callback(notifications) }
     }
 
     @JvmStatic
@@ -283,7 +310,8 @@ internal object NativeMacNotificationBridge {
                     actions = actions,
                 )
             }
-        consumeCallback<(List<RegisteredCategoryInfo>) -> Unit>(callbackId)?.invoke(categories)
+        val callback = consumeCallback<(List<RegisteredCategoryInfo>) -> Unit>(callbackId) ?: return
+        dispatchCallback { callback(categories) }
     }
 
     @JvmStatic
@@ -291,7 +319,8 @@ internal object NativeMacNotificationBridge {
         callbackId: Long,
         error: String?,
     ) {
-        consumeCallback<(String?) -> Unit>(callbackId)?.invoke(error)
+        val callback = consumeCallback<(String?) -> Unit>(callbackId) ?: return
+        dispatchCallback { callback(error) }
     }
 
     @JvmStatic
@@ -299,10 +328,11 @@ internal object NativeMacNotificationBridge {
         callbackId: Long,
         count: Int,
     ) {
-        consumeCallback<(Int) -> Unit>(callbackId)?.invoke(count)
+        val callback = consumeCallback<(Int) -> Unit>(callbackId) ?: return
+        dispatchCallback { callback(count) }
     }
 
-    // -- Delegate callbacks from native (dispatched to EDT for thread safety) --
+    // -- Delegate callbacks from native --
 
     private fun buildNotification(
         identifier: String,
@@ -344,11 +374,7 @@ internal object NativeMacNotificationBridge {
                 categoryIdentifier,
                 threadIdentifier,
             )
-        // invokeAndWait to run on EDT and return the result synchronously
-        var options: Set<PresentationOption> = emptySet()
-        javax.swing.SwingUtilities.invokeAndWait {
-            options = d.willPresent(notification)
-        }
+        val options = d.willPresent(notification)
         return options.toMask { it.rawValue }
     }
 
@@ -382,7 +408,7 @@ internal object NativeMacNotificationBridge {
                 notification = notification,
                 userText = userText,
             )
-        javax.swing.SwingUtilities.invokeLater { d.didReceive(response) }
+        dispatchCallback { d.didReceive(response) }
     }
 
     @JvmStatic
@@ -411,6 +437,6 @@ internal object NativeMacNotificationBridge {
             } else {
                 null
             }
-        javax.swing.SwingUtilities.invokeLater { d.openSettings(notification) }
+        dispatchCallback { d.openSettings(notification) }
     }
 }

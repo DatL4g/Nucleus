@@ -18,8 +18,6 @@ import io.github.kdroidfilter.nucleus.notification.common.NotificationHandle
 import io.github.kdroidfilter.nucleus.notification.common.NotificationResult
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -65,8 +63,6 @@ internal class MacOsDispatcher private constructor() : PlatformDispatcher {
         }
 
     companion object {
-        private const val SEND_TIMEOUT_SECONDS = 5L
-
         fun createIfAvailable(): MacOsDispatcher? =
             try {
                 Class.forName("io.github.kdroidfilter.nucleus.notification.NotificationCenter")
@@ -137,31 +133,14 @@ internal class MacOsDispatcher private constructor() : PlatformDispatcher {
             ),
         )
 
-        val latch = CountDownLatch(1)
-        val errorHolder =
-            java.util.concurrent.atomic
-                .AtomicReference<String?>(null)
         NotificationCenter.add(request) { error ->
             if (error != null) {
-                errorHolder.set(error)
                 CallbackRegistry.remove(identifier)
                 notification.onFailed?.invoke()
             }
-            latch.countDown()
         }
 
-        // Wait for the native completion handler so the process does not exit
-        // before macOS has accepted the notification request.
-        if (!latch.await(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            logger.warning("Notification send timed out after $SEND_TIMEOUT_SECONDS s")
-        }
-
-        val sendError = errorHolder.get()
-        return if (sendError != null) {
-            NotificationResult.Failure(sendError)
-        } else {
-            NotificationResult.Success(NotificationHandle(identifier, this))
-        }
+        return NotificationResult.Success(NotificationHandle(identifier, this))
     }
 
     override fun dismiss(platformId: String) {

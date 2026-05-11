@@ -11,7 +11,8 @@ import java.util.logging.Logger
  * All methods are no-op on non-macOS platforms (check [isAvailable]).
  * Requires a packaged `.app` bundle — notifications are disabled when
  * running via `./gradlew run` (no bundle identifier).
- * Async operations use callbacks invoked on arbitrary threads.
+ * Async operations and delegate callbacks do not marshal to AWT/Swing.
+ * Use your application dispatcher before touching UI state.
  */
 @Suppress("TooManyFunctions")
 object NotificationCenter {
