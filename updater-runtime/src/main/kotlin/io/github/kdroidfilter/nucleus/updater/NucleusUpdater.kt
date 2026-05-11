@@ -179,7 +179,7 @@ class NucleusUpdater(
     private fun doCheckForUpdates(): UpdateResult {
         val platform = PlatformInfo.currentPlatform()
         val arch = PlatformInfo.currentArch()
-        val metadataUrl = config.provider.getUpdateMetadataUrl(config.channel, platform)
+        val metadataUrl = config.provider.resolveMetadataUrl(config.channel, platform, httpClient)
 
         val requestBuilder =
             HttpRequest

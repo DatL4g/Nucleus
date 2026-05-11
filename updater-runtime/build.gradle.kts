@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    alias(libs.plugins.kotlinxSerialization)
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -16,6 +17,7 @@ dependencies {
     api(project(":core-runtime"))
     implementation(kotlin("stdlib"))
     implementation(libs.coroutines.core)
+    implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
 }
 
