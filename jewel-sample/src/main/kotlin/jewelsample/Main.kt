@@ -40,6 +40,7 @@ import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.ui.ComponentStyling
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @ExperimentalLayoutApi
 fun main() {
     GraalVmInitializer.initialize()
@@ -75,6 +76,8 @@ fun main() {
                 processKeyShortcuts(keyEvent = keyEvent, onNavigateTo = MainViewModel::onNavigateTo)
             },
             content = {
+                @Suppress("DEPRECATION")
+                val defaultTextContextMenu = androidx.compose.foundation.text.LocalTextContextMenu.current
                 IntUiTheme(
                     theme = titleBarTheme,
                     styling = ComponentStyling.default(),
@@ -88,7 +91,11 @@ fun main() {
                         windowStyle = jewelWindowStyle,
                         titleBarStyle = jewelTitleBarStyle,
                     ) {
-                        TitleBarView()
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            androidx.compose.foundation.text.LocalTextContextMenu provides defaultTextContextMenu,
+                        ) {
+                            TitleBarView()
+                        }
                     }
                 }
                 IntUiTheme(
@@ -97,7 +104,11 @@ fun main() {
                     swingCompatMode = MainViewModel.swingCompat,
                 ) {
                     @OptIn(ExperimentalJewelApi::class)
-                    ProvideMarkdownStyling { currentView.content() }
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.foundation.text.LocalTextContextMenu provides defaultTextContextMenu,
+                    ) {
+                        ProvideMarkdownStyling { currentView.content() }
+                    }
                 }
             },
         )
