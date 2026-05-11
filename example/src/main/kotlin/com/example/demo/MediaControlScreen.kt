@@ -31,12 +31,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.core.runtime.Platform
-import io.github.kdroidfilter.nucleus.media.control.MediaControlEvent
-import io.github.kdroidfilter.nucleus.media.control.MediaControlService
-import io.github.kdroidfilter.nucleus.media.control.MediaMetadata
-import io.github.kdroidfilter.nucleus.media.control.MediaPlaybackState
-import io.github.kdroidfilter.nucleus.media.control.MediaPlaybackStatus
+import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.media.control.MediaControlEvent
+import dev.nucleusframework.media.control.MediaControlService
+import dev.nucleusframework.media.control.MediaMetadata
+import dev.nucleusframework.media.control.MediaPlaybackState
+import dev.nucleusframework.media.control.MediaPlaybackStatus
 
 private const val EVENT_LOG_MAX = 20
 

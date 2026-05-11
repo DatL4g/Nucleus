@@ -1,10 +1,10 @@
 package schedulerdemo.task
 
-import io.github.kdroidfilter.nucleus.scheduler.DesktopTask
-import io.github.kdroidfilter.nucleus.scheduler.TaskContext
-import io.github.kdroidfilter.nucleus.scheduler.TaskId
-import io.github.kdroidfilter.nucleus.scheduler.TaskResult
-import io.github.kdroidfilter.nucleus.scheduler.inputData
+import dev.nucleusframework.scheduler.DesktopTask
+import dev.nucleusframework.scheduler.TaskContext
+import dev.nucleusframework.scheduler.TaskId
+import dev.nucleusframework.scheduler.TaskResult
+import dev.nucleusframework.scheduler.inputData
 import kotlinx.serialization.Serializable
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter

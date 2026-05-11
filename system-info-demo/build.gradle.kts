@@ -1,13 +1,13 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.CompressionLevel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SigningAlgorithm
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework")
 }
 
 dependencies {
@@ -82,7 +82,7 @@ nucleus.application {
 
         packageName = "SystemInfo"
         packageVersion = "1.0.0"
-        homepage = "https://github.com/kdroidFilter/Nucleus"
+        homepage = "https://github.com/NucleusFramework/Nucleus"
 
         linux {
             debMaintainer = "KDroidFilter <dev@kdroidfilter.com>"
@@ -99,7 +99,7 @@ nucleus.application {
         }
 
         macOS {
-            bundleID = "io.github.kdroidfilter.systeminfo"
+            bundleID = "dev.nucleusframework.systeminfo"
             dockName = "SystemInfo"
         }
     }

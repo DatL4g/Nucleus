@@ -1,0 +1,19 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.systeminfo.linux.NativeLinuxSystemInfoBridge",
+            "jniAccessible": true,
+            "methods": []
+        },
+        {
+            "type": "dev.nucleusframework.systeminfo.macos.NativeMacOsSystemInfoBridge",
+            "jniAccessible": true,
+            "methods": []
+        },
+        {
+            "type": "dev.nucleusframework.systeminfo.windows.NativeWindowsSystemInfoBridge",
+            "jniAccessible": true,
+            "methods": []
+        }
+    ]
+}

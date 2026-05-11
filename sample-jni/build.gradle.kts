@@ -1,11 +1,11 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework")
 }
 
 dependencies {
@@ -29,7 +29,7 @@ kotlin {
 }
 
 nucleus.application {
-    mainClass = "io.github.kdroidfilter.samplejni.MainKt"
+    mainClass = "dev.nucleusframework.samplejni.MainKt"
 
     nativeDistributions {
         targetFormats(TargetFormat.Dmg)

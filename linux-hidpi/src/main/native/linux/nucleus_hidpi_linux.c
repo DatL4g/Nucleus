@@ -264,7 +264,7 @@ static double readXftScale(void) {
 /*  nativeGetScaleFactor — JNI entry point                            */
 /* ------------------------------------------------------------------ */
 JNIEXPORT jdouble JNICALL
-Java_io_github_kdroidfilter_nucleus_hidpi_HiDpiLinuxBridge_nativeGetScaleFactor(
+Java_dev_nucleusframework_hidpi_HiDpiLinuxBridge_nativeGetScaleFactor(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -310,7 +310,7 @@ Java_io_github_kdroidfilter_nucleus_hidpi_HiDpiLinuxBridge_nativeGetScaleFactor(
 /*  by the desktop session.                                            */
 /* ------------------------------------------------------------------ */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_hidpi_HiDpiLinuxBridge_nativeApplyScaleToEnv(
+Java_dev_nucleusframework_hidpi_HiDpiLinuxBridge_nativeApplyScaleToEnv(
     JNIEnv *env, jclass clazz, jint scale)
 {
     (void)env; (void)clazz;

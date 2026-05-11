@@ -1,19 +1,19 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.AppImageCategory
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.CompressionLevel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.ReleaseChannel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.ReleaseType
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SigningAlgorithm
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapCompression
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapConfinement
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapGrade
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapPlug
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.AppImageCategory
+import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
+import dev.nucleusframework.desktop.application.dsl.ReleaseType
+import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
+import dev.nucleusframework.desktop.application.dsl.SnapCompression
+import dev.nucleusframework.desktop.application.dsl.SnapConfinement
+import dev.nucleusframework.desktop.application.dsl.SnapGrade
+import dev.nucleusframework.desktop.application.dsl.SnapPlug
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 
 plugins {
     alias(libs.plugins.kotlin)
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework")
 }
 
 dependencies {
@@ -157,7 +157,7 @@ nucleus.application {
         publish {
             github {
                 enabled = true
-                owner = "kdroidfilter"
+                owner = "NucleusFramework"
                 repo = "Nucleus"
                 channel = ReleaseChannel.Latest
                 releaseType = ReleaseType.Release
@@ -276,7 +276,7 @@ nucleus.application {
 
         // ========== MACOS ==========
         macOS {
-            bundleID = "io.github.kdroidfilter.nucleus.demo"
+            bundleID = "dev.nucleusframework.demo"
             appCategory = "public.app-category.utilities"
             dockName = "NucleusDemo"
 
