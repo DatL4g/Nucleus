@@ -62,30 +62,30 @@ import com.example.demo.icons.TablerTextDirectionRtl
 import com.example.demo.icons.VscodeCodiconsColorMode
 import com.materialkolor.DynamicMaterialTheme
 import com.materialkolor.PaletteStyle
-import io.github.kdroidfilter.nucleus.aot.runtime.AotRuntime
-import io.github.kdroidfilter.nucleus.application.nucleusApplication
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunch
-import io.github.kdroidfilter.nucleus.core.runtime.DeepLinkHandler
-import io.github.kdroidfilter.nucleus.core.runtime.NucleusApp
-import io.github.kdroidfilter.nucleus.core.runtime.Platform
-import io.github.kdroidfilter.nucleus.core.runtime.SingleInstanceManager
-import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
-import io.github.kdroidfilter.nucleus.energymanager.EnergyManager
-import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
-import io.github.kdroidfilter.nucleus.launcher.windows.WindowsJumpListManager
-import io.github.kdroidfilter.nucleus.nativehttp.NativeHttpClient
-import io.github.kdroidfilter.nucleus.systemcolor.systemAccentColor
-import io.github.kdroidfilter.nucleus.updater.NucleusUpdater
-import io.github.kdroidfilter.nucleus.updater.UpdateEvent
-import io.github.kdroidfilter.nucleus.updater.UpdateLevel
-import io.github.kdroidfilter.nucleus.updater.UpdateResult
-import io.github.kdroidfilter.nucleus.updater.provider.GitHubProvider
-import io.github.kdroidfilter.nucleus.window.macOSLargeCornerRadius
-import io.github.kdroidfilter.nucleus.window.material.MaterialDecoratedDialog
-import io.github.kdroidfilter.nucleus.window.material.MaterialDecoratedWindow
-import io.github.kdroidfilter.nucleus.window.material.MaterialDialogTitleBar
-import io.github.kdroidfilter.nucleus.window.material.MaterialTitleBar
-import io.github.kdroidfilter.nucleus.window.newFullscreenControls
+import dev.nucleusframework.aot.runtime.AotRuntime
+import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.autolaunch.AutoLaunch
+import dev.nucleusframework.core.runtime.DeepLinkHandler
+import dev.nucleusframework.core.runtime.NucleusApp
+import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.core.runtime.SingleInstanceManager
+import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
+import dev.nucleusframework.energymanager.EnergyManager
+import dev.nucleusframework.graalvm.GraalVmInitializer
+import dev.nucleusframework.launcher.windows.WindowsJumpListManager
+import dev.nucleusframework.nativehttp.NativeHttpClient
+import dev.nucleusframework.systemcolor.systemAccentColor
+import dev.nucleusframework.updater.NucleusUpdater
+import dev.nucleusframework.updater.UpdateEvent
+import dev.nucleusframework.updater.UpdateLevel
+import dev.nucleusframework.updater.UpdateResult
+import dev.nucleusframework.updater.provider.GitHubProvider
+import dev.nucleusframework.window.macOSLargeCornerRadius
+import dev.nucleusframework.window.material.MaterialDecoratedDialog
+import dev.nucleusframework.window.material.MaterialDecoratedWindow
+import dev.nucleusframework.window.material.MaterialDialogTitleBar
+import dev.nucleusframework.window.material.MaterialTitleBar
+import dev.nucleusframework.window.newFullscreenControls
 import java.io.File
 import java.net.URI
 import kotlin.system.exitProcess
@@ -395,7 +395,7 @@ fun NucleusContent() {
     val updater =
         remember {
             NucleusUpdater {
-                provider = GitHubProvider(owner = "kdroidfilter", repo = "Nucleus")
+                provider = GitHubProvider(owner = "NucleusFramework", repo = "Nucleus")
                 httpClient = NativeHttpClient.create()
             }
         }
@@ -567,7 +567,7 @@ private enum class ThemeMode {
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("FunctionNaming", "DEPRECATION")
 @Composable
-private fun io.github.kdroidfilter.nucleus.window.TitleBarScope.TitleBarIconButton(
+private fun dev.nucleusframework.window.TitleBarScope.TitleBarIconButton(
     imageVector: ImageVector,
     contentDescription: String,
     modifier: Modifier = Modifier,

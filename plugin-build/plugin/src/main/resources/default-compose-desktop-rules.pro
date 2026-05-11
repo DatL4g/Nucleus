@@ -144,48 +144,48 @@
 # class directories that JvmApplicationRuntimeFiles.kt (line 48) skips with its
 # .jar filter. Suppress unresolved references for Nucleus packages to avoid
 # false-positive ProGuard failures. The classes are present at runtime.
--dontwarn io.github.kdroidfilter.nucleus.**
--dontnote io.github.kdroidfilter.nucleus.**
+-dontwarn dev.nucleusframework.**
+-dontnote dev.nucleusframework.**
 
 # Nucleus decorated-window JNI
--keep class io.github.kdroidfilter.nucleus.window.utils.macos.NativeMacBridge {
+-keep class dev.nucleusframework.window.utils.macos.NativeMacBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.window.** { *; }
+-keep class dev.nucleusframework.window.** { *; }
 
 # Nucleus darkmode-detector JNI (macOS)
 # NativeDarkModeBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.mac.NativeDarkModeBridge {
+-keep class dev.nucleusframework.darkmodedetector.mac.NativeDarkModeBridge {
     native <methods>;
     static void onThemeChanged(boolean);
 }
 
 # Nucleus darkmode-detector JNI (Linux)
 # NativeLinuxBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.linux.NativeLinuxBridge {
+-keep class dev.nucleusframework.darkmodedetector.linux.NativeLinuxBridge {
     native <methods>;
     static void onThemeChanged(boolean);
 }
 
 # Nucleus darkmode-detector JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.windows.NativeWindowsBridge {
+-keep class dev.nucleusframework.darkmodedetector.windows.NativeWindowsBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.** { *; }
+-keep class dev.nucleusframework.darkmodedetector.** { *; }
 
 # Nucleus native-ssl JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.nativessl.mac.NativeSslBridge {
+-keep class dev.nucleusframework.nativessl.mac.NativeSslBridge {
     native <methods>;
 }
 
 # Nucleus native-ssl JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.nativessl.windows.WindowsSslBridge {
+-keep class dev.nucleusframework.nativessl.windows.WindowsSslBridge {
     native <methods>;
 }
 
 # Nucleus system-color JNI (macOS)
 # NativeMacSystemColorBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class io.github.kdroidfilter.nucleus.systemcolor.mac.NativeMacSystemColorBridge {
+-keep class dev.nucleusframework.systemcolor.mac.NativeMacSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(float, float, float);
     static void onAccentColorCleared();
@@ -194,7 +194,7 @@
 
 # Nucleus system-color JNI (Linux)
 # NativeLinuxSystemColorBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class io.github.kdroidfilter.nucleus.systemcolor.linux.NativeLinuxSystemColorBridge {
+-keep class dev.nucleusframework.systemcolor.linux.NativeLinuxSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(float, float, float);
     static void onHighContrastChanged(boolean);
@@ -202,36 +202,36 @@
 
 # Nucleus system-color JNI (Windows)
 # NativeWindowsSystemColorBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class io.github.kdroidfilter.nucleus.systemcolor.windows.NativeWindowsSystemColorBridge {
+-keep class dev.nucleusframework.systemcolor.windows.NativeWindowsSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(int, int, int);
     static void onHighContrastChanged(boolean);
 }
--keep class io.github.kdroidfilter.nucleus.systemcolor.** { *; }
+-keep class dev.nucleusframework.systemcolor.** { *; }
 
 # Nucleus energy-manager JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.energymanager.macos.NativeMacOsEnergyBridge {
+-keep class dev.nucleusframework.energymanager.macos.NativeMacOsEnergyBridge {
     native <methods>;
 }
 
 # Nucleus energy-manager JNI (Linux)
--keep class io.github.kdroidfilter.nucleus.energymanager.linux.NativeLinuxEnergyBridge {
+-keep class dev.nucleusframework.energymanager.linux.NativeLinuxEnergyBridge {
     native <methods>;
 }
 
 # Nucleus energy-manager JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.energymanager.windows.NativeWindowsEnergyBridge {
+-keep class dev.nucleusframework.energymanager.windows.NativeWindowsEnergyBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.energymanager.** { *; }
+-keep class dev.nucleusframework.energymanager.** { *; }
 
 # Nucleus linux-hidpi JNI
--keep class io.github.kdroidfilter.nucleus.hidpi.HiDpiLinuxBridge {
+-keep class dev.nucleusframework.hidpi.HiDpiLinuxBridge {
     native <methods>;
 }
 
 # Nucleus notification-windows JNI — static callbacks invoked from native via FindClass/GetStaticMethodID
--keep class io.github.kdroidfilter.nucleus.notification.windows.NativeWindowsNotificationBridge {
+-keep class dev.nucleusframework.notification.windows.NativeWindowsNotificationBridge {
     native <methods>;
     static void onToastActivated(java.lang.String, java.lang.String, java.lang.String, java.lang.String[], java.lang.String[]);
     static void onToastDismissed(java.lang.String, java.lang.String, int);
@@ -240,37 +240,37 @@
     static void onToastUpdated(long, java.lang.String);
     static void onHistoryResult(long, java.lang.String[], java.lang.String[], java.lang.String);
 }
--keep class io.github.kdroidfilter.nucleus.notification.windows.** { *; }
--keep class io.github.kdroidfilter.nucleus.notification.common.** { *; }
+-keep class dev.nucleusframework.notification.windows.** { *; }
+-keep class dev.nucleusframework.notification.common.** { *; }
 
 # Nucleus media-control JNI — native code uses FindClass(BRIDGE_CLASS) + static callbacks
--keep class io.github.kdroidfilter.nucleus.mediacontrol.** { *; }
+-keep class dev.nucleusframework.mediacontrol.** { *; }
 
 # Nucleus scheduler JNI
--keep class io.github.kdroidfilter.nucleus.scheduler.** { *; }
+-keep class dev.nucleusframework.scheduler.** { *; }
 
 # Nucleus global-hotkey JNI — onHotKey is invoked from native code via JNI
--keep class io.github.kdroidfilter.nucleus.globalhotkey.windows.NativeWindowsHotKeyBridge {
+-keep class dev.nucleusframework.globalhotkey.windows.NativeWindowsHotKeyBridge {
     native <methods>;
     static void onHotKey(long, int, int);
 }
--keep class io.github.kdroidfilter.nucleus.globalhotkey.macos.NativeMacOsHotKeyBridge {
+-keep class dev.nucleusframework.globalhotkey.macos.NativeMacOsHotKeyBridge {
     native <methods>;
     static void onHotKey(long, int, int);
 }
--keep class io.github.kdroidfilter.nucleus.globalhotkey.linux.NativeLinuxHotKeyBridge {
+-keep class dev.nucleusframework.globalhotkey.linux.NativeLinuxHotKeyBridge {
     native <methods>;
     static void onHotKey(long, int, int);
 }
 
 # Nucleus launcher-windows JNI — ThumbBarClickListener.onThumbButtonClick is invoked from native
--keep class io.github.kdroidfilter.nucleus.launcher.windows.NativeWindowsBadgeBridge { native <methods>; }
--keep class io.github.kdroidfilter.nucleus.launcher.windows.NativeWindowsJumpListBridge { native <methods>; }
--keep class io.github.kdroidfilter.nucleus.launcher.windows.NativeWindowsTaskbarBridge { native <methods>; }
--keep interface io.github.kdroidfilter.nucleus.launcher.windows.ThumbBarClickListener {
+-keep class dev.nucleusframework.launcher.windows.NativeWindowsBadgeBridge { native <methods>; }
+-keep class dev.nucleusframework.launcher.windows.NativeWindowsJumpListBridge { native <methods>; }
+-keep class dev.nucleusframework.launcher.windows.NativeWindowsTaskbarBridge { native <methods>; }
+-keep interface dev.nucleusframework.launcher.windows.ThumbBarClickListener {
     void onThumbButtonClick(int);
 }
--keep class * implements io.github.kdroidfilter.nucleus.launcher.windows.ThumbBarClickListener {
+-keep class * implements dev.nucleusframework.launcher.windows.ThumbBarClickListener {
     void onThumbButtonClick(int);
 }
 

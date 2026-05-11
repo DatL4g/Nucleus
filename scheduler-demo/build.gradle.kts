@@ -1,5 +1,5 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SigningAlgorithm
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.kotlinxSerialization)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework")
 }
 
 dependencies {

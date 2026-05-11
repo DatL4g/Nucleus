@@ -1,0 +1,14 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.servicemanagement.macos.NativeMacServiceManagementBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onUnregisterResult",
+                    "parameterTypes": ["long", "java.lang.String"]
+                }
+            ]
+        }
+    ]
+}

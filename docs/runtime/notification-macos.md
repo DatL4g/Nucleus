@@ -9,7 +9,7 @@ Complete Kotlin mapping of Apple's [UserNotifications](https://developer.apple.c
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.notification-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.notification-macos:<version>")
 }
 ```
 
@@ -18,7 +18,7 @@ Depends on `core-runtime` for `NativeLibraryLoader` and `ExecutableRuntime` (pul
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.notification.*
+import dev.nucleusframework.notification.*
 
 // 1. Request authorization
 NotificationCenter.requestAuthorization(
@@ -506,7 +506,7 @@ Ships pre-built macOS dylibs (arm64 + x86_64). No Windows or Linux native — `i
 ## ProGuard
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.notification.macos.NativeMacNotificationBridge {
+-keep class dev.nucleusframework.notification.macos.NativeMacNotificationBridge {
     native <methods>;
     static ** on*(...);
 }
@@ -514,4 +514,4 @@ Ships pre-built macOS dylibs (arm64 + x86_64). No Windows or Linux native — `i
 
 ## GraalVM
 
-Reachability metadata is included in the JAR at `META-INF/native-image/io.github.kdroidfilter/nucleus.notification-macos/reachability-metadata.json`. No additional configuration needed.
+Reachability metadata is included in the JAR at `META-INF/native-image/dev.nucleusframework/nucleus.notification-macos/reachability-metadata.json`. No additional configuration needed.

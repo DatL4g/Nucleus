@@ -856,6 +856,6 @@ style:
     active: true
     excludeImports:
       - 'java.util.*'
-      - 'io.github.kdroidfilter.nucleus.window.icons.linux.gnome.*'
-      - 'io.github.kdroidfilter.nucleus.window.icons.linux.kde.*'
-      - 'io.github.kdroidfilter.nucleus.window.icons.windows.*'
+      - 'dev.nucleusframework.window.icons.linux.gnome.*'
+      - 'dev.nucleusframework.window.icons.linux.kde.*'
+      - 'dev.nucleusframework.window.icons.windows.*'

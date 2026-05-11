@@ -1,0 +1,50 @@
+package dev.nucleusframework.systeminfo
+
+import dev.nucleusframework.systeminfo.model.BatteryInfo
+import dev.nucleusframework.systeminfo.model.ComponentInfo
+import dev.nucleusframework.systeminfo.model.ConnectivityInfo
+import dev.nucleusframework.systeminfo.model.CpuGlobalInfo
+import dev.nucleusframework.systeminfo.model.DiskInfo
+import dev.nucleusframework.systeminfo.model.GpuInfo
+import dev.nucleusframework.systeminfo.model.MemoryInfo
+import dev.nucleusframework.systeminfo.model.MotherboardInfo
+import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
+import dev.nucleusframework.systeminfo.model.OsInfo
+import dev.nucleusframework.systeminfo.model.ProcessInfo
+import dev.nucleusframework.systeminfo.model.ProductInfo
+import dev.nucleusframework.systeminfo.model.UserInfo
+
+@Suppress("TooManyFunctions")
+internal interface PlatformSystemInfo {
+    fun isAvailable(): Boolean
+
+    fun osInfo(): OsInfo?
+
+    fun memoryInfo(): MemoryInfo?
+
+    fun cpuInfo(): CpuGlobalInfo?
+
+    fun disks(): List<DiskInfo>
+
+    fun components(): List<ComponentInfo>
+
+    fun networks(): List<NetworkInterfaceInfo>
+
+    fun users(): List<UserInfo>
+
+    fun motherboard(): MotherboardInfo?
+
+    fun product(): ProductInfo?
+
+    fun processes(): List<ProcessInfo>
+
+    fun process(pid: Long): ProcessInfo?
+
+    fun gpus(): List<GpuInfo>
+
+    fun batteryInfo(): BatteryInfo?
+
+    fun idleTime(): Long
+
+    fun connectivityInfo(): ConnectivityInfo?
+}

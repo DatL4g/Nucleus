@@ -36,19 +36,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.menu.macos.NativeKeyShortcut
-import io.github.kdroidfilter.nucleus.menu.macos.NativeMenuBar
-import io.github.kdroidfilter.nucleus.menu.macos.NsMenuItemBadge
-import io.github.kdroidfilter.nucleus.menu.macos.NsMenuItemImage
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolArrows
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolDevices
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolGeneral
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolMedia
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolObjectsAndTools
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolPower
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolShapes
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolStatus
-import io.github.kdroidfilter.nucleus.sfsymbols.SFSymbolTextFormatting
+import dev.nucleusframework.menu.macos.NativeKeyShortcut
+import dev.nucleusframework.menu.macos.NativeMenuBar
+import dev.nucleusframework.menu.macos.NsMenuItemBadge
+import dev.nucleusframework.menu.macos.NsMenuItemImage
+import dev.nucleusframework.sfsymbols.SFSymbolArrows
+import dev.nucleusframework.sfsymbols.SFSymbolDevices
+import dev.nucleusframework.sfsymbols.SFSymbolGeneral
+import dev.nucleusframework.sfsymbols.SFSymbolMedia
+import dev.nucleusframework.sfsymbols.SFSymbolObjectsAndTools
+import dev.nucleusframework.sfsymbols.SFSymbolPower
+import dev.nucleusframework.sfsymbols.SFSymbolShapes
+import dev.nucleusframework.sfsymbols.SFSymbolStatus
+import dev.nucleusframework.sfsymbols.SFSymbolTextFormatting
 
 private const val EVENT_LOG_MAX = 40
 
