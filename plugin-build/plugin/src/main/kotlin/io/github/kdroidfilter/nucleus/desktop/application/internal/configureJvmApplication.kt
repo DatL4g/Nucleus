@@ -470,6 +470,11 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 } else {
                     null
                 }
+            generateAotCache?.let { nonSandboxedAotCache ->
+                generateSandboxedAotCache?.configure { task ->
+                    task.mustRunAfter(nonSandboxedAotCache)
+                }
+            }
 
             storeFormats.map { targetFormat ->
                 val packageFormat =

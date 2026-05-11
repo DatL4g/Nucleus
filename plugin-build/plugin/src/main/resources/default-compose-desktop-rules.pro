@@ -140,6 +140,13 @@
 -dontwarn com.sun.jna.**
 -dontnote com.sun.jna.**
 
+# Nucleus modules — project dependencies in multi-module builds can resolve to
+# class directories that JvmApplicationRuntimeFiles.kt (line 48) skips with its
+# .jar filter. Suppress unresolved references for Nucleus packages to avoid
+# false-positive ProGuard failures. The classes are present at runtime.
+-dontwarn io.github.kdroidfilter.nucleus.**
+-dontnote io.github.kdroidfilter.nucleus.**
+
 # Nucleus decorated-window JNI
 -keep class io.github.kdroidfilter.nucleus.window.utils.macos.NativeMacBridge {
     native <methods>;
