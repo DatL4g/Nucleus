@@ -7,7 +7,7 @@ Nucleus provides reusable composite actions and ready-to-use GitHub Actions work
     All composite actions can be referenced directly from the Nucleus repository — no need to copy them into your project:
 
     ```yaml
-    - uses: kdroidFilter/Nucleus/.github/actions/setup-nucleus@main
+    - uses: NucleusFramework/Nucleus/.github/actions/setup-nucleus@main
     ```
 
     Replace `@main` with a specific tag (e.g. `@v1.0.0`) to pin a stable version.
@@ -42,7 +42,7 @@ The `setup-nucleus` composite action (`.github/actions/setup-nucleus`) sets up t
 ### Usage
 
 ```yaml
-- uses: kdroidFilter/Nucleus/.github/actions/setup-nucleus@main
+- uses: NucleusFramework/Nucleus/.github/actions/setup-nucleus@main
   with:
     jbr-version: '25.0.2b329.66'
     packaging-tools: 'true'
@@ -79,7 +79,7 @@ The `setup-nucleus` composite action (`.github/actions/setup-nucleus`) sets up t
 When `graalvm: 'true'` is set, the action installs **BellSoft Liberica NIK** instead of JBR, plus platform-specific toolchains:
 
 ```yaml
-- uses: kdroidFilter/Nucleus/.github/actions/setup-nucleus@main
+- uses: NucleusFramework/Nucleus/.github/actions/setup-nucleus@main
   with:
     graalvm: 'true'
     setup-gradle: 'true'
@@ -107,6 +107,10 @@ The action automatically:
 ## Release Build
 
 Build native packages for all platforms on tag push.
+
+For 2.x prereleases, cut the tag from `nucleus-2.0`. Tags matching
+`v2.x.y-alpha-*`, `v2.x.y-beta-*`, or `v2.x.y-rc-*` are validated in CI and
+must point to a commit contained in `origin/nucleus-2.0`.
 
 ### Build Matrix
 
@@ -172,7 +176,7 @@ jobs:
           echo "RELEASE_VERSION=$tag" >> "$GITHUB_ENV"
 
       - name: Setup Nucleus
-        uses: kdroidFilter/Nucleus/.github/actions/setup-nucleus@main
+        uses: NucleusFramework/Nucleus/.github/actions/setup-nucleus@main
         with:
           jbr-version: '25.0.2b329.66'
           packaging-tools: 'true'
@@ -225,7 +229,7 @@ matrix:
       jbr-download-url: 'https://example.com/jbr-25-macos-x64-custom.tar.gz'
 
 steps:
-  - uses: kdroidFilter/Nucleus/.github/actions/setup-nucleus@main
+  - uses: NucleusFramework/Nucleus/.github/actions/setup-nucleus@main
     with:
       jbr-version: '25.0.2b329.66'
       jbr-download-url: ${{ matrix.jbr-download-url || '' }}
@@ -271,7 +275,7 @@ Merge arm64 and x64 builds into a universal (fat) binary using `lipo`, then opti
       - name: Setup macOS signing
         id: signing
         if: ${{ secrets.MAC_CERTIFICATES_P12 != '' }}
-        uses: kdroidFilter/Nucleus/.github/actions/setup-macos-signing@main
+        uses: NucleusFramework/Nucleus/.github/actions/setup-macos-signing@main
         with:
           certificate-base64: ${{ secrets.MAC_CERTIFICATES_P12 }}
           certificate-password: ${{ secrets.MAC_CERTIFICATES_PASSWORD }}
@@ -299,7 +303,7 @@ Merge arm64 and x64 builds into a universal (fat) binary using `lipo`, then opti
           path: artifacts/release-assets-macOS-amd64
 
       - name: Build universal binary
-        uses: kdroidFilter/Nucleus/.github/actions/build-macos-universal@main
+        uses: NucleusFramework/Nucleus/.github/actions/build-macos-universal@main
         with:
           arm64-path: artifacts/release-assets-macOS-arm64
           x64-path: artifacts/release-assets-macOS-amd64
@@ -375,7 +379,7 @@ Combine amd64 and arm64 `.appx` files into a single `.msixbundle`. Nucleus inclu
           path: artifacts/release-assets-Windows-arm64
 
       - name: Build APPX Bundle
-        uses: kdroidFilter/Nucleus/.github/actions/build-windows-appxbundle@main
+        uses: NucleusFramework/Nucleus/.github/actions/build-windows-appxbundle@main
         with:
           amd64-path: artifacts/release-assets-Windows-amd64
           arm64-path: artifacts/release-assets-Windows-arm64
@@ -432,14 +436,14 @@ After all builds complete, create a GitHub Release with all artifacts and update
           fi
 
       - name: Generate update YML files
-        uses: kdroidFilter/Nucleus/.github/actions/generate-update-yml@main
+        uses: NucleusFramework/Nucleus/.github/actions/generate-update-yml@main
         with:
           artifacts-path: artifacts
           version: ${{ env.VERSION }}
           channel: ${{ env.CHANNEL }}
 
       - name: Publish release
-        uses: kdroidFilter/Nucleus/.github/actions/publish-release@main
+        uses: NucleusFramework/Nucleus/.github/actions/publish-release@main
         with:
           artifacts-path: artifacts
           tag: ${{ env.TAG }}
@@ -467,16 +471,16 @@ After all builds complete, create a GitHub Release with all artifacts and update
 
 ## Composite Actions Reference
 
-Nucleus provides reusable composite actions that you can reference directly in your workflows using `kdroidFilter/Nucleus/.github/actions/<action>@main`:
+Nucleus provides reusable composite actions that you can reference directly in your workflows using `NucleusFramework/Nucleus/.github/actions/<action>@main`:
 
 | Action | Usage | Description |
 |--------|-------|-------------|
-| `setup-nucleus` | `kdroidFilter/Nucleus/.github/actions/setup-nucleus@main` | Setup JBR 25, packaging tools, Gradle, Node.js |
-| `setup-macos-signing` | `kdroidFilter/Nucleus/.github/actions/setup-macos-signing@main` | Create temporary keychain and import signing certificates |
-| `build-macos-universal` | `kdroidFilter/Nucleus/.github/actions/build-macos-universal@main` | Merge arm64 + x64 into universal binary via `lipo`, sign, and package |
-| `build-windows-appxbundle` | `kdroidFilter/Nucleus/.github/actions/build-windows-appxbundle@main` | Combine amd64 + arm64 `.appx` into `.msixbundle` |
-| `generate-update-yml` | `kdroidFilter/Nucleus/.github/actions/generate-update-yml@main` | Generate `latest-*.yml` / `beta-*.yml` / `alpha-*.yml` metadata |
-| `publish-release` | `kdroidFilter/Nucleus/.github/actions/publish-release@main` | Create GitHub Release with all artifacts |
+| `setup-nucleus` | `NucleusFramework/Nucleus/.github/actions/setup-nucleus@main` | Setup JBR 25, packaging tools, Gradle, Node.js |
+| `setup-macos-signing` | `NucleusFramework/Nucleus/.github/actions/setup-macos-signing@main` | Create temporary keychain and import signing certificates |
+| `build-macos-universal` | `NucleusFramework/Nucleus/.github/actions/build-macos-universal@main` | Merge arm64 + x64 into universal binary via `lipo`, sign, and package |
+| `build-windows-appxbundle` | `NucleusFramework/Nucleus/.github/actions/build-windows-appxbundle@main` | Combine amd64 + arm64 `.appx` into `.msixbundle` |
+| `generate-update-yml` | `NucleusFramework/Nucleus/.github/actions/generate-update-yml@main` | Generate `latest-*.yml` / `beta-*.yml` / `alpha-*.yml` metadata |
+| `publish-release` | `NucleusFramework/Nucleus/.github/actions/publish-release@main` | Create GitHub Release with all artifacts |
 
 ## GraalVM Native Image Release
 
@@ -528,7 +532,7 @@ jobs:
       # (darkmode-detector, native-ssl, decorated-window-jni, etc.)
 
       - name: Setup Nucleus (GraalVM)
-        uses: kdroidFilter/Nucleus/.github/actions/setup-nucleus@main
+        uses: NucleusFramework/Nucleus/.github/actions/setup-nucleus@main
         with:
           graalvm: 'true'
           setup-gradle: 'true'
@@ -574,5 +578,5 @@ These tasks first compile the native image via `packageGraalvmNative`, then pack
 - **fail-fast: false**: Continue building other platforms if one fails
 - **Timeout**: Set generous timeouts (120min) for Flatpak/Snap builds
 - **Caching**: `setup-nucleus` enables Gradle caching automatically via `gradle/actions/setup-gradle@v4`
-- **No checkout needed**: When using actions from `kdroidFilter/Nucleus`, GitHub fetches them automatically — no need to checkout the Nucleus repository
+- **No checkout needed**: When using actions from `NucleusFramework/Nucleus`, GitHub fetches them automatically — no need to checkout the Nucleus repository
 - **workflow_dispatch**: Add it as a trigger to allow re-running a release manually

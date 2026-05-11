@@ -2,20 +2,20 @@
 
 package systeminfodemo.viewmodel
 
-import io.github.kdroidfilter.nucleus.systeminfo.SystemInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.BatteryInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.ComponentInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.ConnectivityInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.CpuGlobalInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.DiskInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.GpuInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.MemoryInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.MotherboardInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.NetworkInterfaceInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.OsInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.ProcessInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.ProductInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.UserInfo
+import dev.nucleusframework.systeminfo.SystemInfo
+import dev.nucleusframework.systeminfo.model.BatteryInfo
+import dev.nucleusframework.systeminfo.model.ComponentInfo
+import dev.nucleusframework.systeminfo.model.ConnectivityInfo
+import dev.nucleusframework.systeminfo.model.CpuGlobalInfo
+import dev.nucleusframework.systeminfo.model.DiskInfo
+import dev.nucleusframework.systeminfo.model.GpuInfo
+import dev.nucleusframework.systeminfo.model.MemoryInfo
+import dev.nucleusframework.systeminfo.model.MotherboardInfo
+import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
+import dev.nucleusframework.systeminfo.model.OsInfo
+import dev.nucleusframework.systeminfo.model.ProcessInfo
+import dev.nucleusframework.systeminfo.model.ProductInfo
+import dev.nucleusframework.systeminfo.model.UserInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

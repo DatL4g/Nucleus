@@ -59,12 +59,12 @@ tasks.configureEach {
 }
 
 mavenPublishing {
-    coordinates("io.github.kdroidfilter", "nucleus.service-management-macos", publishVersion)
+    coordinates("dev.nucleusframework", "nucleus.service-management-macos", publishVersion)
 
     pom {
         name.set("Nucleus Service Management macOS")
         description.set("macOS SMAppService API for JVM desktop applications via JNI")
-        url.set("https://github.com/kdroidFilter/Nucleus")
+        url.set("https://github.com/NucleusFramework/Nucleus")
 
         licenses {
             license {
@@ -75,16 +75,16 @@ mavenPublishing {
 
         developers {
             developer {
-                id.set("kdroidfilter")
-                name.set("kdroidFilter")
-                url.set("https://github.com/kdroidFilter")
+                id.set("nucleusframework")
+                name.set("NucleusFramework")
+                url.set("https://github.com/NucleusFramework")
             }
         }
 
         scm {
-            url.set("https://github.com/kdroidFilter/Nucleus")
-            connection.set("scm:git:git://github.com/kdroidFilter/Nucleus.git")
-            developerConnection.set("scm:git:ssh://git@github.com/kdroidFilter/Nucleus.git")
+            url.set("https://github.com/NucleusFramework/Nucleus")
+            connection.set("scm:git:git://github.com/NucleusFramework/Nucleus.git")
+            developerConnection.set("scm:git:ssh://git@github.com/NucleusFramework/Nucleus.git")
         }
     }
 

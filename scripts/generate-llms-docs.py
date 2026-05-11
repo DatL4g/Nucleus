@@ -144,9 +144,9 @@ performance (AOT), distribution (16 packaging formats), native look & feel \
 Compatible with any JVM application, optimized for Compose Desktop.
 
 - Docs: {site_url}
-- GitHub: https://github.com/kdroidFilter/Nucleus
-- Gradle Plugin Portal: https://plugins.gradle.org/plugin/io.github.kdroidfilter.nucleus
-- Maven Central: https://central.sonatype.com/search?q=io.github.kdroidfilter.nucleus
+- GitHub: https://github.com/NucleusFramework/Nucleus
+- Gradle Plugin Portal: https://plugins.gradle.org/plugin/dev.nucleusframework
+- Maven Central: https://central.sonatype.com/search?q=dev.nucleusframework
 - License: MIT
 
 """.format(site_url=SITE_URL)

@@ -19,14 +19,14 @@ The runtime exposes a single unified API — consumers don't need to branch on p
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.autolaunch:<version>")
+    implementation("dev.nucleusframework:nucleus.autolaunch:<version>")
 }
 ```
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunch
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunchResult
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunchState
+import dev.nucleusframework.autolaunch.AutoLaunch
+import dev.nucleusframework.autolaunch.AutoLaunchResult
+import dev.nucleusframework.autolaunch.AutoLaunchState
 ```
 
 ## Usage
@@ -188,7 +188,7 @@ Nucleus picks the right backend automatically — nothing to configure:
 All defaults fall back to `NucleusApp`. Override any of them **before** the first `AutoLaunch` call:
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunchConfig
+import dev.nucleusframework.autolaunch.AutoLaunchConfig
 
 AutoLaunchConfig.taskId            = "MyCustomMsixTaskId"                 // MSIX
 AutoLaunchConfig.executablePath    = "C:\\Program Files\\MyApp\\MyApp.exe" // Win32, Linux systemd (full path), Linux Flatpak (basename used)

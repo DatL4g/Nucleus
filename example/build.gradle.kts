@@ -1,19 +1,19 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.AppImageCategory
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.CompressionLevel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.ReleaseChannel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.ReleaseType
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SigningAlgorithm
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapCompression
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapConfinement
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapGrade
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapPlug
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.AppImageCategory
+import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
+import dev.nucleusframework.desktop.application.dsl.ReleaseType
+import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
+import dev.nucleusframework.desktop.application.dsl.SnapCompression
+import dev.nucleusframework.desktop.application.dsl.SnapConfinement
+import dev.nucleusframework.desktop.application.dsl.SnapGrade
+import dev.nucleusframework.desktop.application.dsl.SnapPlug
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 
 plugins {
     alias(libs.plugins.kotlin)
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework")
 }
 
 dependencies {
@@ -66,8 +66,10 @@ val releaseVersion =
     System
         .getenv("RELEASE_VERSION")
         ?.removePrefix("v")
-        ?.takeIf { it.isNotBlank() }
+        ?.takeIf { it.isNotBlank() && it.first().isDigit() }
         ?: "1.0.0"
+
+val nativePackageVersion = releaseVersion.substringBefore("-")
 
 nucleus.application {
     mainClass = "com.example.demo.MainKt"
@@ -157,7 +159,7 @@ nucleus.application {
         publish {
             github {
                 enabled = true
-                owner = "kdroidfilter"
+                owner = "NucleusFramework"
                 repo = "Nucleus"
                 channel = ReleaseChannel.Latest
                 releaseType = ReleaseType.Release
@@ -185,7 +187,7 @@ nucleus.application {
 
             // --- RPM package ---
             rpmRequires = listOf("gtk3", "libX11")
-            rpmPackageVersion = releaseVersion
+            rpmPackageVersion = nativePackageVersion
 
             // --- AppImage (NEW) ---
             // MimeType is auto-injected from fileAssociation() and protocol() definitions above.
@@ -220,6 +222,10 @@ nucleus.application {
 
         // ========== WINDOWS ==========
         windows {
+            packageVersion = nativePackageVersion
+            exePackageVersion = nativePackageVersion
+            msiPackageVersion = nativePackageVersion
+
             // --- Upgrade UUID ---
             // Used for Windows updates (auto-generated if null)
             upgradeUuid = "d24e3b8d-3e9b-4cc7-a5d8-5e2d1f0c9f1b"
@@ -276,7 +282,9 @@ nucleus.application {
 
         // ========== MACOS ==========
         macOS {
-            bundleID = "io.github.kdroidfilter.nucleus.demo"
+            packageVersion = nativePackageVersion
+            packageBuildVersion = nativePackageVersion
+            bundleID = "dev.nucleusframework.demo"
             appCategory = "public.app-category.utilities"
             dockName = "NucleusDemo"
 

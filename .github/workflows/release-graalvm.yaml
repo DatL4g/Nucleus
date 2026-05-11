@@ -14,7 +14,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-release-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release ref
+        uses: ./.github/actions/validate-release-ref
+
   build-natives:
+    needs: validate-release-ref
     uses: ./.github/workflows/build-natives.yaml
 
   build:
@@ -41,6 +53,8 @@ jobs:
           - name: Windows x64
             os: windows-latest
             arch: amd64
+    env:
+      RELEASE_VERSION: ${{ github.ref_name }}
 
     steps:
       - name: Checkout Repo

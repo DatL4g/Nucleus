@@ -32,12 +32,12 @@ kotlin {
 }
 
 mavenPublishing {
-    coordinates("io.github.kdroidfilter", "nucleus.scheduler-testing", publishVersion)
+    coordinates("dev.nucleusframework", "nucleus.scheduler-testing", publishVersion)
 
     pom {
         name.set("Nucleus Scheduler Testing")
         description.set("In-memory test scheduler for Nucleus scheduler module")
-        url.set("https://github.com/kdroidFilter/Nucleus")
+        url.set("https://github.com/NucleusFramework/Nucleus")
 
         licenses {
             license {
@@ -48,16 +48,16 @@ mavenPublishing {
 
         developers {
             developer {
-                id.set("kdroidfilter")
-                name.set("kdroidFilter")
-                url.set("https://github.com/kdroidFilter")
+                id.set("nucleusframework")
+                name.set("NucleusFramework")
+                url.set("https://github.com/NucleusFramework")
             }
         }
 
         scm {
-            url.set("https://github.com/kdroidFilter/Nucleus")
-            connection.set("scm:git:git://github.com/kdroidFilter/Nucleus.git")
-            developerConnection.set("scm:git:ssh://git@github.com/kdroidFilter/Nucleus.git")
+            url.set("https://github.com/NucleusFramework/Nucleus")
+            connection.set("scm:git:git://github.com/NucleusFramework/Nucleus.git")
+            developerConnection.set("scm:git:ssh://git@github.com/NucleusFramework/Nucleus.git")
         }
     }
 

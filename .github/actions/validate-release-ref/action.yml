@@ -1,0 +1,44 @@
+name: Validate release ref
+description: Validate release tags that must be cut from a specific branch
+
+inputs:
+  prerelease-branch:
+    description: Branch that owns 2.x prerelease tags
+    required: false
+    default: nucleus-2.0
+  prerelease-tag-regex:
+    description: Bash regex for prerelease tags that must be on prerelease-branch
+    required: false
+    default: '^v2\.[0-9]+\.[0-9]+-(alpha|beta|rc)([.-][0-9A-Za-z]+)*$'
+
+runs:
+  using: composite
+  steps:
+    - name: Validate release tag branch
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [[ "${GITHUB_REF_TYPE:-}" != "tag" ]]; then
+          echo "Not a tag ref; skipping release ref validation."
+          exit 0
+        fi
+
+        tag="${GITHUB_REF_NAME}"
+        prerelease_branch="${{ inputs.prerelease-branch }}"
+        prerelease_tag_regex="${{ inputs.prerelease-tag-regex }}"
+
+        if [[ ! "$tag" =~ $prerelease_tag_regex ]]; then
+          echo "Tag '$tag' does not require prerelease branch validation."
+          exit 0
+        fi
+
+        echo "Validating prerelease tag '$tag' against origin/$prerelease_branch..."
+        git fetch --no-tags origin "+refs/heads/$prerelease_branch:refs/remotes/origin/$prerelease_branch"
+
+        if git merge-base --is-ancestor "$GITHUB_SHA" "refs/remotes/origin/$prerelease_branch"; then
+          echo "Tag '$tag' points to a commit contained in origin/$prerelease_branch."
+        else
+          echo "::error::Tag '$tag' must point to a commit contained in origin/$prerelease_branch."
+          exit 1
+        fi

@@ -1,19 +1,28 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.CompressionLevel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SigningAlgorithm
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework")
 }
 
 val isMac =
     org.gradle.internal.os.OperatingSystem
         .current()
         .isMacOsX
+
+val releaseVersion =
+    System
+        .getenv("RELEASE_VERSION")
+        ?.removePrefix("v")
+        ?.takeIf { it.isNotBlank() && it.first().isDigit() }
+        ?: "1.0.0"
+
+val nativePackageVersion = releaseVersion.substringBefore("-")
 
 sourceSets {
     main {
@@ -131,8 +140,8 @@ nucleus.application {
         targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb)
 
         packageName = "JewelSample"
-        packageVersion = "1.0.0"
-        homepage = "https://github.com/kdroidFilter/Nucleus"
+        packageVersion = releaseVersion
+        homepage = "https://github.com/NucleusFramework/Nucleus"
 
         linux {
             debMaintainer = "KDroidFilter <dev@kdroidfilter.com>"
@@ -140,6 +149,9 @@ nucleus.application {
         }
 
         windows {
+            packageVersion = nativePackageVersion
+            exePackageVersion = nativePackageVersion
+
             signing {
                 enabled = true
                 certificateFile.set(rootProject.file("example/packaging/KDroidFilter.pfx"))
@@ -150,7 +162,9 @@ nucleus.application {
         }
 
         macOS {
-            bundleID = "io.github.kdroidfilter.jewelsample"
+            packageVersion = nativePackageVersion
+            packageBuildVersion = nativePackageVersion
+            bundleID = "dev.nucleusframework.jewelsample"
             dockName = "JewelSample"
         }
     }

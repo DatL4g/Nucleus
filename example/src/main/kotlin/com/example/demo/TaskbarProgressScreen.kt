@@ -26,16 +26,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.application.NucleusWindow
-import io.github.kdroidfilter.nucleus.taskbarprogress.TaskbarProgress
-import io.github.kdroidfilter.nucleus.taskbarprogress.tao.hideTaskbarProgress
-import io.github.kdroidfilter.nucleus.taskbarprogress.tao.requestTaskbarAttention
-import io.github.kdroidfilter.nucleus.taskbarprogress.tao.setTaskbarProgress
-import io.github.kdroidfilter.nucleus.taskbarprogress.tao.showTaskbarError
-import io.github.kdroidfilter.nucleus.taskbarprogress.tao.showTaskbarIndeterminate
-import io.github.kdroidfilter.nucleus.taskbarprogress.tao.showTaskbarPaused
-import io.github.kdroidfilter.nucleus.taskbarprogress.tao.showTaskbarProgress
-import io.github.kdroidfilter.nucleus.taskbarprogress.tao.stopTaskbarAttention
+import dev.nucleusframework.application.NucleusWindow
+import dev.nucleusframework.taskbarprogress.TaskbarProgress
+import dev.nucleusframework.taskbarprogress.tao.hideTaskbarProgress
+import dev.nucleusframework.taskbarprogress.tao.requestTaskbarAttention
+import dev.nucleusframework.taskbarprogress.tao.setTaskbarProgress
+import dev.nucleusframework.taskbarprogress.tao.showTaskbarError
+import dev.nucleusframework.taskbarprogress.tao.showTaskbarIndeterminate
+import dev.nucleusframework.taskbarprogress.tao.showTaskbarPaused
+import dev.nucleusframework.taskbarprogress.tao.showTaskbarProgress
+import dev.nucleusframework.taskbarprogress.tao.stopTaskbarAttention
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 

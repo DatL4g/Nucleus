@@ -14,8 +14,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-release-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release ref
+        uses: ./.github/actions/validate-release-ref
+
   build:
     name: Build (${{ matrix.os }} / ${{ matrix.arch }})
+    needs: validate-release-ref
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:

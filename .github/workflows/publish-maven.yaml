@@ -6,7 +6,19 @@ on:
       - '*'
 
 jobs:
+  validate-release-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release ref
+        uses: ./.github/actions/validate-release-ref
+
   build-natives:
+    needs: validate-release-ref
     if: ${{ !contains(github.event.head_commit.message, 'ci skip') }}
     uses: ./.github/workflows/build-natives.yaml
 
