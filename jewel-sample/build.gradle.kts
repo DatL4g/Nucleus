@@ -15,6 +15,15 @@ val isMac =
         .current()
         .isMacOsX
 
+val releaseVersion =
+    System
+        .getenv("RELEASE_VERSION")
+        ?.removePrefix("v")
+        ?.takeIf { it.isNotBlank() && it.first().isDigit() }
+        ?: "1.0.0"
+
+val nativePackageVersion = releaseVersion.substringBefore("-")
+
 sourceSets {
     main {
         resources.srcDir(
@@ -131,7 +140,7 @@ nucleus.application {
         targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb)
 
         packageName = "JewelSample"
-        packageVersion = "1.0.0"
+        packageVersion = releaseVersion
         homepage = "https://github.com/NucleusFramework/Nucleus"
 
         linux {
@@ -140,6 +149,9 @@ nucleus.application {
         }
 
         windows {
+            packageVersion = nativePackageVersion
+            exePackageVersion = nativePackageVersion
+
             signing {
                 enabled = true
                 certificateFile.set(rootProject.file("example/packaging/KDroidFilter.pfx"))
@@ -150,6 +162,8 @@ nucleus.application {
         }
 
         macOS {
+            packageVersion = nativePackageVersion
+            packageBuildVersion = nativePackageVersion
             bundleID = "dev.nucleusframework.jewelsample"
             dockName = "JewelSample"
         }

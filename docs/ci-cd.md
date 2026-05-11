@@ -108,6 +108,10 @@ The action automatically:
 
 Build native packages for all platforms on tag push.
 
+For 2.x prereleases, cut the tag from `nucleus-2.0`. Tags matching
+`v2.x.y-alpha-*`, `v2.x.y-beta-*`, or `v2.x.y-rc-*` are validated in CI and
+must point to a commit contained in `origin/nucleus-2.0`.
+
 ### Build Matrix
 
 ```yaml

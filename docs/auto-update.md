@@ -150,6 +150,9 @@ Nucleus supports three release channels. Different YML files are generated for e
 
 The channel is auto-detected from the version tag in CI.
 
+For example, pushing `v2.0.0-alpha-20260511` from `nucleus-2.0` publishes a
+GitHub prerelease and generates `alpha-*.yml` update metadata.
+
 ## Publishing Artifacts
 
 ### The `publish {}` block in `build.gradle.kts`

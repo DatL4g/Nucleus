@@ -66,8 +66,10 @@ val releaseVersion =
     System
         .getenv("RELEASE_VERSION")
         ?.removePrefix("v")
-        ?.takeIf { it.isNotBlank() }
+        ?.takeIf { it.isNotBlank() && it.first().isDigit() }
         ?: "1.0.0"
+
+val nativePackageVersion = releaseVersion.substringBefore("-")
 
 nucleus.application {
     mainClass = "com.example.demo.MainKt"
@@ -185,7 +187,7 @@ nucleus.application {
 
             // --- RPM package ---
             rpmRequires = listOf("gtk3", "libX11")
-            rpmPackageVersion = releaseVersion
+            rpmPackageVersion = nativePackageVersion
 
             // --- AppImage (NEW) ---
             // MimeType is auto-injected from fileAssociation() and protocol() definitions above.
@@ -220,6 +222,10 @@ nucleus.application {
 
         // ========== WINDOWS ==========
         windows {
+            packageVersion = nativePackageVersion
+            exePackageVersion = nativePackageVersion
+            msiPackageVersion = nativePackageVersion
+
             // --- Upgrade UUID ---
             // Used for Windows updates (auto-generated if null)
             upgradeUuid = "d24e3b8d-3e9b-4cc7-a5d8-5e2d1f0c9f1b"
@@ -276,6 +282,8 @@ nucleus.application {
 
         // ========== MACOS ==========
         macOS {
+            packageVersion = nativePackageVersion
+            packageBuildVersion = nativePackageVersion
             bundleID = "dev.nucleusframework.demo"
             appCategory = "public.app-category.utilities"
             dockName = "NucleusDemo"
