@@ -76,7 +76,7 @@ subprojects {
         }
 
         tasks.withType<Detekt>().configureEach {
-            jvmTarget.set("21")
+            jvmTarget.set("25")
         }
     }
 }
@@ -127,7 +127,7 @@ gradle.projectsEvaluated {
 }
 
 tasks.withType<Detekt>().configureEach {
-    jvmTarget.set("21")
+    jvmTarget.set("25")
     reports {
         html.required.set(true)
         html.outputLocation.set(file("build/reports/detekt.html"))

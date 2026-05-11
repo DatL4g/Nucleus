@@ -10,6 +10,7 @@ import systeminfodemo.ui.AppContent
 import systeminfodemo.ui.AppTitleBar
 import systeminfodemo.ui.buildIslandsTheme
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun main() {
     dev.nucleusframework.graalvm.GraalVmInitializer
         .initialize()
@@ -17,17 +18,24 @@ fun main() {
     application {
         val (theme, styling) = buildIslandsTheme()
 
+        @Suppress("DEPRECATION")
+        val defaultTextContextMenu = androidx.compose.foundation.text.LocalTextContextMenu.current
         IntUiTheme(theme = theme, styling = styling) {
-            JewelDecoratedWindow(
-                onCloseRequest = { exitApplication() },
-                title = "Nucleus System Info",
-                state = rememberWindowState(position = WindowPosition.Aligned(Alignment.Center)),
-                content = {
-                    window.minimumSize = java.awt.Dimension(1100, 480)
-                    AppTitleBar()
-                    AppContent()
-                },
-            )
+            @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.foundation.text.LocalTextContextMenu provides defaultTextContextMenu,
+            ) {
+                JewelDecoratedWindow(
+                    onCloseRequest = { exitApplication() },
+                    title = "Nucleus System Info",
+                    state = rememberWindowState(position = WindowPosition.Aligned(Alignment.Center)),
+                    content = {
+                        window.minimumSize = java.awt.Dimension(1100, 480)
+                        AppTitleBar()
+                        AppContent()
+                    },
+                )
+            }
         }
     }
 }

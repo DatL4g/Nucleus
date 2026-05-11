@@ -31,6 +31,7 @@ private fun buildRegistry() =
         .register(NotificationTaskId) { NotificationTask() }
         .build()
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun main(args: Array<String>) {
     val openedByScheduler = DesktopBootReceiver.isSchedulerInvocation(args)
     if (openedByScheduler) {
@@ -49,22 +50,29 @@ fun main(args: Array<String>) {
                 JewelTheme.lightThemeDefinition(defaultTextStyle = textStyle, editorTextStyle = editorStyle)
             }
 
+        @Suppress("DEPRECATION")
+        val defaultTextContextMenu = androidx.compose.foundation.text.LocalTextContextMenu.current
         IntUiTheme(
             theme = theme,
             styling = ComponentStyling.default(),
         ) {
-            JewelDecoratedWindow(
-                onCloseRequest = { exitApplication() },
-                title = "Scheduler Demo",
-                state =
-                    androidx.compose.ui.window.rememberWindowState(
-                        position = WindowPosition.Aligned(Alignment.Center),
-                    ),
-                content = {
-                    JewelTitleBar()
-                    SchedulerDemoView(openedByScheduler = openedByScheduler)
-                },
-            )
+            @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.foundation.text.LocalTextContextMenu provides defaultTextContextMenu,
+            ) {
+                JewelDecoratedWindow(
+                    onCloseRequest = { exitApplication() },
+                    title = "Scheduler Demo",
+                    state =
+                        androidx.compose.ui.window.rememberWindowState(
+                            position = WindowPosition.Aligned(Alignment.Center),
+                        ),
+                    content = {
+                        JewelTitleBar()
+                        SchedulerDemoView(openedByScheduler = openedByScheduler)
+                    },
+                )
+            }
         }
     }
 }
