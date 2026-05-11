@@ -49,6 +49,7 @@ class NotificationButtonBuilder internal constructor() {
 
 /**
  * Creates a cross-platform notification.
+ * Lifecycle callbacks are not guaranteed to run on a UI thread.
  *
  * ```kotlin
  * val n = notification(

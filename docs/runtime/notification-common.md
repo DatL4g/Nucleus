@@ -178,6 +178,9 @@ How each parameter maps to platform-specific APIs:
 | `onDismissed` | `onClosed` signal | `onDismissed` event | Requires `CUSTOM_DISMISS_ACTION` |
 | `onFailed` | `notify()` returns 0 | `onFailed` event | `add()` callback error |
 
+!!! info "Callback threading"
+    Lifecycle callbacks are not guaranteed to run on a UI thread. Marshal to your app's UI dispatcher before mutating Compose/Swing state.
+
 ## Platform Details
 
 ### Windows
@@ -194,6 +197,7 @@ How each parameter maps to platform-specific APIs:
 - **Authorization**: The user must have granted notification permissions. The common module does **not** auto-request authorization — use `NotificationCenter.requestAuthorization()` from the macOS module before sending.
 - **Buttons**: Require pre-registered `NotificationCategory` objects. The common module handles this automatically — it generates and caches categories per unique button configuration.
 - **Dismiss callback**: macOS does not natively fire dismiss events. The common module enables `CUSTOM_DISMISS_ACTION` on generated categories so `onDismissed` fires when the user explicitly dismisses.
+- **Non-blocking send**: macOS accepts notification requests asynchronously; `send()` returns once the request is queued locally and reports later native failures through `onFailed`.
 - **Small icon**: Ignored — macOS always uses the app icon from the bundle.
 - **Large image**: Mapped to a notification attachment (displayed as a thumbnail).
 
@@ -202,7 +206,6 @@ How each parameter maps to platform-specific APIs:
 - **No initialization needed**: The D-Bus connection is established automatically.
 - **Images**: `largeImage` maps to the `imagePath` hint (icon name or `file://` URI). `smallIcon` maps to `appIcon`. See the [Linux notification docs](notification-linux.md#icons) for icon priority.
 - **Default action**: A `"default"` action is automatically added when `onActivated` is set, so clicking the notification body triggers the callback.
-- **All callbacks on Swing EDT**: Safe to update Compose state directly from callbacks.
 
 ## Compose Desktop Integration
 
