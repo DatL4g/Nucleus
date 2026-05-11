@@ -51,7 +51,6 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
-import dev.nucleusframework.graalvm.GraalVmInitializer
 import dev.nucleusframework.sampleshared.A11yTab
 import dev.nucleusframework.sampleshared.ComplexTab
 import dev.nucleusframework.sampleshared.EventsTab
@@ -71,7 +70,6 @@ import dev.nucleusframework.window.styling.TitleBarStyle
 import java.awt.datatransfer.StringSelection
 
 fun main() {
-    GraalVmInitializer.initialize()
     runApp()
 }
 

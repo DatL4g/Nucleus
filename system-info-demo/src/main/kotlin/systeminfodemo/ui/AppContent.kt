@@ -34,7 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.nucleusframework.window.AwtDecoratedWindowScope
+import dev.nucleusframework.window.DecoratedWindowScope
 import dev.nucleusframework.window.jewel.JewelTitleBar
 import dev.nucleusframework.window.macOSLargeCornerRadius
 import dev.nucleusframework.window.newFullscreenControls
@@ -74,7 +74,7 @@ enum class NavItem(
 }
 
 @Composable
-fun AwtDecoratedWindowScope.AppTitleBar() {
+fun DecoratedWindowScope.AppTitleBar() {
     val state by SystemInfoViewModel.state.collectAsState()
     val startPadding = if (hostOs.isMacOS) 80.dp else 8.dp
 

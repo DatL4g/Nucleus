@@ -1,11 +1,11 @@
 package com.example.samplecmp
 
-import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.application
+import dev.nucleusframework.application.DecoratedWindow
+import dev.nucleusframework.application.nucleusApplication
 
 fun main() =
-    application {
-        Window(onCloseRequest = ::exitApplication, title = "Sample CMP") {
+    nucleusApplication {
+        DecoratedWindow(onCloseRequest = ::exitApplication, title = "Sample CMP") {
             App()
         }
     }

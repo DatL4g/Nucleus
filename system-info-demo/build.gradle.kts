@@ -18,6 +18,7 @@ dependencies {
     implementation(project(":system-info"))
     implementation(project(":decorated-window-jewel"))
     implementation(project(":decorated-window-jni"))
+    implementation(project(":nucleus-application"))
 
     val jewelExclusions =
         Action<ExternalModuleDependency> {
@@ -35,8 +36,6 @@ dependencies {
     implementation("org.jetbrains.lets-plot:canvas:4.9.0")
     implementation("org.jetbrains.lets-plot:plot-raster:4.9.0")
     implementation("org.jetbrains.lets-plot:lets-plot-compose-desktop:3.1.0")
-
-    implementation(project(":graalvm-runtime"))
 }
 
 java {

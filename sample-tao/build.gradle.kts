@@ -14,7 +14,6 @@ dependencies {
     implementation(project(":nucleus-application"))
     implementation(project(":sample-shared"))
     implementation(project(":core-runtime"))
-    implementation(project(":graalvm-runtime"))
     implementation(compose.desktop.currentOs)
 }
 
