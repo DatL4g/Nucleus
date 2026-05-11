@@ -36,12 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -80,9 +80,10 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
     }
 
     val taoWindow = LocalTaoWindow.current
-    val parentHwnd = remember(taoWindow) {
-        if (Platform.Current == Platform.Windows) taoWindow?.nativeHandle ?: 0L else 0L
-    }
+    val parentHwnd =
+        remember(taoWindow) {
+            if (Platform.Current == Platform.Windows) taoWindow?.nativeHandle ?: 0L else 0L
+        }
     var controller: SampleWebViewController? by remember { mutableStateOf(null) }
     var urlInput by remember { mutableStateOf(INITIAL_URL) }
     var urlFocused by remember { mutableStateOf(false) }
@@ -110,9 +111,10 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxSize().background(Color(0xFF0F1115)).padding(16.dp),
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(12.dp)),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp)),
         ) {
             // One-shot navigation tracker so `update` doesn't reload on
             // every recomposition.
@@ -134,9 +136,10 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
             ) {
                 // Compose UI rendered ON TOP of the WebView
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
                     contentAlignment = Alignment.BottomEnd,
                 ) {
                     NavPill(
@@ -171,19 +174,21 @@ private fun NavPill(
     onReload: () -> Unit,
 ) {
     Box(
-        modifier = Modifier
-            .padding(8.dp)
-            .height(56.dp)
-            .width(520.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(Color(0xCC0F172A))
-            .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(28.dp))
-            .consumeOverlayPointerEvents(),
+        modifier =
+            Modifier
+                .padding(8.dp)
+                .height(56.dp)
+                .width(520.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(Color(0xCC0F172A))
+                .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(28.dp))
+                .consumeOverlayPointerEvents(),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -206,10 +211,11 @@ private fun NavPill(
         }
         if (isLoading) {
             IndeterminateBar(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .align(Alignment.BottomCenter),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .align(Alignment.BottomCenter),
             )
         }
     }
@@ -221,10 +227,11 @@ private fun IndeterminateBar(modifier: Modifier = Modifier) {
     val progress by transition.animateFloat(
         initialValue = -0.3f,
         targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1100, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
+        animationSpec =
+            infiniteRepeatable(
+                animation = tween(durationMillis = 1100, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
         label = "loading-bar-progress",
     )
     Canvas(modifier = modifier) {
@@ -245,26 +252,31 @@ private fun NavIconButton(
     onClick: () -> Unit,
     spinning: Boolean = false,
 ) {
-    val rotation = if (spinning) {
-        val transition = rememberInfiniteTransition(label = "spin")
-        val angle by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 900, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart,
-            ),
-            label = "spin-angle",
-        )
-        angle
-    } else 0f
+    val rotation =
+        if (spinning) {
+            val transition = rememberInfiniteTransition(label = "spin")
+            val angle by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec =
+                    infiniteRepeatable(
+                        animation = tween(durationMillis = 900, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart,
+                    ),
+                label = "spin-angle",
+            )
+            angle
+        } else {
+            0f
+        }
     Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = if (enabled) 0.10f else 0.04f))
-            .alpha(if (enabled) 1f else 0.4f)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+        modifier =
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = if (enabled) 0.10f else 0.04f))
+                .alpha(if (enabled) 1f else 0.4f)
+                .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         BasicText(
@@ -290,18 +302,18 @@ private fun UrlField(
     // it in an outer `clickable` + inner `fillMaxWidth()` instead
     // made every click look like a fresh single-tap to the wrapper.
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(36.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = if (hasFocus) 0.16f else 0.06f))
-            .border(
-                1.dp,
-                if (hasFocus) Color(0xFF60A5FA) else Color.Transparent,
-                RoundedCornerShape(18.dp),
-            )
-            .consumeOverlayPointerEvents(cursor = PointerIcon.Text)
-            .padding(horizontal = 12.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White.copy(alpha = if (hasFocus) 0.16f else 0.06f))
+                .border(
+                    1.dp,
+                    if (hasFocus) Color(0xFF60A5FA) else Color.Transparent,
+                    RoundedCornerShape(18.dp),
+                ).consumeOverlayPointerEvents(cursor = PointerIcon.Text)
+                .padding(horizontal = 12.dp),
     ) {
         BasicTextField(
             value = url,
@@ -311,12 +323,13 @@ private fun UrlField(
             cursorBrush = SolidColor(Color(0xFF60A5FA)),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
             keyboardActions = KeyboardActions(onGo = { onSubmit() }, onDone = { onSubmit() }),
-            modifier = Modifier
-                .fillMaxSize()
-                .onFocusChanged {
-                    hasFocus = it.isFocused
-                    onFocusChange(it.isFocused)
-                },
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .onFocusChanged {
+                        hasFocus = it.isFocused
+                        onFocusChange(it.isFocused)
+                    },
             decorationBox = { innerTextField ->
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -336,68 +349,81 @@ private fun UrlField(
 private fun createSampleWebViewPlatformView(
     parentHwnd: Long,
     onController: (SampleWebViewController?) -> Unit,
-): NucleusPlatformView = when (Platform.Current) {
-    Platform.MacOS -> {
-        val ptr = SampleWebViewBridge.nativeCreate()
-        onController(MacOsSampleWebViewController(ptr))
-        object : NucleusPlatformView.NsView {
-            override val nsViewHandle: Long = ptr
-            override fun dispose() {
-                SampleWebViewBridge.nativeRelease(ptr)
-                onController(null)
-            }
-        }
-    }
-    Platform.Linux -> {
-        val ptr = SampleWebViewLinuxBridge.nativeCreate()
-        onController(LinuxSampleWebViewController(ptr))
-        object : NucleusPlatformView.GtkWidget {
-            override val gtkWidgetHandle: Long = ptr
-            override fun dispose() {
-                SampleWebViewLinuxBridge.nativeRelease(ptr)
-                onController(null)
-            }
-        }
-    }
-    Platform.Windows -> {
-        // The Tao HWND may not be realised yet on the very first
-        // composition of this tab. Returning a HWnd with handle = 0L
-        // lets `HwndEmbedding`'s fallback render an empty `Box` until
-        // the next composition where `LocalTaoWindow.nativeHandle` is
-        // populated. Hard-failing here would crash the sample at startup.
-        if (parentHwnd == 0L) {
-            object : NucleusPlatformView.HWnd {
-                override val hwndHandle: Long = 0L
-                override fun dispose() {}
-            }
-        } else {
-            val ptr = SampleWebViewWindowsBridge.nativeCreate(parentHwnd, INITIAL_URL)
-            require(ptr != 0L) { "WebView2 init failed (WebView2 Runtime missing?)" }
-            onController(WindowsSampleWebViewController(ptr))
-            object : NucleusPlatformView.HWnd {
-                // Opaque handle, NOT a real HWND. We don't expose a Win32
-                // child HWND to NativeView's reparenting path because the
-                // WebView lives in a DComp tree owned by the C++ side.
-                // Returning 0L causes `host.attach`/`detach` to no-op
-                // safely; positioning happens entirely via setBounds.
-                override val hwndHandle: Long = 0L
-                override fun setBounds(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
-                    SampleWebViewWindowsBridge.nativeSetBounds(ptr, xPx, yPx, widthPx, heightPx)
-                }
-                override fun setCornerRadius(radiusPx: Float) {
-                    // Real DComp clip — `SetWindowRgn` on a fake HWND
-                    // wouldn't reach the WebView2 surface anyway.
-                    SampleWebViewWindowsBridge.nativeSetCornerRadius(ptr, radiusPx)
-                }
+): NucleusPlatformView =
+    when (Platform.Current) {
+        Platform.MacOS -> {
+            val ptr = SampleWebViewBridge.nativeCreate()
+            onController(MacOsSampleWebViewController(ptr))
+            object : NucleusPlatformView.NsView {
+                override val nsViewHandle: Long = ptr
+
                 override fun dispose() {
-                    SampleWebViewWindowsBridge.nativeRelease(ptr)
+                    SampleWebViewBridge.nativeRelease(ptr)
                     onController(null)
                 }
             }
         }
+        Platform.Linux -> {
+            val ptr = SampleWebViewLinuxBridge.nativeCreate()
+            onController(LinuxSampleWebViewController(ptr))
+            object : NucleusPlatformView.GtkWidget {
+                override val gtkWidgetHandle: Long = ptr
+
+                override fun dispose() {
+                    SampleWebViewLinuxBridge.nativeRelease(ptr)
+                    onController(null)
+                }
+            }
+        }
+        Platform.Windows -> {
+            // The Tao HWND may not be realised yet on the very first
+            // composition of this tab. Returning a HWnd with handle = 0L
+            // lets `HwndEmbedding`'s fallback render an empty `Box` until
+            // the next composition where `LocalTaoWindow.nativeHandle` is
+            // populated. Hard-failing here would crash the sample at startup.
+            if (parentHwnd == 0L) {
+                object : NucleusPlatformView.HWnd {
+                    override val hwndHandle: Long = 0L
+
+                    @Suppress("EmptyFunctionBlock")
+                    override fun dispose() {}
+                }
+            } else {
+                val ptr = SampleWebViewWindowsBridge.nativeCreate(parentHwnd, INITIAL_URL)
+                require(ptr != 0L) { "WebView2 init failed (WebView2 Runtime missing?)" }
+                onController(WindowsSampleWebViewController(ptr))
+                object : NucleusPlatformView.HWnd {
+                    // Opaque handle, NOT a real HWND. We don't expose a Win32
+                    // child HWND to NativeView's reparenting path because the
+                    // WebView lives in a DComp tree owned by the C++ side.
+                    // Returning 0L causes `host.attach`/`detach` to no-op
+                    // safely; positioning happens entirely via setBounds.
+                    override val hwndHandle: Long = 0L
+
+                    override fun setBounds(
+                        xPx: Int,
+                        yPx: Int,
+                        widthPx: Int,
+                        heightPx: Int,
+                    ) {
+                        SampleWebViewWindowsBridge.nativeSetBounds(ptr, xPx, yPx, widthPx, heightPx)
+                    }
+
+                    override fun setCornerRadius(radiusPx: Float) {
+                        // Real DComp clip — `SetWindowRgn` on a fake HWND
+                        // wouldn't reach the WebView2 surface anyway.
+                        SampleWebViewWindowsBridge.nativeSetCornerRadius(ptr, radiusPx)
+                    }
+
+                    override fun dispose() {
+                        SampleWebViewWindowsBridge.nativeRelease(ptr)
+                        onController(null)
+                    }
+                }
+            }
+        }
+        else -> error("WebView demo unsupported on ${Platform.Current}")
     }
-    else -> error("WebView demo unsupported on ${Platform.Current}")
-}
 
 @Composable
 private fun UnsupportedPlatform(modifier: Modifier) {

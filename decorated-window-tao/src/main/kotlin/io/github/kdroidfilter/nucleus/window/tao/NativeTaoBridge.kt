@@ -14,6 +14,7 @@ private const val LIBRARY_NAME = "nucleus_tao"
  * constraint — Tao installs its message pump / GTK main loop on whichever
  * thread calls `nativeRunBlocking`.
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoBridge::class.java)
 

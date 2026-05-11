@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.foundation.layout.Box
@@ -10,15 +12,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
@@ -114,9 +112,10 @@ private fun HwndEmbedding(
     // entirely via the view-impl's own [setBounds] / [setCornerRadius]
     // overrides (e.g. WebView2 driving its DComp visual).
 
-    val overlay = remember(host, popupHost) {
-        NativeViewOverlayControllerWindows(host, popupHost)
-    }
+    val overlay =
+        remember(host, popupHost) {
+            NativeViewOverlayControllerWindows(host, popupHost)
+        }
 
     DisposableEffect(host, handle, overlay) {
         host.attach(handle)
@@ -139,48 +138,57 @@ private fun HwndEmbedding(
     }
 
     val density = LocalDensity.current
-    val cornerRadiusPx = remember(cornerRadius, density) {
-        when {
-            cornerRadius == Dp.Unspecified -> 0f
-            cornerRadius == Dp.Infinity -> Float.POSITIVE_INFINITY
-            else -> with(density) { cornerRadius.toPx() }
+    val cornerRadiusPx =
+        remember(cornerRadius, density) {
+            when {
+                cornerRadius == Dp.Unspecified -> 0f
+                cornerRadius == Dp.Infinity -> Float.POSITIVE_INFINITY
+                else -> with(density) { cornerRadius.toPx() }
+            }
         }
-    }
     val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
     val lastRadius = remember { floatArrayOf(Float.NaN) }
     Box(
-        modifier = modifier.onGloballyPositioned { coords ->
-            val pos = coords.positionInRoot()
-            val xPx = pos.x.roundToInt()
-            val yPx = pos.y.roundToInt()
-            val wPx = coords.size.width.coerceAtLeast(1)
-            val hPx = coords.size.height.coerceAtLeast(1)
-            val rectChanged = lastRect[0] != xPx || lastRect[1] != yPx ||
-                lastRect[2] != wPx || lastRect[3] != hPx
-            if (rectChanged) {
-                lastRect[0] = xPx; lastRect[1] = yPx; lastRect[2] = wPx; lastRect[3] = hPx
-                host.setFrame(handle, xPx, yPx, wPx, hPx)
-                overlay.setBounds(xPx, yPx, wPx, hPx)
-                view.resize(wPx, hPx)
-                view.setBounds(xPx, yPx, wPx, hPx)
-            }
-            if (rectChanged || lastRadius[0] != cornerRadiusPx) {
-                lastRadius[0] = cornerRadiusPx
-                val radiusToApply = if (cornerRadiusPx.isInfinite()) {
-                    min(wPx, hPx) / 2f
-                } else {
-                    cornerRadiusPx
+        modifier =
+            modifier.onGloballyPositioned { coords ->
+                val pos = coords.positionInRoot()
+                val xPx = pos.x.roundToInt()
+                val yPx = pos.y.roundToInt()
+                val wPx = coords.size.width.coerceAtLeast(1)
+                val hPx = coords.size.height.coerceAtLeast(1)
+                val rectChanged =
+                    lastRect[0] != xPx ||
+                        lastRect[1] != yPx ||
+                        lastRect[2] != wPx ||
+                        lastRect[3] != hPx
+                if (rectChanged) {
+                    lastRect[0] = xPx
+                    lastRect[1] = yPx
+                    lastRect[2] = wPx
+                    lastRect[3] = hPx
+                    host.setFrame(handle, xPx, yPx, wPx, hPx)
+                    overlay.setBounds(xPx, yPx, wPx, hPx)
+                    view.resize(wPx, hPx)
+                    view.setBounds(xPx, yPx, wPx, hPx)
                 }
-                // Two complementary clip paths: the host applies
-                // `SetWindowRgn` on the user HWND (works for regular
-                // GDI/HWND-painted children), AND the view-impl gets
-                // a chance to apply its own clip on whatever surface
-                // it renders into. The latter is what makes WebView2's
-                // DComp-painted content actually round its corners.
-                host.setCornerRadius(handle, radiusToApply)
-                view.setCornerRadius(radiusToApply)
-            }
-        },
+                if (rectChanged || lastRadius[0] != cornerRadiusPx) {
+                    lastRadius[0] = cornerRadiusPx
+                    val radiusToApply =
+                        if (cornerRadiusPx.isInfinite()) {
+                            min(wPx, hPx) / 2f
+                        } else {
+                            cornerRadiusPx
+                        }
+                    // Two complementary clip paths: the host applies
+                    // `SetWindowRgn` on the user HWND (works for regular
+                    // GDI/HWND-painted children), AND the view-impl gets
+                    // a chance to apply its own clip on whatever surface
+                    // it renders into. The latter is what makes WebView2's
+                    // DComp-painted content actually round its corners.
+                    host.setCornerRadius(handle, radiusToApply)
+                    view.setCornerRadius(radiusToApply)
+                }
+            },
     )
 }
 
@@ -206,9 +214,10 @@ private fun NsViewEmbedding(
         return
     }
 
-    val overlay = remember(host, popupHost) {
-        NativeViewOverlayController(host, popupHost)
-    }
+    val overlay =
+        remember(host, popupHost) {
+            NativeViewOverlayController(host, popupHost)
+        }
 
     DisposableEffect(host, handle, overlay) {
         host.attach(handle)
@@ -234,47 +243,56 @@ private fun NsViewEmbedding(
     // closure doesn't have to read CompositionLocals. `Infinity`
     // tells the native side to cap at min(w, h) / 2 → fully round.
     val density = LocalDensity.current
-    val cornerRadiusPx = remember(cornerRadius, density) {
-        when {
-            cornerRadius == Dp.Unspecified -> 0f
-            cornerRadius == Dp.Infinity -> Float.POSITIVE_INFINITY
-            else -> with(density) { cornerRadius.toPx() }
+    val cornerRadiusPx =
+        remember(cornerRadius, density) {
+            when {
+                cornerRadius == Dp.Unspecified -> 0f
+                cornerRadius == Dp.Infinity -> Float.POSITIVE_INFINITY
+                else -> with(density) { cornerRadius.toPx() }
+            }
         }
-    }
     // Cache the last applied rect + radius so layout passes that
     // don't change anything skip the JNI hop entirely.
     val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
     val lastRadius = remember { floatArrayOf(Float.NaN) }
     Box(
-        modifier = modifier.onGloballyPositioned { coords ->
-            val pos = coords.positionInRoot()
-            val xPx = pos.x.roundToInt()
-            val yPx = pos.y.roundToInt()
-            val wPx = coords.size.width.coerceAtLeast(1)
-            val hPx = coords.size.height.coerceAtLeast(1)
-            val rectChanged = lastRect[0] != xPx || lastRect[1] != yPx ||
-                lastRect[2] != wPx || lastRect[3] != hPx
-            if (rectChanged) {
-                lastRect[0] = xPx; lastRect[1] = yPx; lastRect[2] = wPx; lastRect[3] = hPx
-                host.setFrame(handle, xPx, yPx, wPx, hPx)
-                overlay.setBounds(xPx, yPx, wPx, hPx)
-            }
-            // Re-applied on every size change because circular mode
-            // (Infinity) needs the radius rebound to min(w,h)/2;
-            // a fixed radius is also re-applied when bounds change
-            // since AppKit's cornerRadius is stable across resize but
-            // the cap may move. Cheap call.
-            if (rectChanged || lastRadius[0] != cornerRadiusPx) {
-                lastRadius[0] = cornerRadiusPx
-                val radiusToApply = if (cornerRadiusPx.isInfinite()) {
-                    min(wPx, hPx) / 2f
-                } else {
-                    cornerRadiusPx
+        modifier =
+            modifier.onGloballyPositioned { coords ->
+                val pos = coords.positionInRoot()
+                val xPx = pos.x.roundToInt()
+                val yPx = pos.y.roundToInt()
+                val wPx = coords.size.width.coerceAtLeast(1)
+                val hPx = coords.size.height.coerceAtLeast(1)
+                val rectChanged =
+                    lastRect[0] != xPx ||
+                        lastRect[1] != yPx ||
+                        lastRect[2] != wPx ||
+                        lastRect[3] != hPx
+                if (rectChanged) {
+                    lastRect[0] = xPx
+                    lastRect[1] = yPx
+                    lastRect[2] = wPx
+                    lastRect[3] = hPx
+                    host.setFrame(handle, xPx, yPx, wPx, hPx)
+                    overlay.setBounds(xPx, yPx, wPx, hPx)
                 }
-                host.setCornerRadius(handle, radiusToApply)
-                view.setCornerRadius(radiusToApply)
-            }
-        },
+                // Re-applied on every size change because circular mode
+                // (Infinity) needs the radius rebound to min(w,h)/2;
+                // a fixed radius is also re-applied when bounds change
+                // since AppKit's cornerRadius is stable across resize but
+                // the cap may move. Cheap call.
+                if (rectChanged || lastRadius[0] != cornerRadiusPx) {
+                    lastRadius[0] = cornerRadiusPx
+                    val radiusToApply =
+                        if (cornerRadiusPx.isInfinite()) {
+                            min(wPx, hPx) / 2f
+                        } else {
+                            cornerRadiusPx
+                        }
+                    host.setCornerRadius(handle, radiusToApply)
+                    view.setCornerRadius(radiusToApply)
+                }
+            },
     )
 }
 
@@ -333,24 +351,29 @@ private fun GtkWidgetEmbedding(
         // `matchParentSize` siblings + internal RenderNodes (ripple,
         // shadows) doesn't always serialise the way you'd expect. A
         // single `drawWithContent` is unambiguous.
-        modifier = modifier
-            .drawWithContent {
-                drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
-                drawContent()
-            }
-            .onGloballyPositioned { coords ->
-                val pos = coords.positionInRoot()
-                val xPx = pos.x.roundToInt()
-                val yPx = pos.y.roundToInt()
-                val wPx = coords.size.width.coerceAtLeast(1)
-                val hPx = coords.size.height.coerceAtLeast(1)
-                if (lastRect[0] != xPx || lastRect[1] != yPx ||
-                    lastRect[2] != wPx || lastRect[3] != hPx
-                ) {
-                    lastRect[0] = xPx; lastRect[1] = yPx; lastRect[2] = wPx; lastRect[3] = hPx
-                    host.setFrame(handle, xPx, yPx, wPx, hPx)
-                }
-            },
+        modifier =
+            modifier
+                .drawWithContent {
+                    drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
+                    drawContent()
+                }.onGloballyPositioned { coords ->
+                    val pos = coords.positionInRoot()
+                    val xPx = pos.x.roundToInt()
+                    val yPx = pos.y.roundToInt()
+                    val wPx = coords.size.width.coerceAtLeast(1)
+                    val hPx = coords.size.height.coerceAtLeast(1)
+                    if (lastRect[0] != xPx ||
+                        lastRect[1] != yPx ||
+                        lastRect[2] != wPx ||
+                        lastRect[3] != hPx
+                    ) {
+                        lastRect[0] = xPx
+                        lastRect[1] = yPx
+                        lastRect[2] = wPx
+                        lastRect[3] = hPx
+                        host.setFrame(handle, xPx, yPx, wPx, hPx)
+                    }
+                },
     ) {
         // Wrap the overlay slot in an offscreen graphics layer:
         // children paint into a private buffer (initially fully
@@ -361,9 +384,10 @@ private fun GtkWidgetEmbedding(
         // already-cleared destination in odd ways and look
         // partially erased.
         Box(
-            modifier = Modifier.graphicsLayer {
-                compositingStrategy = CompositingStrategy.Offscreen
-            },
+            modifier =
+                Modifier.graphicsLayer {
+                    compositingStrategy = CompositingStrategy.Offscreen
+                },
         ) {
             // Overlay slot — rendered inside the *same* Compose
             // scene as the rest of the window (no second scene /
@@ -391,9 +415,21 @@ internal val LocalTaoNativeViewHost = compositionLocalOf<TaoNativeViewHost?> { n
 /** Decouples [NativeView] from the platform-specific scene host. */
 internal interface TaoNativeViewHost {
     fun attach(childHandle: Long)
+
     fun detach(childHandle: Long)
-    fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int)
-    fun setCornerRadius(handle: Long, radiusPx: Float)
+
+    fun setFrame(
+        handle: Long,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+    )
+
+    fun setCornerRadius(
+        handle: Long,
+        radiusPx: Float,
+    )
 
     /**
      * Enqueues an AppKit mutation to run inside the next frame's
@@ -406,7 +442,9 @@ internal interface TaoNativeViewHost {
      * behaviour for hosts that don't yet implement the transaction
      * model (no visual sync, but still functionally correct).
      */
-    fun scheduleInterop(action: () -> Unit) { action() }
+    fun scheduleInterop(action: () -> Unit) {
+        action()
+    }
 }
 
 /**

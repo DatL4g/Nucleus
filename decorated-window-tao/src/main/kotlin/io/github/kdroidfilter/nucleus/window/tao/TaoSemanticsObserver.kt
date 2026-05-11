@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 @file:OptIn(androidx.compose.ui.InternalComposeUiApi::class)
 
 package io.github.kdroidfilter.nucleus.window.tao
@@ -120,6 +122,7 @@ internal class TaoSemanticsObserver(
         controller.pushSnapshot(withChildren)
     }
 
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
     private fun walk(
         node: SemanticsNode,
         parentId: Long,
@@ -352,6 +355,7 @@ internal class TaoSemanticsObserver(
         setProgress(target)
     }
 
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
     private fun describe(node: SemanticsNode): Triple<TaoA11yRole, Int, Int> {
         val cfg = node.config
         val composeRole = cfg.getOrNull(SemanticsProperties.Role)

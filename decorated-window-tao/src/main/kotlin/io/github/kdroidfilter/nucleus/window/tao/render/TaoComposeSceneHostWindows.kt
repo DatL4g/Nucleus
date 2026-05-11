@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao.render
 
 import androidx.compose.runtime.BroadcastFrameClock
@@ -187,34 +189,37 @@ internal class TaoComposeSceneHostWindows(
         // server-side GL objects with the host. Each popup keeps its own
         // GrDirectContext and we resetGLAll() on every context switch
         // (cross-context sync section in onRedrawRequested).
-        val platformContext = WindowsTaoPlatformContext(
-            windowHandle = window.handle,
-            topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
-            windowInfo = windowInfo,
-            semanticsOwnerListener = semanticsOwnerListener,
-            dragAndDropManager = dndManager,
-        )
+        val platformContext =
+            WindowsTaoPlatformContext(
+                windowHandle = window.handle,
+                topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
+                windowInfo = windowInfo,
+                semanticsOwnerListener = semanticsOwnerListener,
+                dragAndDropManager = dndManager,
+            )
         val popupHostForMain = popupHost()
-        scene = if (popupHostForMain != null) {
-            PlatformLayersComposeScene(
-                density = Density(scale),
-                layoutDirection = LayoutDirection.Ltr,
-                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                composeSceneContext = TaoComposeSceneContextWindows(
+        scene =
+            if (popupHostForMain != null) {
+                PlatformLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = LayoutDirection.Ltr,
+                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                    composeSceneContext =
+                        TaoComposeSceneContextWindows(
+                            platformContext = platformContext,
+                            popupHost = popupHostForMain,
+                        ),
+                    invalidate = { window.requestRedraw() },
+                )
+            } else {
+                CanvasLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = LayoutDirection.Ltr,
+                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     platformContext = platformContext,
-                    popupHost = popupHostForMain,
-                ),
-                invalidate = { window.requestRedraw() },
-            )
-        } else {
-            CanvasLayersComposeScene(
-                density = Density(scale),
-                layoutDirection = LayoutDirection.Ltr,
-                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                platformContext = platformContext,
-                invalidate = { window.requestRedraw() },
-            )
-        }
+                    invalidate = { window.requestRedraw() },
+                )
+            }
 
         registerInboundDnD()
         registerTouchInput()
@@ -839,49 +844,81 @@ internal class TaoComposeSceneHostWindows(
             override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
                 get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
             override val hostDirectContext: DirectContext get() = ctx
+
             override fun requestRedraw() = outer.window.requestRedraw()
-            override fun registerRenderer(token: Any, render: () -> Unit) {
+
+            override fun registerRenderer(
+                token: Any,
+                render: () -> Unit,
+            ) {
                 outer.popupRenderers[token] = render
                 // Registration site does DirectContext.makeGL() which
                 // switches the WGL context behind Skia's back — the
                 // host's GL state cache is now stale.
                 outer.hostContextDirtied = true
             }
+
             override fun unregisterRenderer(token: Any) {
                 outer.popupRenderers.remove(token)
                 outer.hostContextDirtied = true
             }
-            override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) {
+
+            override fun registerKeyHandler(
+                token: Any,
+                handler: (KeyEvent) -> Boolean,
+            ) {
                 outer.popupKeyHandlers[token] = handler
             }
+
             override fun unregisterKeyHandler(token: Any) {
                 outer.popupKeyHandlers.remove(token)
             }
-            override fun registerOwnerMoveListener(token: Any, onMoved: () -> Unit) {
+
+            override fun registerOwnerMoveListener(
+                token: Any,
+                onMoved: () -> Unit,
+            ) {
                 outer.ownerMoveListeners[token] = onMoved
             }
+
             override fun unregisterOwnerMoveListener(token: Any) {
                 outer.ownerMoveListeners.remove(token)
             }
-            override fun registerOwnerFocusLostListener(token: Any, onLost: () -> Unit) {
+
+            override fun registerOwnerFocusLostListener(
+                token: Any,
+                onLost: () -> Unit,
+            ) {
                 outer.ownerFocusLostListeners[token] = onLost
             }
+
             override fun unregisterOwnerFocusLostListener(token: Any) {
                 outer.ownerFocusLostListeners.remove(token)
             }
-            override fun registerOwnerFocusGainedListener(token: Any, onGained: () -> Unit) {
+
+            override fun registerOwnerFocusGainedListener(
+                token: Any,
+                onGained: () -> Unit,
+            ) {
                 outer.ownerFocusGainedListeners[token] = onGained
             }
+
             override fun unregisterOwnerFocusGainedListener(token: Any) {
                 outer.ownerFocusGainedListeners.remove(token)
             }
+
             override fun notifyPopupClosing() {
                 if (outer.popupClosingListeners.isEmpty()) return
                 for (cb in outer.popupClosingListeners.values.toList()) cb()
             }
-            override fun registerPopupClosingListener(token: Any, onClosing: () -> Unit) {
+
+            override fun registerPopupClosingListener(
+                token: Any,
+                onClosing: () -> Unit,
+            ) {
                 outer.popupClosingListeners[token] = onClosing
             }
+
             override fun unregisterPopupClosingListener(token: Any) {
                 outer.popupClosingListeners.remove(token)
             }
@@ -903,15 +940,27 @@ internal class TaoComposeSceneHostWindows(
                 io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
                     .nativeAttach(parent, childHandle)
             }
+
             override fun detach(childHandle: Long) {
                 io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
                     .nativeDetach(childHandle)
             }
-            override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+
+            override fun setFrame(
+                handle: Long,
+                xPx: Int,
+                yPx: Int,
+                widthPx: Int,
+                heightPx: Int,
+            ) {
                 io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
                     .nativeSetFrame(parent, handle, xPx, yPx, widthPx, heightPx)
             }
-            override fun setCornerRadius(handle: Long, radiusPx: Float) {
+
+            override fun setCornerRadius(
+                handle: Long,
+                radiusPx: Float,
+            ) {
                 io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
                     .nativeSetCornerRadius(parent, handle, radiusPx)
             }

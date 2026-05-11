@@ -14,6 +14,7 @@ import java.awt.Window
  * macOS: uses NSDockTile with a custom NSProgressIndicator and requestUserAttention via JNI.
  * Linux: uses DBus `com.canonical.Unity.LauncherEntry` protocol (GNOME, KDE, etc.) via JNI.
  */
+@Suppress("TooManyFunctions")
 object TaskbarProgress {
     private const val PROGRESS_MAX = 100L
 

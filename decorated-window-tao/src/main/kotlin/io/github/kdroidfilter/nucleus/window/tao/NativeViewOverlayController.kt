@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.runtime.Composable
@@ -23,8 +25,8 @@ import io.github.kdroidfilter.nucleus.window.tao.render.TaoNativeWireFormat
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupHost
 import io.github.kdroidfilter.nucleus.window.tao.render.dispatchSyntheticKeyTyped
 import io.github.kdroidfilter.nucleus.window.tao.render.renderMetalFrame
-import kotlin.coroutines.CoroutineContext
 import org.jetbrains.skia.DirectContext
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Owns the sibling overlay NSView used by [NativeView]'s `content` slot,
@@ -59,17 +61,18 @@ internal class NativeViewOverlayController(
      * window. Subtracting the offset from each axis (clamped at 1) is
      * the size still available below/right of the overlay's origin.
      */
-    private val overlayWindowInfo: WindowInfo = object : WindowInfo {
-        override val isWindowFocused: Boolean = true
-        override val containerSize: IntSize
-            get() {
-                val parent = popupHost.parentWindowSize
-                return IntSize(
-                    (parent.width - overlayOffsetX).coerceAtLeast(1),
-                    (parent.height - overlayOffsetY).coerceAtLeast(1),
-                )
-            }
-    }
+    private val overlayWindowInfo: WindowInfo =
+        object : WindowInfo {
+            override val isWindowFocused: Boolean = true
+            override val containerSize: IntSize
+                get() {
+                    val parent = popupHost.parentWindowSize
+                    return IntSize(
+                        (parent.width - overlayOffsetX).coerceAtLeast(1),
+                        (parent.height - overlayOffsetY).coerceAtLeast(1),
+                    )
+                }
+        }
 
     /**
      * `TaoPopupHost` adapter handed to popups originating in the overlay's
@@ -79,40 +82,59 @@ internal class NativeViewOverlayController(
      * anchored at e.g. `(50, 0)` in overlay-local coords lands at the
      * correct place in the host NSWindow.
      */
-    private val overlayPopupHost: TaoPopupHost = object : TaoPopupHost {
-        override val parentNsView: Long get() = popupHost.parentNsView
-        override val scale: Float get() = popupHost.scale
-        override val parentWindowSize: IntSize get() = popupHost.parentWindowSize
-        override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
-        override val coordinateOffset: IntOffset
-            get() = IntOffset(overlayOffsetX, overlayOffsetY)
-        override fun requestRedraw() = popupHost.requestRedraw()
-        override fun registerRenderer(token: Any, render: () -> Unit) =
-            popupHost.registerRenderer(token, render)
-        override fun unregisterRenderer(token: Any) = popupHost.unregisterRenderer(token)
-        override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) =
-            popupHost.registerKeyHandler(token, handler)
-        override fun unregisterKeyHandler(token: Any) = popupHost.unregisterKeyHandler(token)
-        override fun setCursor(iconCode: Int) = popupHost.setCursor(iconCode)
-    }
+    private val overlayPopupHost: TaoPopupHost =
+        object : TaoPopupHost {
+            override val parentNsView: Long get() = popupHost.parentNsView
+            override val scale: Float get() = popupHost.scale
+            override val parentWindowSize: IntSize get() = popupHost.parentWindowSize
+            override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
+            override val coordinateOffset: IntOffset
+                get() = IntOffset(overlayOffsetX, overlayOffsetY)
+
+            override fun requestRedraw() = popupHost.requestRedraw()
+
+            override fun registerRenderer(
+                token: Any,
+                render: () -> Unit,
+            ) = popupHost.registerRenderer(token, render)
+
+            override fun unregisterRenderer(token: Any) = popupHost.unregisterRenderer(token)
+
+            override fun registerKeyHandler(
+                token: Any,
+                handler: (KeyEvent) -> Boolean,
+            ) = popupHost.registerKeyHandler(token, handler)
+
+            override fun unregisterKeyHandler(token: Any) = popupHost.unregisterKeyHandler(token)
+
+            override fun setCursor(iconCode: Int) = popupHost.setCursor(iconCode)
+        }
 
     /**
      * Named inner class so GraalVM JNI reachability metadata can
      * register the implementor.
      */
     private inner class OverlayCallback : NativeTaoMacOsNativeViewBridge.OverlayEventCallback {
-        override fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int) {
+        override fun onPointerEvent(
+            type: Int,
+            x: Float,
+            y: Float,
+            button: Int,
+            modifiers: Int,
+        ) {
             val sc = scene ?: return
-            val pointerButton = when (button) {
-                TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
-                TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
-                else -> null
-            }
-            val eventType = when (type) {
-                TaoNativeWireFormat.PTR_DOWN -> PointerEventType.Press
-                TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
-                else -> PointerEventType.Move
-            }
+            val pointerButton =
+                when (button) {
+                    TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
+                    TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
+                    else -> null
+                }
+            val eventType =
+                when (type) {
+                    TaoNativeWireFormat.PTR_DOWN -> PointerEventType.Press
+                    TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
+                    else -> PointerEventType.Move
+                }
             sc.sendPointerEvent(
                 eventType = eventType,
                 position = Offset(x, y),
@@ -121,7 +143,12 @@ internal class NativeViewOverlayController(
             )
         }
 
-        override fun onScroll(x: Float, y: Float, dx: Float, dy: Float) {
+        override fun onScroll(
+            x: Float,
+            y: Float,
+            dx: Float,
+            dy: Float,
+        ) {
             scene?.sendPointerEvent(
                 eventType = PointerEventType.Scroll,
                 position = Offset(x, y),
@@ -143,7 +170,12 @@ internal class NativeViewOverlayController(
             popupHost.requestRedraw()
         }
 
-        override fun onKeyEvent(type: Int, vkCode: Int, codePoint: Int, modifiers: Int) {
+        override fun onKeyEvent(
+            type: Int,
+            vkCode: Int,
+            codePoint: Int,
+            modifiers: Int,
+        ) {
             val sc = scene ?: return
             val isShift = modifiers and TaoNativeWireFormat.MOD_SHIFT != 0
             val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
@@ -209,7 +241,12 @@ internal class NativeViewOverlayController(
 
     private var pendingBounds: IntArray? = null
 
-    fun setBounds(xPx: Int, yPx: Int, widthPxNew: Int, heightPxNew: Int) {
+    fun setBounds(
+        xPx: Int,
+        yPx: Int,
+        widthPxNew: Int,
+        heightPxNew: Int,
+    ) {
         if (overlayNsView == 0L) {
             // attach() hasn't run yet (race with first layout pass) —
             // stash the bounds so they get applied as soon as attach()
@@ -223,10 +260,18 @@ internal class NativeViewOverlayController(
     private var lastFrameX: Int = Int.MIN_VALUE
     private var lastFrameY: Int = Int.MIN_VALUE
 
-    private fun setBoundsInternal(xPx: Int, yPx: Int, widthPxNew: Int, heightPxNew: Int) {
-        val frameUnchanged = firstBoundsApplied &&
-            xPx == lastFrameX && yPx == lastFrameY &&
-            widthPxNew == widthPx && heightPxNew == heightPx
+    private fun setBoundsInternal(
+        xPx: Int,
+        yPx: Int,
+        widthPxNew: Int,
+        heightPxNew: Int,
+    ) {
+        val frameUnchanged =
+            firstBoundsApplied &&
+                xPx == lastFrameX &&
+                yPx == lastFrameY &&
+                widthPxNew == widthPx &&
+                heightPxNew == heightPx
         if (frameUnchanged) return
         val capturedHandle = overlayNsView
 
@@ -257,11 +302,18 @@ internal class NativeViewOverlayController(
             val capturedScene = scene
             host.scheduleInterop {
                 NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
-                    capturedHandle, xPx, yPx, widthPxNew, heightPxNew,
+                    capturedHandle,
+                    xPx,
+                    yPx,
+                    widthPxNew,
+                    heightPxNew,
                 )
                 if (capturedAttachment != 0L) {
                     NativeMetalBridge.nativeResize(
-                        capturedAttachment, widthPxNew, heightPxNew, capturedScale,
+                        capturedAttachment,
+                        widthPxNew,
+                        heightPxNew,
+                        capturedScale,
                     )
                 }
                 if (widthPxNew != widthPx || heightPxNew != heightPx) {
@@ -286,7 +338,11 @@ internal class NativeViewOverlayController(
         // (CALayer.frame doesn't auto-follow NSView.frame post layer
         // assignment).
         NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
-            capturedHandle, xPx, yPx, widthPxNew, heightPxNew,
+            capturedHandle,
+            xPx,
+            yPx,
+            widthPxNew,
+            heightPxNew,
         )
         lastFrameX = xPx
         lastFrameY = yPx
@@ -298,16 +354,19 @@ internal class NativeViewOverlayController(
         firstBoundsApplied = true
         attachmentHandle = NativeMetalBridge.nativeAttachOverlay(overlayNsView)
         require(attachmentHandle != 0L) { "Failed to attach overlay CAMetalLayer" }
-        directContext = DirectContext.makeMetal(
-            NativeMetalBridge.nativeDevicePtr(attachmentHandle),
-            NativeMetalBridge.nativeQueuePtr(attachmentHandle),
-        )
-        val ourPlatformContext = object : PlatformContext.Empty() {
-            override val windowInfo: WindowInfo get() = overlayWindowInfo
-            override fun setPointerIcon(pointerIcon: PointerIcon) {
-                popupHost.setCursor(pointerIcon.toTaoCursorIconCode())
+        directContext =
+            DirectContext.makeMetal(
+                NativeMetalBridge.nativeDevicePtr(attachmentHandle),
+                NativeMetalBridge.nativeQueuePtr(attachmentHandle),
+            )
+        val ourPlatformContext =
+            object : PlatformContext.Empty() {
+                override val windowInfo: WindowInfo get() = overlayWindowInfo
+
+                override fun setPointerIcon(pointerIcon: PointerIcon) {
+                    popupHost.setCursor(pointerIcon.toTaoCursorIconCode())
+                }
             }
-        }
         // PlatformLayersComposeScene + TaoComposeSceneContext route any
         // popup mounted from inside the overlay (text-field context
         // menus, dropdowns, tooltips) through `TaoPopupSceneLayer` —
@@ -316,18 +375,23 @@ internal class NativeViewOverlayController(
         // bounds, intercept clicks themselves (instead of falling
         // through to the user's native subview), and dismiss on
         // outside-click via the panel's NSEvent local monitor.
-        scene = PlatformLayersComposeScene(
-            density = Density(scale),
-            layoutDirection = LayoutDirection.Ltr,
-            size = IntSize(widthPx, heightPx),
-            coroutineContext = popupHost.sceneCoroutineContext,
-            composeSceneContext = TaoComposeSceneContext(
-                platformContext = ourPlatformContext,
-                popupHost = overlayPopupHost,
-            ),
-            invalidate = { popupHost.requestRedraw() },
-        )
-        pendingContent?.let { scene?.setContent(it); pendingContent = null }
+        scene =
+            PlatformLayersComposeScene(
+                density = Density(scale),
+                layoutDirection = LayoutDirection.Ltr,
+                size = IntSize(widthPx, heightPx),
+                coroutineContext = popupHost.sceneCoroutineContext,
+                composeSceneContext =
+                    TaoComposeSceneContext(
+                        platformContext = ourPlatformContext,
+                        popupHost = overlayPopupHost,
+                    ),
+                invalidate = { popupHost.requestRedraw() },
+            )
+        pendingContent?.let {
+            scene?.setContent(it)
+            pendingContent = null
+        }
 
         NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         popupHost.requestRedraw()
@@ -339,12 +403,23 @@ internal class NativeViewOverlayController(
         popupHost.requestRedraw()
     }
 
-    fun registerRegion(key: Any, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+    @Suppress("ComplexCondition")
+    fun registerRegion(
+        key: Any,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+    ) {
         val previous = regions[key]
         if (previous != null &&
-            previous[0] == xPx && previous[1] == yPx &&
-            previous[2] == widthPx && previous[3] == heightPx
-        ) return
+            previous[0] == xPx &&
+            previous[1] == yPx &&
+            previous[2] == widthPx &&
+            previous[3] == heightPx
+        ) {
+            return
+        }
         regions[key] = intArrayOf(xPx, yPx, widthPx, heightPx)
         flushRegions()
     }

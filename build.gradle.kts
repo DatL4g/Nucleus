@@ -87,11 +87,12 @@ tasks.register("cleanNativeLibs", Delete::class.java) {
 
     val os = System.getProperty("os.name").lowercase()
     val userHome = System.getProperty("user.home")
-    val cachePath = when {
-        os.contains("win") -> System.getenv("LOCALAPPDATA") ?: "${userHome}/AppData/Local"
-        os.contains("mac") -> "${userHome}/Library/Caches"
-        else -> System.getenv("XDG_CACHE_HOME") ?: "${userHome}/.cache"
-    }
+    val cachePath =
+        when {
+            os.contains("win") -> System.getenv("LOCALAPPDATA") ?: "$userHome/AppData/Local"
+            os.contains("mac") -> "$userHome/Library/Caches"
+            else -> System.getenv("XDG_CACHE_HOME") ?: "$userHome/.cache"
+        }
     delete(file(cachePath).resolve("nucleus/native"))
 
     doFirst {

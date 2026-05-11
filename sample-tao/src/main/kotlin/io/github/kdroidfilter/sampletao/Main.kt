@@ -229,6 +229,7 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
     }
 }
 
+@Suppress("CyclomaticComplexMethod")
 private fun runApp() =
     nucleusApplication(backend = NucleusBackend.Tao) {
         val previewEvents = remember { mutableStateListOf<String>() }

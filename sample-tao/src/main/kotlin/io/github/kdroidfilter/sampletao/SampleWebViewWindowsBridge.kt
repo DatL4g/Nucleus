@@ -23,18 +23,20 @@ import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
  * the thread that owns `parentHwnd`). WebView2's controller is STA,
  * so off-thread access deadlocks.
  */
+@Suppress("TooManyFunctions")
 internal object SampleWebViewWindowsBridge {
     private const val LIBRARY_NAME = "sample_tao_webview"
 
-    val isLoaded: Boolean = NativeLibraryLoader.load(
-        LIBRARY_NAME,
-        SampleWebViewWindowsBridge::class.java,
-        // The C++ side calls `LoadLibraryW("WebView2Loader.dll")` after
-        // adding its own directory to the DLL search path; the loader
-        // must therefore sit next to sample_tao_webview.dll in the
-        // extracted cache directory.
-        sidecarFiles = listOf("WebView2Loader.dll"),
-    )
+    val isLoaded: Boolean =
+        NativeLibraryLoader.load(
+            LIBRARY_NAME,
+            SampleWebViewWindowsBridge::class.java,
+            // The C++ side calls `LoadLibraryW("WebView2Loader.dll")` after
+            // adding its own directory to the DLL search path; the loader
+            // must therefore sit next to sample_tao_webview.dll in the
+            // extracted cache directory.
+            sidecarFiles = listOf("WebView2Loader.dll"),
+        )
 
     /**
      * Creates a WebView2 instance attached to a DComp tree owned by the
@@ -42,13 +44,19 @@ internal object SampleWebViewWindowsBridge {
      * an HWND — the WebView has no Win32 child HWND visible to callers).
      */
     @JvmStatic
-    external fun nativeCreate(parentHwnd: Long, initialUrl: String): Long
+    external fun nativeCreate(
+        parentHwnd: Long,
+        initialUrl: String,
+    ): Long
 
     @JvmStatic
     external fun nativeRelease(handle: Long)
 
     @JvmStatic
-    external fun nativeLoadUrl(handle: Long, url: String)
+    external fun nativeLoadUrl(
+        handle: Long,
+        url: String,
+    )
 
     @JvmStatic
     external fun nativeGoBack(handle: Long)
@@ -78,7 +86,13 @@ internal object SampleWebViewWindowsBridge {
      * Coords are in physical pixels relative to the parent HWND's client area.
      */
     @JvmStatic
-    external fun nativeSetBounds(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int)
+    external fun nativeSetBounds(
+        handle: Long,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+    )
 
     /**
      * Applies a uniform rounded-rectangle clip on the WebView via DComp's
@@ -87,5 +101,8 @@ internal object SampleWebViewWindowsBridge {
      * fully circular.
      */
     @JvmStatic
-    external fun nativeSetCornerRadius(handle: Long, radiusPx: Float)
+    external fun nativeSetCornerRadius(
+        handle: Long,
+        radiusPx: Float,
+    )
 }

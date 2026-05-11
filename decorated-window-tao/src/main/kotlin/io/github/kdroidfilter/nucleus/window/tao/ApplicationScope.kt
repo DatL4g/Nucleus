@@ -21,6 +21,7 @@ internal class ComposableApplicationScope(
     override val taoApplication: TaoApplication,
 ) : ApplicationScope {
     var isOpen by mutableStateOf(true)
+
     override fun exitApplication() {
         isOpen = false
     }

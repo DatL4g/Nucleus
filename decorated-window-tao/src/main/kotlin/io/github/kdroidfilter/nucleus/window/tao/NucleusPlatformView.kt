@@ -24,9 +24,11 @@ package io.github.kdroidfilter.nucleus.window.tao
  * `clearFocus` since AppKit owns focus management).
  */
 sealed interface NucleusPlatformView {
-
     /** Called when the embedded view's logical bounds change. */
-    fun resize(widthPx: Int, heightPx: Int) {}
+    fun resize(
+        widthPx: Int,
+        heightPx: Int,
+    ) {}
 
     /**
      * Called with the embedded view's full bounds (position + size) in
@@ -37,7 +39,12 @@ sealed interface NucleusPlatformView {
      * controller-style API (e.g. wry's WebView2) whose drawing rect is
      * decoupled from the platform HWND's window rect.
      */
-    fun setBounds(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {}
+    fun setBounds(
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+    ) {}
 
     /**
      * Asks the view to release keyboard focus. Used when the host

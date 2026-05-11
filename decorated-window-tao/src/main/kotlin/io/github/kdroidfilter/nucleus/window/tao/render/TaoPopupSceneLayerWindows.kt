@@ -49,7 +49,6 @@ internal class TaoPopupSceneLayerWindows(
     initialFocusable: Boolean,
     @Suppress("UNUSED_PARAMETER") parentCompositionContext: CompositionContext,
 ) : ComposeSceneLayer {
-
     private var _density = initialDensity
     private var _layoutDirection = initialLayoutDirection
     private var _focusable = initialFocusable
@@ -63,15 +62,17 @@ internal class TaoPopupSceneLayerWindows(
     private var heightPx: Int = host.parentWindowSize.height.coerceAtLeast(1)
     private val scale: Float = host.scale
 
-    private val panelHandle: Long = PopupNativeBridgeWindows.nativeCreatePanel(
-        parentHwnd = host.parentHwnd,
-        xPx = -OFFSCREEN_OFFSET_PX,
-        yPx = -OFFSCREEN_OFFSET_PX,
-        widthPx = widthPx,
-        heightPx = heightPx,
-    ).also {
-        require(it != 0L) { "Failed to allocate popup HWND" }
-    }
+    private val panelHandle: Long =
+        PopupNativeBridgeWindows
+            .nativeCreatePanel(
+                parentHwnd = host.parentHwnd,
+                xPx = -OFFSCREEN_OFFSET_PX,
+                yPx = -OFFSCREEN_OFFSET_PX,
+                widthPx = widthPx,
+                heightPx = heightPx,
+            ).also {
+                require(it != 0L) { "Failed to allocate popup HWND" }
+            }
 
     /** Single-HGLRC architecture: shared with the host + every other popup. */
     private val directContext: DirectContext = host.hostDirectContext
@@ -82,34 +83,44 @@ internal class TaoPopupSceneLayerWindows(
             override val containerSize: IntSize get() = IntSize(widthPx, heightPx)
         }
 
-    private val innerScene: ComposeScene = CanvasLayersComposeScene(
-        density = _density,
-        layoutDirection = _layoutDirection,
-        size = IntSize(widthPx, heightPx),
-        coroutineContext = host.sceneCoroutineContext,
-        platformContext = object : PlatformContext.Empty() {
-            override val windowInfo: androidx.compose.ui.platform.WindowInfo
-                get() = popupWindowInfo
-        },
-        invalidate = { host.requestRedraw() },
-    )
+    private val innerScene: ComposeScene =
+        CanvasLayersComposeScene(
+            density = _density,
+            layoutDirection = _layoutDirection,
+            size = IntSize(widthPx, heightPx),
+            coroutineContext = host.sceneCoroutineContext,
+            platformContext =
+                object : PlatformContext.Empty() {
+                    override val windowInfo: androidx.compose.ui.platform.WindowInfo
+                        get() = popupWindowInfo
+                },
+            invalidate = { host.requestRedraw() },
+        )
 
     private var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     private var onKeyEvent: ((KeyEvent) -> Boolean)? = null
     private var onOutsidePointerEvent: ((PointerEventType, PointerButton?) -> Unit)? = null
 
     private inner class PopupEventCallback : PopupNativeBridgeWindows.EventCallback {
-        override fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int) {
-            val pointerButton = when (button) {
-                TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
-                TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
-                else -> null
-            }
-            val eventType = when (type) {
-                TaoNativeWireFormat.PTR_DOWN -> PointerEventType.Press
-                TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
-                else -> PointerEventType.Move
-            }
+        override fun onPointerEvent(
+            type: Int,
+            x: Float,
+            y: Float,
+            button: Int,
+            modifiers: Int,
+        ) {
+            val pointerButton =
+                when (button) {
+                    TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
+                    TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
+                    else -> null
+                }
+            val eventType =
+                when (type) {
+                    TaoNativeWireFormat.PTR_DOWN -> PointerEventType.Press
+                    TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
+                    else -> PointerEventType.Move
+                }
             innerScene.sendPointerEvent(
                 eventType = eventType,
                 position = Offset(x, y),
@@ -118,7 +129,12 @@ internal class TaoPopupSceneLayerWindows(
             )
         }
 
-        override fun onScroll(x: Float, y: Float, dx: Float, dy: Float) {
+        override fun onScroll(
+            x: Float,
+            y: Float,
+            dx: Float,
+            dy: Float,
+        ) {
             innerScene.sendPointerEvent(
                 eventType = PointerEventType.Scroll,
                 position = Offset(x, y),
@@ -127,20 +143,26 @@ internal class TaoPopupSceneLayerWindows(
             )
         }
 
-        override fun onKeyEvent(type: Int, vkCode: Int, codePoint: Int, modifiers: Int) {
+        override fun onKeyEvent(
+            type: Int,
+            vkCode: Int,
+            codePoint: Int,
+            modifiers: Int,
+        ) {
             val isShift = modifiers and TaoNativeWireFormat.MOD_SHIFT != 0
             val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
             val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
             val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
-            val ev = KeyEvent(
-                key = Key(nativeKeyCode = vkCode, nativeKeyLocation = 0),
-                type = if (type == TaoNativeWireFormat.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
-                codePoint = codePoint,
-                isShiftPressed = isShift,
-                isCtrlPressed = isCtrl,
-                isAltPressed = isAlt,
-                isMetaPressed = isMeta,
-            )
+            val ev =
+                KeyEvent(
+                    key = Key(nativeKeyCode = vkCode, nativeKeyLocation = 0),
+                    type = if (type == TaoNativeWireFormat.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
+                    codePoint = codePoint,
+                    isShiftPressed = isShift,
+                    isCtrlPressed = isCtrl,
+                    isAltPressed = isAlt,
+                    isMetaPressed = isMeta,
+                )
             if (onPreviewKeyEvent?.invoke(ev) == true) return
             val consumed = innerScene.sendKeyEvent(ev)
             if (consumed) return
@@ -149,12 +171,16 @@ internal class TaoPopupSceneLayerWindows(
     }
 
     private inner class PopupOutsideListener : PopupNativeBridgeWindows.OutsideClickListener {
-        override fun onOutsideClick(type: Int, button: Int) {
-            val pointerButton = when (button) {
-                TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
-                TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
-                else -> PointerButton.Tertiary
-            }
+        override fun onOutsideClick(
+            type: Int,
+            button: Int,
+        ) {
+            val pointerButton =
+                when (button) {
+                    TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
+                    TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
+                    else -> PointerButton.Tertiary
+                }
             onOutsidePointerEvent?.invoke(PointerEventType.Press, pointerButton)
         }
     }
@@ -187,11 +213,17 @@ internal class TaoPopupSceneLayerWindows(
 
     override var density: Density
         get() = _density
-        set(value) { _density = value; innerScene.density = value }
+        set(value) {
+            _density = value
+            innerScene.density = value
+        }
 
     override var layoutDirection: LayoutDirection
         get() = _layoutDirection
-        set(value) { _layoutDirection = value; innerScene.layoutDirection = value }
+        set(value) {
+            _layoutDirection = value
+            innerScene.layoutDirection = value
+        }
 
     override var boundsInWindow: IntRect
         get() = _bounds
@@ -216,11 +248,15 @@ internal class TaoPopupSceneLayerWindows(
 
     override var compositionLocalContext: CompositionLocalContext?
         get() = _compositionLocalContext
-        set(value) { _compositionLocalContext = value }
+        set(value) {
+            _compositionLocalContext = value
+        }
 
     override var scrimColor: Color?
         get() = _scrimColor
-        set(value) { _scrimColor = value /* TODO: full-window scrim surface */ }
+        set(value) {
+            _scrimColor = value // HACK: full-window scrim surface
+        }
 
     override var focusable: Boolean
         get() = _focusable
@@ -278,12 +314,11 @@ internal class TaoPopupSceneLayerWindows(
         }
     }
 
-    override fun calculateLocalPosition(positionInWindow: IntOffset): IntOffset {
-        return IntOffset(
+    override fun calculateLocalPosition(positionInWindow: IntOffset): IntOffset =
+        IntOffset(
             positionInWindow.x - _bounds.left,
             positionInWindow.y - _bounds.top,
         )
-    }
 
     private fun renderFrame() {
         if (widthPx <= 0 || heightPx <= 0) return

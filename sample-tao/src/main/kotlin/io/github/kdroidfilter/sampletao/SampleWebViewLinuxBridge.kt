@@ -11,10 +11,11 @@ import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
 internal object SampleWebViewLinuxBridge {
     private const val LIBRARY_NAME = "sample_tao_webview_linux"
 
-    val isLoaded: Boolean = NativeLibraryLoader.load(
-        LIBRARY_NAME,
-        SampleWebViewLinuxBridge::class.java,
-    )
+    val isLoaded: Boolean =
+        NativeLibraryLoader.load(
+            LIBRARY_NAME,
+            SampleWebViewLinuxBridge::class.java,
+        )
 
     @JvmStatic
     external fun nativeCreate(): Long
@@ -23,7 +24,10 @@ internal object SampleWebViewLinuxBridge {
     external fun nativeRelease(handle: Long)
 
     @JvmStatic
-    external fun nativeLoadUrl(handle: Long, url: String)
+    external fun nativeLoadUrl(
+        handle: Long,
+        url: String,
+    )
 
     @JvmStatic
     external fun nativeGoBack(handle: Long)
