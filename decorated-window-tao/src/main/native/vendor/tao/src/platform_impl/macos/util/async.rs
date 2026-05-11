@@ -92,8 +92,13 @@ pub unsafe fn set_content_size_async(ns_window: &NSWindow, size: LogicalSize<f64
 }
 
 // `setFrameTopLeftPoint:` isn't thread-safe, but fortunately has the courtesy
-// to log errors.
+// to log errors. When we're already on the main thread, apply immediately so
+// a pre-show position update lands before a following `setVisible(true)`.
 pub unsafe fn set_frame_top_left_point_async(ns_window: &NSWindow, point: NSPoint) {
+  if is_main_thread() {
+    ns_window.setFrameTopLeftPoint(point);
+    return;
+  }
   let ns_window = MainThreadSafe(ns_window.retain());
   DispatchQueue::main().exec_async(move || {
     ns_window.setFrameTopLeftPoint(point);
