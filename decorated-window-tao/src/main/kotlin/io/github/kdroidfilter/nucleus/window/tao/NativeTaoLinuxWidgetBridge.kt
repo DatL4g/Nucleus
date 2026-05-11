@@ -15,10 +15,11 @@ private const val LIBRARY_NAME = "nucleus_tao_linux_widget"
  * Tao event-loop thread = Compose dispatcher thread).
  */
 internal object NativeTaoLinuxWidgetBridge {
-    val isLoaded: Boolean = NativeLibraryLoader.load(
-        LIBRARY_NAME,
-        NativeTaoLinuxWidgetBridge::class.java,
-    )
+    val isLoaded: Boolean =
+        NativeLibraryLoader.load(
+            LIBRARY_NAME,
+            NativeTaoLinuxWidgetBridge::class.java,
+        )
 
     /**
      * Reparents [widgetPtr] (a raw `GtkWidget*` cast to Long) into a
@@ -27,7 +28,10 @@ internal object NativeTaoLinuxWidgetBridge {
      * need their own embedding path).
      */
     @JvmStatic
-    external fun nativeAttach(gtkWindowPtr: Long, widgetPtr: Long)
+    external fun nativeAttach(
+        gtkWindowPtr: Long,
+        widgetPtr: Long,
+    )
 
     /** Removes [widgetPtr] from its current GTK parent. Safe to call twice. */
     @JvmStatic
@@ -94,7 +98,6 @@ internal object NativeTaoLinuxWidgetBridge {
     @JvmStatic
     external fun nativeRemoveInputBox(boxPtr: Long)
 
-
     /**
      * Receives motion / press / release events forwarded from the
      * native EventBox handlers. Coords are **logical pixels** in
@@ -106,7 +109,13 @@ internal object NativeTaoLinuxWidgetBridge {
      */
     interface OverlayInputCallback {
         @Suppress("FunctionParameterNaming")
-        fun onEvent(type: Int, xLogical: Int, yLogical: Int, button: Int, pressed: Int)
+        fun onEvent(
+            type: Int,
+            xLogical: Int,
+            yLogical: Int,
+            button: Int,
+            pressed: Int,
+        )
     }
 
     /**
@@ -121,5 +130,8 @@ internal object NativeTaoLinuxWidgetBridge {
      * when WebKit's accelerated subsurface has the seat focus.
      */
     @JvmStatic
-    external fun nativeSetInputBoxCallback(boxPtr: Long, callback: OverlayInputCallback?)
+    external fun nativeSetInputBoxCallback(
+        boxPtr: Long,
+        callback: OverlayInputCallback?,
+    )
 }

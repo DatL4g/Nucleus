@@ -18,7 +18,10 @@ internal object NativeTaoWindowsNativeViewBridge {
     val isLoaded: Boolean = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoWindowsNativeViewBridge::class.java)
 
     @JvmStatic
-    external fun nativeAttach(parentHwnd: Long, childHwnd: Long)
+    external fun nativeAttach(
+        parentHwnd: Long,
+        childHwnd: Long,
+    )
 
     @JvmStatic
     external fun nativeDetach(childHwnd: Long)

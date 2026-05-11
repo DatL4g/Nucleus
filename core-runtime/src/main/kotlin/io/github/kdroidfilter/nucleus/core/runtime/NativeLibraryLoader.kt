@@ -1,5 +1,6 @@
 package io.github.kdroidfilter.nucleus.core.runtime
 
+import java.io.IOException
 import java.net.JarURLConnection
 import java.nio.file.Files
 import java.nio.file.Path
@@ -147,33 +148,41 @@ object NativeLibraryLoader {
         sidecarFiles: List<String>,
     ) {
         for (sidecar in sidecarFiles) {
-            try {
-                val resourcePath = "$resourcePrefix/${platform.resourceDir}/$sidecar"
-                val resourceUrl = callerClass.getResource(resourcePath) ?: continue
-                val fingerprint = resolveFingerprint(resourceUrl)
-                val target = cacheDir.resolve(sidecar)
-                val fingerprintFile = cacheDir.resolve("$sidecar.fingerprint")
-                if (Files.exists(target) && isCacheValid(fingerprintFile, fingerprint)) continue
+            extractSingleSidecar(callerClass, resourcePrefix, platform, cacheDir, sidecar)
+        }
+    }
 
-                val tmp = Files.createTempFile(cacheDir, sidecar, ".tmp")
-                resourceUrl.openStream().use { input ->
-                    Files.copy(input, tmp, StandardCopyOption.REPLACE_EXISTING)
-                }
-                try {
-                    try {
-                        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                    } catch (_: Exception) {
-                        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
-                    }
-                    writeFingerprint(fingerprintFile, fingerprint)
-                } catch (_: Exception) {
-                    // Sidecar locked by another process — leave the existing
-                    // file in place, the dynamic linker will find it.
-                    logger.fine("Sidecar $sidecar move failed, existing copy retained")
-                }
-            } catch (e: Exception) {
-                logger.log(Level.WARNING, "Failed to extract sidecar $sidecar", e)
+    private fun extractSingleSidecar(
+        callerClass: Class<*>,
+        resourcePrefix: String,
+        platform: NativePlatform,
+        cacheDir: Path,
+        sidecar: String,
+    ) {
+        try {
+            val resourcePath = "$resourcePrefix/${platform.resourceDir}/$sidecar"
+            val resourceUrl = callerClass.getResource(resourcePath) ?: return
+            val fingerprint = resolveFingerprint(resourceUrl)
+            val target = cacheDir.resolve(sidecar)
+            val fingerprintFile = cacheDir.resolve("$sidecar.fingerprint")
+            if (Files.exists(target) && isCacheValid(fingerprintFile, fingerprint)) return
+
+            val tmp = Files.createTempFile(cacheDir, sidecar, ".tmp")
+            resourceUrl.openStream().use { input ->
+                Files.copy(input, tmp, StandardCopyOption.REPLACE_EXISTING)
             }
+            try {
+                try {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                } catch (_: Exception) {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
+                }
+                writeFingerprint(fingerprintFile, fingerprint)
+            } catch (_: Exception) {
+                logger.fine("Sidecar $sidecar move failed, existing copy retained")
+            }
+        } catch (e: IOException) {
+            logger.log(Level.WARNING, "Failed to extract sidecar $sidecar", e)
         }
     }
 

@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.runtime.Composable
@@ -39,7 +41,7 @@ import io.github.kdroidfilter.nucleus.core.runtime.Platform
  *    declared in the parent application scope and read inside `content`
  *    propagates via snapshot but does not share a CompositionContext.
  */
-@Suppress("LongParameterList", "FunctionNaming", "LongMethod")
+@Suppress("LongParameterList", "FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun ApplicationScope.DecoratedWindow(
     onCloseRequest: () -> Unit,
@@ -267,6 +269,7 @@ fun ApplicationScope.DecoratedWindow(
  * event makes it back to the JVM) would centre the window using a size that
  * doesn't match what's on screen and produce a visible mid-show jump.
  */
+@Suppress("ReturnCount")
 private fun applyAlignedPosition(
     window: TaoWindow,
     position: WindowPosition.Aligned,

@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao.render
 
 import androidx.compose.runtime.BroadcastFrameClock
@@ -36,16 +38,16 @@ import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadGesture
 import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadPhase
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.shouldApplyLargeCornerRadius
-import org.jetbrains.skia.DirectContext
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import org.jetbrains.skia.DirectContext
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
@@ -157,10 +159,12 @@ internal class TaoComposeSceneHost(
 
     private var transaction = MutableTaoInteropTransaction(isInteropActive = false)
     private var interopAttachCount: Int = 0
+
     /** Renderer's view of whether interop is currently active — lags the
      *  transaction's flag by one frame on the OFF transition so the
      *  final sync flush still goes through `presentsWithTransaction`. */
     private var rendererIsInteropActive: Boolean = false
+
     /** Cached state of `CAMetalLayer.presentsWithTransaction` to avoid
      *  redundant JNI calls on every frame. */
     private var layerPresentsWithTransaction: Boolean = false
@@ -243,46 +247,50 @@ internal class TaoComposeSceneHost(
         // but the scene cannot be constructed before we hand it the
         // PlatformContext that owns the manager. Resolve on each call.
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-        val dndManager = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
-            getRootNode = { scene!!.rootDragAndDropNode },
-            outboundLauncher = ::launchMacOsOutboundDrag,
-        )
+        val dndManager =
+            io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
+                getRootNode = { scene!!.rootDragAndDropNode },
+                outboundLauncher = ::launchMacOsOutboundDrag,
+            )
 
         // Use `PlatformLayersComposeScene` so Compose's Popup framework
         // routes layer creation through `TaoComposeSceneContext`: each
         // Popup/DropdownMenu becomes a `TaoPopupSceneLayer` backed by its
         // own NSPanel, which is what makes popups appear above any AppKit
         // subview embedded in the host window (e.g. a `WKWebView`).
-        val taoPlatformContext = TaoPlatformContext(
-            windowHandle = window.handle,
-            topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
-            windowInfo = windowInfo,
-            semanticsOwnerListener = semanticsOwnerListener,
-            dragAndDropManager = dndManager,
-        )
-        val popupHostInstance = popupHost()
-        val composeSceneContext = if (popupHostInstance != null) {
-            TaoComposeSceneContext(
-                platformContext = taoPlatformContext,
-                popupHost = popupHostInstance,
+        val taoPlatformContext =
+            TaoPlatformContext(
+                windowHandle = window.handle,
+                topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
+                windowInfo = windowInfo,
+                semanticsOwnerListener = semanticsOwnerListener,
+                dragAndDropManager = dndManager,
             )
-        } else {
-            // Fallback if attach() hasn't resolved the NSView handle yet.
-            object : ComposeSceneContext {
-                override val platformContext: PlatformContext = taoPlatformContext
+        val popupHostInstance = popupHost()
+        val composeSceneContext =
+            if (popupHostInstance != null) {
+                TaoComposeSceneContext(
+                    platformContext = taoPlatformContext,
+                    popupHost = popupHostInstance,
+                )
+            } else {
+                // Fallback if attach() hasn't resolved the NSView handle yet.
+                object : ComposeSceneContext {
+                    override val platformContext: PlatformContext = taoPlatformContext
+                }
             }
-        }
 
-        scene = PlatformLayersComposeScene(
-            density = Density(scale),
-            layoutDirection = LayoutDirection.Ltr,
-            size = IntSize(widthPx, heightPx),
-            coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-            composeSceneContext = composeSceneContext,
-            invalidate = {
-                window.requestRedraw()
-            },
-        )
+        scene =
+            PlatformLayersComposeScene(
+                density = Density(scale),
+                layoutDirection = LayoutDirection.Ltr,
+                size = IntSize(widthPx, heightPx),
+                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                composeSceneContext = composeSceneContext,
+                invalidate = {
+                    window.requestRedraw()
+                },
+            )
 
         registerInboundDnD()
     }
@@ -593,6 +601,7 @@ internal class TaoComposeSceneHost(
                 outer.interopAttachCount++
                 NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
             }
+
             override fun detach(childHandle: Long) {
                 NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
                 outer.interopAttachCount--
@@ -600,18 +609,30 @@ internal class TaoComposeSceneHost(
                     outer.transaction.isInteropActive = false
                 }
             }
-            override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+
+            override fun setFrame(
+                handle: Long,
+                xPx: Int,
+                yPx: Int,
+                widthPx: Int,
+                heightPx: Int,
+            ) {
                 outer.scheduleInteropAction {
                     NativeTaoMacOsNativeViewBridge
                         .nativeSetSubviewFrame(outer.nsViewHandle, handle, xPx, yPx, widthPx, heightPx)
                 }
             }
-            override fun setCornerRadius(handle: Long, radiusPx: Float) {
+
+            override fun setCornerRadius(
+                handle: Long,
+                radiusPx: Float,
+            ) {
                 outer.scheduleInteropAction {
                     NativeTaoMacOsNativeViewBridge
                         .nativeSetSubviewCornerRadius(outer.nsViewHandle, handle, radiusPx)
                 }
             }
+
             override fun scheduleInterop(action: () -> Unit) {
                 outer.scheduleInteropAction(action)
             }
@@ -638,19 +659,31 @@ internal class TaoComposeSceneHost(
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
             override val sceneCoroutineContext: CoroutineContext
                 get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+
             override fun requestRedraw() = outer.window.requestRedraw()
-            override fun registerRenderer(token: Any, render: () -> Unit) {
+
+            override fun registerRenderer(
+                token: Any,
+                render: () -> Unit,
+            ) {
                 popupRenderers[token] = render
             }
+
             override fun unregisterRenderer(token: Any) {
                 popupRenderers.remove(token)
             }
-            override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) {
+
+            override fun registerKeyHandler(
+                token: Any,
+                handler: (KeyEvent) -> Boolean,
+            ) {
                 popupKeyHandlers[token] = handler
             }
+
             override fun unregisterKeyHandler(token: Any) {
                 popupKeyHandlers.remove(token)
             }
+
             override fun setCursor(iconCode: Int) {
                 NativeTaoBridge.nativeSetCursorIcon(outer.window.handle, iconCode)
             }
@@ -676,8 +709,9 @@ internal class TaoComposeSceneHost(
         // queue is swapped here, so any further mutation calls after
         // this point land in the next frame's transaction.
         val tx = retrieveTransaction()
-        val needsTransaction = tx.actions.isNotEmpty() ||
-            rendererIsInteropActive != tx.isInteropActive
+        val needsTransaction =
+            tx.actions.isNotEmpty() ||
+                rendererIsInteropActive != tx.isInteropActive
         if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
             NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
             layerPresentsWithTransaction = needsTransaction
@@ -754,7 +788,7 @@ internal class TaoComposeSceneHost(
 
     // [aFixed] / [bFixed] are physical pixels × 1024 (see `CURSOR_FIXED_SCALE`).
 
-    // TODO: hover effects on macOS don't render until the user clicks once
+    // HACK: hover effects on macOS don't render until the user clicks once
     //  anywhere in the window. Move events ARE delivered to Compose (verified
     //  via logging — `isPressed` is false at startup, the first Move arrives
     //  before any Press, hit-testing is correct), and `MutableInteractionSource`

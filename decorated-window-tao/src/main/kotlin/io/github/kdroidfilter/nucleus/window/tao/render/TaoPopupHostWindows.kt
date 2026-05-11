@@ -5,8 +5,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import kotlin.coroutines.CoroutineContext
 import org.jetbrains.skia.DirectContext
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Windows counterpart to [TaoPopupHost]. Plumbing the overlay scene
@@ -18,6 +18,7 @@ import org.jetbrains.skia.DirectContext
  *
  * Threading: every call must run on the host HWND's UI thread.
  */
+@Suppress("TooManyFunctions")
 internal interface TaoPopupHostWindows {
     /** HWND of the host (Tao main) window. */
     val parentHwnd: Long
@@ -59,7 +60,11 @@ internal interface TaoPopupHostWindows {
      * must re-issue its `nativeSetOverlayFrame` / `nativeSetFrameInWindow`
      * here to follow the owner.
      */
-    fun registerOwnerMoveListener(token: Any, onMoved: () -> Unit)
+    fun registerOwnerMoveListener(
+        token: Any,
+        onMoved: () -> Unit,
+    )
+
     fun unregisterOwnerMoveListener(token: Any)
 
     /**
@@ -70,7 +75,11 @@ internal interface TaoPopupHostWindows {
      * (highlight border, blinking caret) goes away when the user has
      * clearly moved attention elsewhere.
      */
-    fun registerOwnerFocusLostListener(token: Any, onLost: () -> Unit)
+    fun registerOwnerFocusLostListener(
+        token: Any,
+        onLost: () -> Unit,
+    )
+
     fun unregisterOwnerFocusLostListener(token: Any)
 
     /**
@@ -80,10 +89,18 @@ internal interface TaoPopupHostWindows {
      * Compose resumes the caret blink on the previously-focused
      * TextField (its focus modifier state was preserved).
      */
-    fun registerOwnerFocusGainedListener(token: Any, onGained: () -> Unit)
+    fun registerOwnerFocusGainedListener(
+        token: Any,
+        onGained: () -> Unit,
+    )
+
     fun unregisterOwnerFocusGainedListener(token: Any)
 
-    fun registerRenderer(token: Any, render: () -> Unit)
+    fun registerRenderer(
+        token: Any,
+        render: () -> Unit,
+    )
+
     fun unregisterRenderer(token: Any)
 
     /**
@@ -97,7 +114,12 @@ internal interface TaoPopupHostWindows {
      * captured focus.
      */
     fun notifyPopupClosing()
-    fun registerPopupClosingListener(token: Any, onClosing: () -> Unit)
+
+    fun registerPopupClosingListener(
+        token: Any,
+        onClosing: () -> Unit,
+    )
+
     fun unregisterPopupClosingListener(token: Any)
 
     /**
@@ -105,7 +127,11 @@ internal interface TaoPopupHostWindows {
      * before the main scene's key dispatch. Returning `true` consumes
      * the event. Wired by Phase 8.
      */
-    fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean)
+    fun registerKeyHandler(
+        token: Any,
+        handler: (KeyEvent) -> Boolean,
+    )
+
     fun unregisterKeyHandler(token: Any)
 }
 

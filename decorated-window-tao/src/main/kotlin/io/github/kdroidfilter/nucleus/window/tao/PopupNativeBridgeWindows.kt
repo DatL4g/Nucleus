@@ -24,18 +24,37 @@ internal object PopupNativeBridgeWindows {
 
     interface EventCallback {
         @Suppress("FunctionParameterNaming")
-        fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int)
+        fun onPointerEvent(
+            type: Int,
+            x: Float,
+            y: Float,
+            button: Int,
+            modifiers: Int,
+        )
 
         @Suppress("FunctionParameterNaming")
-        fun onScroll(x: Float, y: Float, dx: Float, dy: Float)
+        fun onScroll(
+            x: Float,
+            y: Float,
+            dx: Float,
+            dy: Float,
+        )
 
         @Suppress("FunctionParameterNaming")
-        fun onKeyEvent(type: Int, vkCode: Int, codePoint: Int, modifiers: Int)
+        fun onKeyEvent(
+            type: Int,
+            vkCode: Int,
+            codePoint: Int,
+            modifiers: Int,
+        )
     }
 
     interface OutsideClickListener {
         /** [type] = 1 (always Press). [button] = 1 primary, 2 secondary, 3 other. */
-        fun onOutsideClick(type: Int, button: Int)
+        fun onOutsideClick(
+            type: Int,
+            button: Int,
+        )
     }
 
     @JvmStatic
@@ -48,10 +67,19 @@ internal object PopupNativeBridgeWindows {
     ): Long
 
     @JvmStatic
-    external fun nativeSetFrameInWindow(panel: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int)
+    external fun nativeSetFrameInWindow(
+        panel: Long,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+    )
 
     @JvmStatic
-    external fun nativeSetFocusable(panel: Long, focusable: Boolean)
+    external fun nativeSetFocusable(
+        panel: Long,
+        focusable: Boolean,
+    )
 
     /** Returns the popup HWND itself (the popup has no separate "content view" on Windows). */
     @JvmStatic
@@ -64,10 +92,16 @@ internal object PopupNativeBridgeWindows {
     external fun nativeSwapBuffers(panel: Long)
 
     @JvmStatic
-    external fun nativeSetEventCallback(panel: Long, callback: EventCallback?)
+    external fun nativeSetEventCallback(
+        panel: Long,
+        callback: EventCallback?,
+    )
 
     @JvmStatic
-    external fun nativeInstallOutsideClickMonitor(panel: Long, listener: OutsideClickListener)
+    external fun nativeInstallOutsideClickMonitor(
+        panel: Long,
+        listener: OutsideClickListener,
+    )
 
     @JvmStatic
     external fun nativeUninstallOutsideClickMonitor(panel: Long)

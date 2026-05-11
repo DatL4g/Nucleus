@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber")
+
 package io.github.kdroidfilter.nucleus.window.tao
 
 import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
@@ -21,6 +23,7 @@ import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
  * bottom-left, points-based screen coords using the parent window's
  * `backingScaleFactor`.
  */
+@Suppress("TooManyFunctions")
 internal object PopupNativeBridge {
     private const val LIBRARY_NAME = "nucleus_tao_macos_popup"
 
@@ -90,15 +93,31 @@ internal object PopupNativeBridge {
     interface EventCallback {
         /** [type] = 1 down, 2 up, 3 move. [button] = 0 none, 1 primary, 2 secondary. */
         @Suppress("FunctionParameterNaming")
-        fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int)
+        fun onPointerEvent(
+            type: Int,
+            x: Float,
+            y: Float,
+            button: Int,
+            modifiers: Int,
+        )
 
         /** AppKit `scrollingDelta*` units. */
         @Suppress("FunctionParameterNaming")
-        fun onScroll(x: Float, y: Float, dx: Float, dy: Float)
+        fun onScroll(
+            x: Float,
+            y: Float,
+            dx: Float,
+            dy: Float,
+        )
 
         /** [type] = 1 down, 2 up. */
         @Suppress("FunctionParameterNaming")
-        fun onKeyEvent(type: Int, vkCode: Int, codePoint: Int, modifiers: Int)
+        fun onKeyEvent(
+            type: Int,
+            vkCode: Int,
+            codePoint: Int,
+            modifiers: Int,
+        )
     }
 
     /**
@@ -109,12 +128,18 @@ internal object PopupNativeBridge {
      */
     interface OutsideClickListener {
         /** [type] = 1 (always Press for monitor scope). [button] = 1 primary, 2 secondary, 3 other. */
-        fun onOutsideClick(type: Int, button: Int)
+        fun onOutsideClick(
+            type: Int,
+            button: Int,
+        )
     }
 
     /** Toggles the panel's `canBecomeKeyWindow` value. */
     @JvmStatic
-    external fun nativeSetFocusable(panel: Long, focusable: Boolean)
+    external fun nativeSetFocusable(
+        panel: Long,
+        focusable: Boolean,
+    )
 
     /**
      * When `ignore = true`, AppKit routes pointer events past this panel
@@ -123,11 +148,17 @@ internal object PopupNativeBridge {
      * native subview (e.g. a `WKWebView`) below.
      */
     @JvmStatic
-    external fun nativeSetIgnoresMouseEvents(panel: Long, ignore: Boolean)
+    external fun nativeSetIgnoresMouseEvents(
+        panel: Long,
+        ignore: Boolean,
+    )
 
     /** Installs the JNI [EventCallback] on the panel's content view. Pass `null` to remove. */
     @JvmStatic
-    external fun nativeSetEventCallback(panel: Long, callback: EventCallback?)
+    external fun nativeSetEventCallback(
+        panel: Long,
+        callback: EventCallback?,
+    )
 
     /**
      * Installs an `NSEvent.addLocalMonitorForEventsMatchingMask:` for
@@ -136,7 +167,10 @@ internal object PopupNativeBridge {
      * that landed *outside* the popup.
      */
     @JvmStatic
-    external fun nativeInstallOutsideClickMonitor(panel: Long, listener: OutsideClickListener)
+    external fun nativeInstallOutsideClickMonitor(
+        panel: Long,
+        listener: OutsideClickListener,
+    )
 
     /** Removes any previously installed outside-click monitor for this panel. */
     @JvmStatic
@@ -150,7 +184,10 @@ internal object PopupNativeBridge {
      * means the panel intercepts every event in its bounds.
      */
     @JvmStatic
-    external fun nativeSetRegionHitTestEnabled(panel: Long, enable: Boolean)
+    external fun nativeSetRegionHitTestEnabled(
+        panel: Long,
+        enable: Boolean,
+    )
 
     /**
      * Replaces the panel's interactive-region list. [rectsPx] is a flat
@@ -159,5 +196,9 @@ internal object PopupNativeBridge {
      * enabled. Pass `count = 0` to clear (full passthrough).
      */
     @JvmStatic
-    external fun nativeSetInteractiveRegions(panel: Long, rectsPx: FloatArray, count: Int)
+    external fun nativeSetInteractiveRegions(
+        panel: Long,
+        rectsPx: FloatArray,
+        count: Int,
+    )
 }

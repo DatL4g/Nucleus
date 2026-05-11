@@ -33,24 +33,26 @@ internal inline fun renderGlFrame(
     crossinline present: () -> Unit,
 ) {
     if (widthPx <= 0 || heightPx <= 0) return
-    val rt = BackendRenderTarget.makeGL(
-        width = widthPx,
-        height = heightPx,
-        sampleCnt = 0,
-        stencilBits = 8,
-        fbId = 0,
-        fbFormat = FramebufferFormat.GR_GL_RGBA8,
-    )
-    val surface = Surface.makeFromBackendRenderTarget(
-        context = directContext,
-        rt = rt,
-        origin = SurfaceOrigin.BOTTOM_LEFT,
-        colorFormat = SurfaceColorFormat.RGBA_8888,
-        colorSpace = ColorSpace.sRGB,
-    ) ?: run {
-        rt.close()
-        return
-    }
+    val rt =
+        BackendRenderTarget.makeGL(
+            width = widthPx,
+            height = heightPx,
+            sampleCnt = 0,
+            stencilBits = 8,
+            fbId = 0,
+            fbFormat = FramebufferFormat.GR_GL_RGBA8,
+        )
+    val surface =
+        Surface.makeFromBackendRenderTarget(
+            context = directContext,
+            rt = rt,
+            origin = SurfaceOrigin.BOTTOM_LEFT,
+            colorFormat = SurfaceColorFormat.RGBA_8888,
+            colorSpace = ColorSpace.sRGB,
+        ) ?: run {
+            rt.close()
+            return
+        }
     try {
         surface.canvas.clear(clearColorArgb)
         scene.render(surface.canvas.asComposeCanvas(), System.nanoTime())

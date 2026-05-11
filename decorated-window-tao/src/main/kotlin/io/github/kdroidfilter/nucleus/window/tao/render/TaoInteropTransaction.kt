@@ -42,5 +42,8 @@ internal class MutableTaoInteropTransaction(
 ) : TaoInteropTransaction {
     private val _actions = ArrayList<TaoInteropAction>()
     override val actions: List<TaoInteropAction> get() = _actions
-    fun add(action: TaoInteropAction) { _actions.add(action) }
+
+    fun add(action: TaoInteropAction) {
+        _actions.add(action)
+    }
 }

@@ -54,51 +54,53 @@ import kotlin.math.roundToInt
  *  - **Windows / outside any `NativeView`**: no-op so call sites
  *    stay portable.
  */
-fun Modifier.consumeOverlayPointerEvents(cursor: PointerIcon? = null): Modifier = composed {
-    val mac = LocalNativeViewOverlayController.current
-    val linux = LocalTaoLinuxOverlayController.current
-    val windows = LocalNativeViewOverlayControllerWindows.current
-    if (mac == null && linux == null && windows == null) return@composed this
+fun Modifier.consumeOverlayPointerEvents(cursor: PointerIcon? = null): Modifier =
+    composed {
+        val mac = LocalNativeViewOverlayController.current
+        val linux = LocalTaoLinuxOverlayController.current
+        val windows = LocalNativeViewOverlayControllerWindows.current
+        if (mac == null && linux == null && windows == null) return@composed this
 
-    val key = remember { Any() }
-    DisposableEffect(mac, linux, windows, key) {
-        onDispose {
-            mac?.unregisterRegion(key)
-            linux?.unregisterRegion(key)
-            windows?.unregisterRegion(key)
-            windows?.popManualCursor(key)
+        val key = remember { Any() }
+        DisposableEffect(mac, linux, windows, key) {
+            onDispose {
+                mac?.unregisterRegion(key)
+                linux?.unregisterRegion(key)
+                windows?.unregisterRegion(key)
+                windows?.popManualCursor(key)
+            }
         }
-    }
 
-    val regionMod = onGloballyPositioned { coords ->
-        val pos = coords.positionInRoot()
-        val xPx = pos.x.roundToInt()
-        val yPx = pos.y.roundToInt()
-        val wPx = coords.size.width
-        val hPx = coords.size.height
-        mac?.registerRegion(key, xPx, yPx, wPx, hPx)
-        linux?.registerRegion(key, xPx, yPx, wPx, hPx)
-        windows?.registerRegion(key, xPx, yPx, wPx, hPx)
-    }
+        val regionMod =
+            onGloballyPositioned { coords ->
+                val pos = coords.positionInRoot()
+                val xPx = pos.x.roundToInt()
+                val yPx = pos.y.roundToInt()
+                val wPx = coords.size.width
+                val hPx = coords.size.height
+                mac?.registerRegion(key, xPx, yPx, wPx, hPx)
+                linux?.registerRegion(key, xPx, yPx, wPx, hPx)
+                windows?.registerRegion(key, xPx, yPx, wPx, hPx)
+            }
 
-    if (cursor == null) return@composed regionMod
+        if (cursor == null) return@composed regionMod
 
-    if (windows != null) {
-        regionMod.then(
-            Modifier.pointerInput(cursor, key) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        when (event.type) {
-                            PointerEventType.Enter -> windows.pushManualCursor(key, cursor)
-                            PointerEventType.Exit -> windows.popManualCursor(key)
-                            else -> {}
+        if (windows != null) {
+            regionMod.then(
+                Modifier.pointerInput(cursor, key) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            when (event.type) {
+                                PointerEventType.Enter -> windows.pushManualCursor(key, cursor)
+                                PointerEventType.Exit -> windows.popManualCursor(key)
+                                else -> {}
+                            }
                         }
                     }
-                }
-            },
-        )
-    } else {
-        regionMod.then(Modifier.pointerHoverIcon(cursor, overrideDescendants = true))
+                },
+            )
+        } else {
+            regionMod.then(Modifier.pointerHoverIcon(cursor, overrideDescendants = true))
+        }
     }
-}

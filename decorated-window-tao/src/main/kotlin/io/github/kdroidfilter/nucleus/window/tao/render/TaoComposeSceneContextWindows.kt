@@ -20,17 +20,17 @@ internal class TaoComposeSceneContextWindows(
     override val platformContext: PlatformContext,
     private val popupHost: TaoPopupHostWindows,
 ) : ComposeSceneContext {
-
     override fun createLayer(
         density: Density,
         layoutDirection: LayoutDirection,
         focusable: Boolean,
         compositionContext: CompositionContext,
-    ): ComposeSceneLayer = TaoPopupSceneLayerWindows(
-        host = popupHost,
-        initialDensity = density,
-        initialLayoutDirection = layoutDirection,
-        initialFocusable = focusable,
-        parentCompositionContext = compositionContext,
-    )
+    ): ComposeSceneLayer =
+        TaoPopupSceneLayerWindows(
+            host = popupHost,
+            initialDensity = density,
+            initialLayoutDirection = layoutDirection,
+            initialFocusable = focusable,
+            parentCompositionContext = compositionContext,
+        )
 }
