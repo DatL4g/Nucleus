@@ -99,9 +99,11 @@ gradle.projectsEvaluated {
                     exclude("target/**", "vendor/**")
                 }
 
-            enabled = isHostTask
-            setOnlyIf("native build task matches the current host OS") {
-                isHostTask
+            if (System.getenv("CI") != "true") {
+                enabled = isHostTask
+                setOnlyIf("native build task matches the current host OS") {
+                    isHostTask
+                }
             }
             inputs
                 .files(nativeSources)
