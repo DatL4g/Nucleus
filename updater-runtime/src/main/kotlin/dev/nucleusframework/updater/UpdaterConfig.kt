@@ -1,12 +1,14 @@
 package dev.nucleusframework.updater
 
 import dev.nucleusframework.core.runtime.ExecutableRuntime
+import dev.nucleusframework.core.runtime.NucleusApp
 import dev.nucleusframework.updater.provider.UpdateProvider
 import java.net.http.HttpClient
 
 class UpdaterConfig {
     var currentVersion: String =
-        System.getProperty("jpackage.app-version")
+        NucleusApp.version
+            ?: System.getProperty("jpackage.app-version")
             ?: ExecutableRuntime.markerVersion()
             ?: DEV_VERSION
     lateinit var provider: UpdateProvider

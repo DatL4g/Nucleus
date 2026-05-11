@@ -254,7 +254,13 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             // Capture all DSL values at configuration time to avoid serializing
             // Project/SourceSet references into the configuration cache.
             val winPkgName = packageNameProvider
-            val winPkgVersion = provider { app.nativeDistributions.packageVersion ?: "1.0.0" }
+            val winPkgVersion =
+                provider {
+                    app.nativeDistributions.windows.exePackageVersion
+                        ?: app.nativeDistributions.windows.packageVersion
+                        ?: app.nativeDistributions.packageVersion
+                        ?: "1.0.0"
+                }
             val winCopyright = provider { app.nativeDistributions.copyright ?: "" }
             val winDescription = provider { app.nativeDistributions.description ?: packageNameProvider.get() }
             val winIconFile =
@@ -959,7 +965,8 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     val plistBundleName: String = app.nativeDistributions.appName ?: app.nativeDistributions.packageName ?: project.name
     val plistBundleID: String? = app.nativeDistributions.macOS.bundleID
     val plistVersion: String =
-        app.nativeDistributions.packageVersion
+        app.nativeDistributions.macOS.packageVersion
+            ?: app.nativeDistributions.packageVersion
             ?: project.version.toString().takeIf { it != "unspecified" }
             ?: "1.0.0"
     val plistMinSystemVersion = graalvm.macOS.minimumSystemVersion
