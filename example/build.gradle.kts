@@ -45,7 +45,6 @@ dependencies {
     implementation(project(":sf-symbols"))
     implementation(project(":media-control"))
     implementation(libs.coroutines.swing)
-    implementation(project(":graalvm-runtime"))
     implementation(libs.reorderable)
     implementation("com.materialkolor:material-kolor:4.1.1")
     implementation(libs.compose.material.icons.extended)

@@ -18,6 +18,7 @@ dependencies {
     api(project(":decorated-window-core"))
     api(project(":decorated-window-awt"))
     implementation(project(":core-runtime"))
+    implementation(project(":graalvm-runtime"))
     implementation(libs.compose.desktop.common)
 
     // An app ships exactly one backend at runtime — by construction (their

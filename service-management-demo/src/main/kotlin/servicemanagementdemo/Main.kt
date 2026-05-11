@@ -23,8 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.application
+import dev.nucleusframework.application.DecoratedWindow
+import dev.nucleusframework.application.NucleusBackend
+import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.notification.common.notification
 import dev.nucleusframework.servicemanagement.AppService
 import dev.nucleusframework.servicemanagement.AppServiceManager
@@ -55,8 +56,8 @@ private fun runBackgroundTask() {
 }
 
 private fun launchUi() =
-    application {
-        Window(
+    nucleusApplication(backend = NucleusBackend.Awt) {
+        DecoratedWindow(
             onCloseRequest = ::exitApplication,
             title = "SMAppService Demo",
         ) {

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.window.application
 import dev.nucleusframework.application.internal.TaoLauncher
+import dev.nucleusframework.graalvm.GraalVmInitializer
 
 /**
  * Single entry point for a Nucleus desktop application.
@@ -38,6 +39,8 @@ fun nucleusApplication(
     backend: NucleusBackend = NucleusBackend.Auto,
     content: @Composable NucleusApplicationScope.() -> Unit,
 ) {
+    GraalVmInitializer.initialize()
+
     when (resolveBackend(backend)) {
         NucleusBackend.Tao -> TaoLauncher.run(args, content)
         NucleusBackend.Awt, NucleusBackend.Auto ->

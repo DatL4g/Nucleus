@@ -16,6 +16,7 @@ dependencies {
     implementation(project(":darkmode-detector"))
     implementation(project(":decorated-window-jewel"))
     implementation(project(":decorated-window-jni"))
+    implementation(project(":nucleus-application"))
     implementation(project(":scheduler"))
 
     val jewelExclusions =

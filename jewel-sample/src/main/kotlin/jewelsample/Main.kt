@@ -1,6 +1,7 @@
 package jewelsample
 
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.Painter
@@ -19,7 +20,6 @@ import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
-import dev.nucleusframework.graalvm.GraalVmInitializer
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.jewel.rememberJewelTitleBarStyle
 import dev.nucleusframework.window.jewel.rememberJewelWindowStyle
@@ -42,14 +42,13 @@ import org.jetbrains.jewel.ui.ComponentStyling
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @ExperimentalLayoutApi
-fun main() {
-    GraalVmInitializer.initialize()
-
-    JewelLogger.getInstance("StandaloneSample").info("Starting Jewel Standalone sample")
-
-    val icon = svgResource("icons/jewel-logo.svg")
-
+fun main() =
     nucleusApplication(backend = NucleusBackend.Tao) {
+        remember {
+            JewelLogger.getInstance("StandaloneSample").info("Starting Jewel Standalone sample")
+            true
+        }
+        val icon = remember { svgResource("icons/jewel-logo.svg") }
         val textStyle = JewelTheme.createDefaultTextStyle()
         val editorStyle = JewelTheme.createEditorTextStyle()
 
@@ -113,7 +112,6 @@ fun main() {
             },
         )
     }
-}
 
 /*
    Alt + W -> Welcome
