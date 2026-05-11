@@ -1,5 +1,8 @@
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
 import dev.detekt.gradle.Detekt
+import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.api.tasks.Exec
+import org.gradle.api.tasks.PathSensitivity
 
 plugins {
     alias(libs.plugins.kotlin) apply false
@@ -14,6 +17,27 @@ plugins {
 
 val demoProjects =
     setOf("example", "jewel-sample", "system-info-demo", "sample-cmp", "scheduler-demo", "service-management-demo")
+
+val nativeBuildTaskPrefix = "buildNative"
+
+val buildNative by tasks.registering {
+    group = "build"
+    description = "Builds native libraries for the current host platform."
+}
+
+tasks.register("watchNative") {
+    group = "build"
+    description = "Builds native libraries; run with --continuous to rebuild on native source changes."
+    dependsOn(buildNative)
+}
+
+fun isCurrentHostNativeTask(taskName: String): Boolean =
+    when {
+        taskName.contains("Windows", ignoreCase = true) -> Os.isFamily(Os.FAMILY_WINDOWS)
+        taskName.contains("Mac", ignoreCase = true) -> Os.isFamily(Os.FAMILY_MAC)
+        taskName.contains("Linux", ignoreCase = true) -> Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC)
+        else -> true
+    }
 
 subprojects {
     if (name !in demoProjects) {
@@ -54,6 +78,49 @@ subprojects {
         tasks.withType<Detekt>().configureEach {
             jvmTarget.set("21")
         }
+    }
+}
+
+gradle.projectsEvaluated {
+    allprojects {
+        tasks.withType<Exec>().configureEach {
+            val taskName = name
+            if (!taskName.startsWith(nativeBuildTaskPrefix)) return@configureEach
+            val isHostTask = isCurrentHostNativeTask(taskName)
+
+            val nativeSources =
+                fileTree("src/main/native") {
+                    include("Cargo.toml", "Cargo.lock", "build.rs", "src/**")
+                    when {
+                        taskName.contains("Windows", ignoreCase = true) -> include("windows/**")
+                        taskName.contains("Mac", ignoreCase = true) -> include("macos/**")
+                        taskName.contains("Linux", ignoreCase = true) -> include("linux/**")
+                    }
+                    exclude("target/**", "vendor/**")
+                }
+
+            enabled = isHostTask
+            setOnlyIf("native build task matches the current host OS") {
+                isHostTask
+            }
+            inputs
+                .files(nativeSources)
+                .withPropertyName("nativeSources")
+                .withPathSensitivity(PathSensitivity.RELATIVE)
+        }
+    }
+
+    buildNative.configure {
+        dependsOn(
+            allprojects.flatMap { project ->
+                project.tasks
+                    .matching { task ->
+                        task is Exec &&
+                            task.name.startsWith(nativeBuildTaskPrefix) &&
+                            isCurrentHostNativeTask(task.name)
+                    }.toList()
+            },
+        )
     }
 }
 
