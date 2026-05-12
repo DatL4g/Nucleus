@@ -65,9 +65,53 @@ import dev.nucleusframework.aot.runtime.AotRuntimeMode
 
 During AOT training, the plugin launches your application so the JVM can record which classes are loaded and which methods are compiled. Your application **must self-terminate** during this phase — otherwise the build will hang until the safety timeout (300 seconds) kills the process.
 
-### Basic approach
+### DSL approach (recommended)
 
-The simplest strategy is to run the app for a fixed duration (30–45 seconds is usually enough) and exit:
+If you're using `nucleusApplication { … }` from the [`nucleus.nucleus-application`](https://central.sonatype.com/artifact/dev.nucleusframework/nucleus.nucleus-application) module, the scope exposes a one-liner that arms the auto-exit timer and a set of mode flags — no manual thread plumbing, no `AotRuntime` import needed:
+
+```kotlin
+import dev.nucleusframework.application.aotTraining
+import dev.nucleusframework.application.nucleusApplication
+import kotlin.time.Duration.Companion.seconds
+
+fun main(args: Array<String>) = nucleusApplication(args) {
+    // No-op outside training mode. Calls `exitApplication()` after the duration
+    // elapses so Compose can shut down cleanly. Safe to call multiple times.
+    aotTraining(duration = 45.seconds)
+
+    // Branch on the current mode whenever you want to preload hot paths
+    // or skip heavy initialization.
+    if (isAotTraining) {
+        preloadNavigationScreens()
+        preloadFontsAndImages()
+    }
+
+    DecoratedWindow(onCloseRequest = ::exitApplication, title = "MyApp") {
+        App()
+    }
+}
+```
+
+The scope exposes three properties that mirror the underlying `AotRuntime` API:
+
+| Property | Equivalent |
+|----------|------------|
+| `aotMode` | `AotRuntime.mode()` |
+| `isAotTraining` | `AotRuntime.isTraining()` |
+| `isAotRuntime` | `AotRuntime.isRuntime()` |
+
+`aotTraining` also accepts a custom timeout lambda if you need to dump a profile or perform a hard exit:
+
+```kotlin
+aotTraining(duration = 45.seconds) {
+    dumpJfrRecording()
+    exitApplication()
+}
+```
+
+### Manual approach
+
+If you don't use `nucleusApplication` (e.g. you call Compose's `application { … }` directly), drive the timer yourself with `AotRuntime`:
 
 ```kotlin
 private const val AOT_TRAINING_DURATION_MS = 45_000L
@@ -81,34 +125,8 @@ fun main() {
             isDaemon = false
             start()
         }
-    }
 
-    application {
-        Window(onCloseRequest = ::exitApplication, title = "MyApp") {
-            App()
-        }
-    }
-}
-```
-
-### Optimized approach
-
-For maximum startup improvement, actively exercise your application's hot paths during training. The more classes the JVM loads during the training run, the more it can pre-compile in the cache:
-
-```kotlin
-fun main() {
-    if (AotRuntime.isTraining()) {
-        Thread({
-            Thread.sleep(AOT_TRAINING_DURATION_MS)
-            System.exit(0)
-        }, "aot-timer").apply {
-            isDaemon = false
-            start()
-        }
-    }
-
-    // Eagerly load classes that the user will hit on first launch
-    if (AotRuntime.isTraining()) {
+        // Eagerly load classes the user will hit on first launch
         preloadNavigationScreens()
         preloadFontsAndImages()
         initializeDatabase()

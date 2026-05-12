@@ -66,7 +66,6 @@ dependencies {
 
     // Jewel's StandalonePlatformCursorController uses JNA at runtime
     implementation(libs.jna.jpms)
-
 }
 
 java {

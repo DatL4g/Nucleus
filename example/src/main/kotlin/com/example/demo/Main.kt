@@ -62,7 +62,7 @@ import com.example.demo.icons.TablerTextDirectionRtl
 import com.example.demo.icons.VscodeCodiconsColorMode
 import com.materialkolor.DynamicMaterialTheme
 import com.materialkolor.PaletteStyle
-import dev.nucleusframework.aot.runtime.AotRuntime
+import dev.nucleusframework.application.aotTraining
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.autolaunch.AutoLaunch
 import dev.nucleusframework.core.runtime.DeepLinkHandler
@@ -87,9 +87,7 @@ import dev.nucleusframework.window.material.MaterialTitleBar
 import dev.nucleusframework.window.newFullscreenControls
 import java.io.File
 import java.net.URI
-import kotlin.system.exitProcess
-
-private const val AOT_TRAINING_DURATION_MS = 45_000L
+import kotlin.time.Duration.Companion.seconds
 
 private val deepLinkUri = mutableStateOf<URI?>(null)
 
@@ -107,23 +105,11 @@ fun main(args: Array<String>) =
             if (Platform.Current == Platform.Windows) {
                 WindowsJumpListManager.setProcessAppId()
             }
-
-            // Stop app after 15 seconds during AOT training mode
-            // Use -Dnucleus.aot.mode=training to test
-            if (AotRuntime.isTraining()) {
-                println("[AOT] Training mode - will exit in 15 seconds")
-
-                Thread({
-                    Thread.sleep(AOT_TRAINING_DURATION_MS)
-                    println("[AOT] Time's up, exiting...")
-                    exitProcess(0)
-                }, "aot-timer").apply {
-                    isDaemon = false
-                    start()
-                }
-            }
             true
         }
+
+        // Auto-exit after 45s when running with -Dnucleus.aot.mode=training.
+        aotTraining(duration = 45.seconds)
 
         onDeepLink { uri ->
             println("[JumpList/DeepLink] Received: $uri")
