@@ -1,10 +1,12 @@
 import dev.detekt.gradle.Detekt
 
 plugins {
+    `java-base`
     alias(libs.plugins.kotlin) apply false
     alias(libs.plugins.pluginPublish) apply false
     alias(libs.plugins.detekt)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.lighthouse)
     alias(libs.plugins.versionCheck)
 }
 
@@ -15,7 +17,14 @@ val resolvedVersion =
         ?.removePrefix("refs/tags/v")
         ?: "1.0.0"
 
-allprojects {
+group = property("GROUP").toString()
+version = resolvedVersion
+
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+fun Project.configurePluginBuildQuality() {
     group = property("GROUP").toString()
     version = resolvedVersion
 
@@ -51,6 +60,16 @@ allprojects {
     }
 }
 
+configurePluginBuildQuality()
+
+project(":plugin") {
+    configurePluginBuildQuality()
+}
+
+lighthouse {
+    enableTestCoverageCheck.set(false)
+}
+
 tasks.withType<Detekt>().configureEach {
     jvmTarget.set("11")
     reports {
@@ -59,7 +78,7 @@ tasks.withType<Detekt>().configureEach {
     }
 }
 
-tasks.register("clean", Delete::class.java) {
+tasks.named<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
 
