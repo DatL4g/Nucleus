@@ -123,7 +123,9 @@ nav:
   - Ecosystem:
       - File Dialog: ecosystem/file-dialog.md
       - Spell Check: ecosystem/spell-check.md
-  - Migration: migration.md
+  - Migration:
+      - From JetBrains Compose: migration.md
+      - From Nucleus 1.x to 2.0: migration-2.0.md
   - Roadmap: roadmap.md
   - Changelog: changelog.md
   - LLM Documentation: llm.md
