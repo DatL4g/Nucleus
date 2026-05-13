@@ -19,6 +19,8 @@ This guide walks through the changes in order. Apply them top-to-bottom.
 | Single instance | Manual `SingleInstanceManager.isSingleInstance(…)` | Automatic |
 | Window restore on 2nd-instance | Manual `LaunchedEffect` + `toFront()` | Automatic |
 | AOT training timer | Manual `Thread` + `exitProcess` | `aotTraining(duration = …)` |
+| AutoLaunch cache prime | Manual `AutoLaunch.wasStartedAtLogin(args)` | Automatic |
+| Windows AUMID | Manual `WindowsJumpListManager.setProcessAppId()` | Automatic |
 
 ---
 
@@ -148,10 +150,11 @@ What `nucleusApplication` now handles for you, in order:
 1. `GraalVmInitializer.initialize()` — fonts, charsets, HiDPI, `java.home`.
 2. AOT training timer (when running with `-Dnucleus.aot.mode=training` and you call `aotTraining(…)`).
 3. Single-instance lock acquisition. **If a second instance launches it relays its CLI deep link to the primary and exits with code 0 — Compose never starts on the secondary.**
-4. Backend resolution (`NucleusBackend.Auto` picks AWT or Tao based on the classpath).
-5. The Compose application loop.
+4. Platform priming: `AutoLaunch.wasStartedAtLogin(args)` cache is warmed up and, on Windows, `WindowsJumpListManager.setProcessAppId()` is called before any window is created. Both run reflectively — they only fire if the `autolaunch` / `launcher-windows` modules are on the classpath.
+5. Backend resolution (`NucleusBackend.Auto` picks AWT or Tao based on the classpath).
+6. The Compose application loop.
 
-You still call the platform helpers you need (`AutoLaunch.wasStartedAtLogin`, `WindowsJumpListManager.setProcessAppId`, …), but they live inside the scope and run only on the primary instance.
+You no longer need to call `AutoLaunch.wasStartedAtLogin(args)` or `WindowsJumpListManager.setProcessAppId()` from `main()` — they happen automatically. Other platform helpers (dock menus, Unity launcher quicklists, …) keep their native shape and live inside the scope.
 
 ---
 

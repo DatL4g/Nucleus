@@ -69,7 +69,6 @@ import dev.nucleusframework.core.runtime.NucleusApp
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.energymanager.EnergyManager
-import dev.nucleusframework.launcher.windows.WindowsJumpListManager
 import dev.nucleusframework.nativehttp.NativeHttpClient
 import dev.nucleusframework.systemcolor.systemAccentColor
 import dev.nucleusframework.updater.NucleusUpdater
@@ -96,13 +95,7 @@ fun main(args: Array<String>) =
     nucleusApplication(args) {
         remember {
             nucleusMainArgs = args
-            AutoLaunch.wasStartedAtLogin(args) // prime the cache for Win32 / MSIX
             MacLaunchDiagnostic.capture(args)
-
-            // Set AUMID before any window is created (required for jump lists in non-APPX mode)
-            if (Platform.Current == Platform.Windows) {
-                WindowsJumpListManager.setProcessAppId()
-            }
             true
         }
 

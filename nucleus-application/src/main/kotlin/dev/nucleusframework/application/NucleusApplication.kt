@@ -46,6 +46,8 @@ fun nucleusApplication(
         acquireSingleInstanceLock()
     }
 
+    primePlatformIntegrations(args)
+
     when (resolveBackend(backend)) {
         NucleusBackend.Tao -> TaoLauncher.run(args, content)
         NucleusBackend.Awt, NucleusBackend.Auto ->
