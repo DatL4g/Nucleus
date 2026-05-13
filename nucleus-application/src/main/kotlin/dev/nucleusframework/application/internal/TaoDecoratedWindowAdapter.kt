@@ -2,6 +2,7 @@ package dev.nucleusframework.application.internal
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
@@ -17,9 +18,6 @@ import dev.nucleusframework.application.ObserveSingleInstanceRestore
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
 import dev.nucleusframework.window.DecoratedWindowState
-import dev.nucleusframework.window.LocalIsDarkTheme
-import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
-import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.DecoratedWindow as TaoDecoratedWindow
 
@@ -47,12 +45,11 @@ internal object TaoDecoratedWindowAdapter {
         content: @Composable NucleusDecoratedWindowScope.() -> Unit,
     ) {
         // Tao opens a fresh ComposeScene per window; CompositionLocals from
-        // the outer scope don't propagate across scenes. Capture the styling
-        // locals here so wrapping `NucleusDecoratedWindowTheme` outside the
-        // DecoratedWindow works the same on both backends.
-        val outerIsDark = LocalIsDarkTheme.current
-        val outerWindowStyle = LocalDecoratedWindowStyle.current
-        val outerTitleBarStyle = LocalTitleBarStyle.current
+        // the outer scope don't propagate across scenes. Capture the full
+        // local context so every local (theme, density, layout direction,
+        // user-provided locals, …) flows into the new scene — matching how
+        // Compose's own Dialog/Popup bridge across scene boundaries.
+        val outerLocals = currentCompositionLocalContext
 
         with(scope.taoScope) {
             TaoDecoratedWindow(
@@ -83,14 +80,13 @@ internal object TaoDecoratedWindowAdapter {
                         TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
                     }
                 ObserveSingleInstanceRestore(nucleusWindow)
-                CompositionLocalProvider(
-                    LocalNucleusBackend provides NucleusBackend.Tao,
-                    LocalNucleusWindow provides nucleusWindow,
-                    LocalIsDarkTheme provides outerIsDark,
-                    LocalDecoratedWindowStyle provides outerWindowStyle,
-                    LocalTitleBarStyle provides outerTitleBarStyle,
-                ) {
-                    nucleusScope.content()
+                CompositionLocalProvider(outerLocals) {
+                    CompositionLocalProvider(
+                        LocalNucleusBackend provides NucleusBackend.Tao,
+                        LocalNucleusWindow provides nucleusWindow,
+                    ) {
+                        nucleusScope.content()
+                    }
                 }
             }
         }
