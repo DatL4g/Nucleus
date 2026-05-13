@@ -39,10 +39,13 @@ import org.jetbrains.skia.DirectContext
  *     with [TaoPopupHost], so the host's `onRedrawRequested` pump fires
  *     [renderFrame] every parent frame — the inner scene is never starved.
  *  2. *Measurement chicken-and-egg*: the inner [CanvasLayersComposeScene]
- *     is constructed with `size = host.parentWindowSize` (non-zero from
- *     the start) so Compose's `RootMeasurePolicy` measures the popup
- *     content with real constraints. Without this, content size collapses
- *     to 0 and `boundsInWindow` never gets a non-trivial value.
+ *     is constructed with `size = host.workAreaSize` (non-zero from the
+ *     start) so Compose's `RootMeasurePolicy` measures the popup content
+ *     with real constraints. Without this, content size collapses to 0
+ *     and `boundsInWindow` never gets a non-trivial value. The screen
+ *     work area (not the owner window's size) is used so a tall menu
+ *     in a small floating window can lay out at full height instead of
+ *     being artificially scrolled.
  *  3. *CompositionLocal propagation*: [setContent] wraps user content
  *     with `CompositionLocalProvider(_compositionLocalContext) { ... }`.
  *     Compose's popup framework sets `compositionLocalContext` *before*
@@ -82,6 +85,18 @@ internal class TaoPopupSceneLayer(
     private val scale: Float = host.scale
 
     /**
+     * Upper bound for the inner scene's layout constraints. The owner
+     * window's size would clip popup content that legitimately extends
+     * beyond it (a tall `DropdownMenu` in a small floating window) —
+     * fed the screen work area instead so Compose lays out at full
+     * height + the `Popup.PositionProvider` flips/clips at the screen
+     * edge. Read once; not reactive (the popup is rebuilt on owner-move).
+     */
+    private val sceneLayoutSize: IntSize = host.workAreaSize.let {
+        IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
+    }
+
+    /**
      * Panel created at parent-window-size offscreen so the inner scene
      * has real layout constraints, while the user doesn't see a 1×1
      * artifact. Compose's `Popup` framework will write [boundsInWindow]
@@ -118,8 +133,8 @@ internal class TaoPopupSceneLayer(
         )
 
     /**
-     * Inner scene at parent window size — see "measurement chicken-and-
-     * egg" in the class doc. The CAMetalLayer is sized to the popup's
+     * Inner scene at screen work-area size — see "measurement chicken-
+     * and-egg" in the class doc. The CAMetalLayer is sized to the popup's
      * actual bounds (smaller); render writes scene content (positioned
      * at 0,0 by `Popup.skiko.kt`'s `RootMeasurePolicy`) into the smaller
      * surface — content fits because the popup framework lays out at
@@ -142,7 +157,7 @@ internal class TaoPopupSceneLayer(
         CanvasLayersComposeScene(
             density = _density,
             layoutDirection = _layoutDirection,
-            size = IntSize(widthPx, heightPx),
+            size = sceneLayoutSize,
             coroutineContext = host.sceneCoroutineContext,
             platformContext =
                 object : PlatformContext.Empty() {

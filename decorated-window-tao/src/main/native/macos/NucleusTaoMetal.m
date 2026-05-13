@@ -1026,6 +1026,34 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeIsMacOSTahoeOrLater
 }
 
 /**
+ * Returns the visibleFrame size (screen minus menu bar and dock) of the
+ * NSScreen currently hosting the given NSView, in physical pixels, packed
+ * as `(width << 32) | (height & 0xFFFFFFFF)`. Returns 0 when the NSView is
+ * not yet attached to a window or no screen is resolvable — callers must
+ * fall back to their owner-window size in that case.
+ *
+ * Used by `TaoPopupSceneLayer` to size its inner Compose scene's layout
+ * constraints. The owner window's own size would be a false upper bound
+ * (a popup can legitimately extend beyond the owner up to the screen edge).
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeOwnerWorkAreaSize(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return 0;
+    NSWindow *win = view.window;
+    if (win == nil) return 0;
+    NSScreen *screen = win.screen ?: [NSScreen mainScreen];
+    if (screen == nil) return 0;
+    CGFloat scale = screen.backingScaleFactor;
+    NSRect frame = screen.visibleFrame;
+    jlong widthPx = (jlong) llround(frame.size.width * scale);
+    jlong heightPx = (jlong) llround(frame.size.height * scale);
+    if (widthPx <= 0 || heightPx <= 0) return 0;
+    return ((jlong)(widthPx & 0xFFFFFFFFL) << 32) | (jlong)(heightPx & 0xFFFFFFFFL);
+}
+
+/**
  * Applies (or removes) the macOS 26+ "large corner radius" treatment by
  * attaching an invisible NSToolbar on the parent NSWindow. The toolbar acts
  * as a marker that opts the window into the new modern corner radius and

@@ -94,6 +94,17 @@ internal object NativeMetalBridge {
     external fun nativeIsMacOSTahoeOrLater(): Boolean
 
     /**
+     * Visible-frame size (screen minus menu bar + dock) of the NSScreen
+     * hosting the given NSView, in **physical pixels**, packed as
+     * `(width shl 32) or (height and 0xFFFFFFFF)`. Returns 0 when the
+     * NSView is not yet attached to a window — callers must fall back to
+     * their owner-window size. Used as the upper-bound layout constraint
+     * for popup inner scenes (see [render.TaoPopupSceneLayer]).
+     */
+    @JvmStatic
+    external fun nativeOwnerWorkAreaSize(nsViewPtr: Long): Long
+
+    /**
      * Toggles the macOS 26+ "Liquid Glass" / large-corner-radius treatment by
      * attaching an invisible NSToolbar to the parent NSWindow. No-op on
      * earlier macOS releases (the toolbar would only add chrome height for

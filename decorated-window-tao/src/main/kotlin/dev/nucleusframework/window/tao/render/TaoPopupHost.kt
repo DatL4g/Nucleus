@@ -30,6 +30,23 @@ internal interface TaoPopupHost {
      */
     val parentWindowSize: IntSize
 
+    /**
+     * Visible-frame size (screen minus menu bar + dock) of the NSScreen
+     * hosting the owner window, in **physical pixels**. Used by popup
+     * layers as the upper bound for inner-scene layout — popups can
+     * legitimately extend beyond the owner window up to the screen edge,
+     * so the owner's own size is a false ceiling (a 400×300 owner on a
+     * 4K display would otherwise force a tall DropdownMenu to scroll
+     * internally instead of laying out full-height + flipping at the
+     * screen edge).
+     *
+     * Falls back to [parentWindowSize] when the NSScreen is not yet
+     * resolvable (e.g. very early init before the NSView is attached
+     * to a window). Read once at popup construction; not reactive — the
+     * popup is torn down and rebuilt on owner-move/screen-change anyway.
+     */
+    val workAreaSize: IntSize get() = parentWindowSize
+
     /** Coroutine context to feed inner scenes (parent context + frame clock + flushing dispatcher). */
     val sceneCoroutineContext: CoroutineContext
 

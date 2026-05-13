@@ -87,6 +87,7 @@ internal class NativeViewOverlayController(
             override val parentNsView: Long get() = popupHost.parentNsView
             override val scale: Float get() = popupHost.scale
             override val parentWindowSize: IntSize get() = popupHost.parentWindowSize
+            override val workAreaSize: IntSize get() = popupHost.workAreaSize
             override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
             override val coordinateOffset: IntOffset
                 get() = IntOffset(overlayOffsetX, overlayOffsetY)

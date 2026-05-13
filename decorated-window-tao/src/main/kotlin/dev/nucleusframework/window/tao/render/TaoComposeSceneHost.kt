@@ -656,6 +656,13 @@ internal class TaoComposeSceneHost(
             override val parentNsView: Long get() = outer.nsViewHandle
             override val scale: Float get() = outer.scale
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val workAreaSize: IntSize get() {
+                val packed = NativeMetalBridge.nativeOwnerWorkAreaSize(outer.nsViewHandle)
+                if (packed == 0L) return parentWindowSize
+                val w = (packed ushr 32).toInt()
+                val h = (packed and 0xFFFFFFFFL).toInt()
+                return if (w > 0 && h > 0) IntSize(w, h) else parentWindowSize
+            }
             override val sceneCoroutineContext: CoroutineContext
                 get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
 
