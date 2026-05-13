@@ -11,6 +11,12 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "onHighContrastChanged",
+                    "parameterTypes": [
+                        "boolean"
+                    ]
                 }
             ]
         },
@@ -29,6 +35,12 @@
                 {
                     "name": "onAccentColorCleared",
                     "parameterTypes": []
+                },
+                {
+                    "name": "onContrastChanged",
+                    "parameterTypes": [
+                        "boolean"
+                    ]
                 }
             ]
         },
@@ -42,6 +54,12 @@
                         "float",
                         "float",
                         "float"
+                    ]
+                },
+                {
+                    "name": "onHighContrastChanged",
+                    "parameterTypes": [
+                        "boolean"
                     ]
                 }
             ]

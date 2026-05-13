@@ -1,0 +1,11 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.launcher.linux.NativeLinuxLauncherBridge",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onMenuItemEvent", "parameterTypes": ["java.lang.String", "int"] }
+            ]
+        }
+    ]
+}

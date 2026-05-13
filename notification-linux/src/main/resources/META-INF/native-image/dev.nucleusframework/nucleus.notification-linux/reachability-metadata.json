@@ -1,0 +1,13 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.notification.linux.NativeLinuxNotificationBridge",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onNotificationClosed", "parameterTypes": ["int", "int"] },
+                { "name": "onActionInvoked",      "parameterTypes": ["int", "java.lang.String"] },
+                { "name": "onActivationToken",    "parameterTypes": ["int", "java.lang.String"] }
+            ]
+        }
+    ]
+}
