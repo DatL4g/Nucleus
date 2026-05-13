@@ -6,6 +6,52 @@ This guide walks through the changes in order. Apply them top-to-bottom.
 
 ---
 
+## Prerequisites
+
+Before touching any code, bump these — 2.0 will not resolve otherwise.
+
+### JDK toolchain
+
+2.0 artifacts target JDK 17 (`nucleus-application`) and JDK 25 (`decorated-window-jewel`, the Jewel/IntelliJ stack). Bump every Kotlin module that depends on Nucleus:
+
+```kotlin
+// Single-target modules
+kotlin { jvmToolchain(25) }
+
+// KMP modules — set it on the top-level kotlin block (applies to the jvm() target)
+kotlin {
+    jvmToolchain(25)
+    jvm()
+    androidLibrary { … } // Android compilations still produce JVM 11 bytecode via their own jvmTarget
+}
+```
+
+Symptom if you skip this: `Dependency resolution is looking for a library compatible with JVM runtime version 11, but 'dev.nucleusframework:nucleus.decorated-window-jewel' is only compatible with JVM runtime version 25 or newer.`
+
+### IntelliJ snapshots repository
+
+2.0 pulls Jewel `0.37.0-262.4852.74`, which only lives in the IntelliJ **snapshots** repository — not releases. Add it to `settings.gradle.kts`:
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven("https://www.jetbrains.com/intellij-repository/releases")
+        maven("https://www.jetbrains.com/intellij-repository/snapshots") // ← new
+    }
+}
+```
+
+If your project also declares Jewel directly (e.g. `jewel-int-ui-standalone`), bump it to the same coordinate Nucleus brings in transitively — otherwise Gradle resolves two incompatible Jewel versions side-by-side:
+
+```toml
+intellijIcons = "262.4852.74"
+jewel        = "0.37.0-262.4852.74"
+```
+
+---
+
 ## At a Glance
 
 | Area | 1.x | 2.0 |
@@ -134,6 +180,10 @@ fun main(args: Array<String>) {
 ### After — `main()` in 2.0
 
 ```kotlin
+import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.application.aotTraining
+import kotlin.time.Duration.Companion.seconds
+
 fun main(args: Array<String>) = nucleusApplication(args) {
     aotTraining(duration = 45.seconds)
 
@@ -144,6 +194,23 @@ fun main(args: Array<String>) = nucleusApplication(args) {
     }
 }
 ```
+
+### Early-exits that must happen *before* `nucleusApplication`
+
+`nucleusApplication` runs the full bootstrap (GraalVM init, single-instance lock, Compose loop). If your `main()` has invocation modes that should bypass all of that — e.g. a desktop scheduler/boot receiver re-launching the binary to run a single background task — keep them above the `nucleusApplication(args) { … }` call:
+
+```kotlin
+fun main(args: Array<String>) {
+    if (DesktopBootReceiver.isSchedulerInvocation(args)) {
+        DesktopBootReceiver.handle(args, registry = MyTaskRegistry.registry)
+        exitProcess(0) // never reach Compose / single-instance
+    }
+
+    nucleusApplication(args) { … }
+}
+```
+
+Putting these checks inside the scope would acquire the single-instance lock (and fight with the running primary instance) before short-circuiting — exactly what you don't want.
 
 What `nucleusApplication` now handles for you, in order:
 
@@ -160,15 +227,38 @@ You no longer need to call `AutoLaunch.wasStartedAtLogin(args)` or `WindowsJumpL
 
 ## Step 4 — Replace `Window { }` with `DecoratedWindow { }`
 
-Inside `nucleusApplication` you compose a decorated window. Three flavours are available — pick the one that matches your design system:
+Inside `nucleusApplication` you compose a decorated window. Three flavours are available — pick the one that matches your design system. Each lives in its own module, so add the matching dependency:
 
-```kotlin
-DecoratedWindow(…)            // bare — bring your own title bar / theming
-MaterialDecoratedWindow(…)    // Material 3 colors + decorated title bar
-JewelDecoratedWindow(…)       // Jewel (IntelliJ) theme
-```
+| Composable | Module |
+|---|---|
+| `DecoratedWindow(…)` — bare, bring your own title bar / theming | `nucleus.decorated-window-core` |
+| `MaterialDecoratedWindow(…)` — Material 3 colors + decorated title bar | `nucleus.decorated-window-material` |
+| `JewelDecoratedWindow(…)` — Jewel (IntelliJ) theme | `nucleus.decorated-window-jewel` |
 
 All three expose `nucleusWindow` inside their content — a backend-agnostic handle for `show()`, `toFront()`, `setMinimized()`, etc.
+
+### These are extension functions now — wrappers must propagate the scope
+
+This is the most common breakage when porting an existing app: in 1.x, `JewelDecoratedWindow` (and friends) were plain `@Composable` functions, so you could wrap them in your own composable freely. In 2.0 they are **extensions on `NucleusApplicationScope`** (or `ApplicationScope` for the legacy variant):
+
+```kotlin
+fun NucleusApplicationScope.JewelDecoratedWindow(
+    onCloseRequest: () -> Unit, …,
+    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+)
+```
+
+Any wrapper composable you wrote in 1.x must become an extension on the same scope, otherwise you'll get `Unresolved reference 'JewelDecoratedWindow'` even though the import is correct.
+
+```diff
+ @Composable
+-fun MyOnboardingWindow(vmFactory: ViewModelFactory) {
++fun NucleusApplicationScope.MyOnboardingWindow(vmFactory: ViewModelFactory) {
+     JewelDecoratedWindow(onCloseRequest = {}, title = "…") { … }
+ }
+```
+
+The call site (inside `nucleusApplication { … }`) doesn't change — the receiver is implicit.
 
 ```diff
 -application {
@@ -326,3 +416,12 @@ That auto-behavior is wired inside `DecoratedWindow`. If you use plain Compose D
 
 **I want multiple concurrent instances.**
 Pass `enableSingleInstance = false` to `nucleusApplication`. The lock is skipped entirely.
+
+**`Unresolved reference 'JewelDecoratedWindow'` even though the import is correct.**
+The composable became an extension on `NucleusApplicationScope` in 2.0. Wrap-style helper composables must propagate the receiver — see [Step 4](#step-4--replace-window---with-decoratedwindow--).
+
+**`Could not find org.jetbrains.jewel:jewel-foundation:0.37.…`**
+The IntelliJ snapshots repo is missing. Add `maven("https://www.jetbrains.com/intellij-repository/snapshots")` to `dependencyResolutionManagement.repositories` — see [Prerequisites](#prerequisites).
+
+**`Dependency resolution is looking for a library compatible with JVM runtime version 11`.**
+Bump the toolchain — Nucleus 2.0 requires JDK 25 for the Jewel stack and JDK 17 for `nucleus-application`. See [Prerequisites](#prerequisites).
