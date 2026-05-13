@@ -272,6 +272,49 @@ The call site (inside `nucleusApplication { … }`) doesn't change — the recei
 
 The plain Compose Desktop `Window` still works inside `nucleusApplication`, but you lose the unified `nucleusWindow` handle and the automatic restore-on-second-instance behavior described below.
 
+### Dialogs follow the same rule
+
+`JewelDecoratedDialog` ships in two flavours, mirroring `JewelDecoratedWindow`:
+
+| Receiver | Backend support |
+|---|---|
+| `JewelDecoratedDialog(…)` (no receiver) | AWT only (JBR / JNI). Crashes on Tao with `NoClassDefFoundError: dev/nucleusframework/window/DecoratedDialogKt`. |
+| `NucleusApplicationScope.JewelDecoratedDialog(…)` | Backend-agnostic. Dispatches to AWT or Tao under the hood. |
+
+Use the scoped variant for anything composed inside `nucleusApplication { … }` — your "About", "Settings", and confirmation dialogs all need it:
+
+```diff
+ @Composable
+-fun MyAboutDialog(onClose: () -> Unit) {
++fun NucleusApplicationScope.MyAboutDialog(onClose: () -> Unit) {
+     JewelDecoratedDialog(onCloseRequest = onClose, title = "About") { … }
+ }
+```
+
+The same applies to `MaterialDecoratedDialog` / the generic `DecoratedDialog` extension on `NucleusApplicationScope`.
+
+### CompositionLocals propagate across the Tao scene boundary
+
+The Tao backend opens a fresh `ComposeScene` per window/dialog. As of 2.0.0-alpha-202605131305 the full parent `CompositionLocalContext` (theme, `LocalDensity`, `LocalLayoutDirection`, user locals, …) is bridged into the new scene automatically — same behavior as Compose's own `Dialog`/`Popup`.
+
+This means you do **not** need to wrap content twice anymore:
+
+```kotlin
+// Before — needed on Tao to avoid "No TextStyle provided" / "No IsDarkTheme provided"
+IntUiTheme(theme, styling) {
+    JewelDecoratedWindow(…) {
+        IntUiTheme(theme, styling) { …content… }   // duplicate
+    }
+}
+
+// After — a single wrap in the parent scope is enough on every backend
+IntUiTheme(theme, styling) {
+    JewelDecoratedWindow(…) { …content… }
+}
+```
+
+If you previously threaded `theme` / `styling` parameters through every custom window or dialog (`JewelOnboardingWindow`, `JewelAboutWindow`, …) to re-apply `IntUiTheme` inside the scene, you can drop the threading: read the theme from the outer scope once.
+
 ---
 
 ## Step 5 — Single Instance Is Automatic
@@ -419,6 +462,12 @@ Pass `enableSingleInstance = false` to `nucleusApplication`. The lock is skipped
 
 **`Unresolved reference 'JewelDecoratedWindow'` even though the import is correct.**
 The composable became an extension on `NucleusApplicationScope` in 2.0. Wrap-style helper composables must propagate the receiver — see [Step 4](#step-4--replace-window---with-decoratedwindow--).
+
+**`NoClassDefFoundError: dev/nucleusframework/window/DecoratedDialogKt` on the Tao backend.**
+You're calling the AWT-only `JewelDecoratedDialog` (no receiver) under `NucleusBackend.Tao`. Switch the host composable to an extension on `NucleusApplicationScope` so the call resolves to `NucleusApplicationScope.JewelDecoratedDialog`, which dispatches to the right backend — see [Step 4 → Dialogs](#dialogs-follow-the-same-rule).
+
+**`IllegalStateException: No TextStyle provided` / `No IsDarkTheme provided` on Tao but not on AWT.**
+Older Tao builds (pre-`v2.0.0-alpha-202605131225`) did not bridge `CompositionLocals` across the per-window `ComposeScene`. Bump to `2.0.0-alpha-202605131305` or newer and remove any duplicate `IntUiTheme { … }` you added inside the window/dialog content lambda — a single wrap in the outer scope is enough.
 
 **`Could not find org.jetbrains.jewel:jewel-foundation:0.37.…`**
 The IntelliJ snapshots repo is missing. Add `maven("https://www.jetbrains.com/intellij-repository/snapshots")` to `dependencyResolutionManagement.repositories` — see [Prerequisites](#prerequisites).
