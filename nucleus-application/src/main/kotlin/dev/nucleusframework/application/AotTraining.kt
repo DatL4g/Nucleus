@@ -1,6 +1,7 @@
 package dev.nucleusframework.application
 
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.system.exitProcess
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -9,9 +10,9 @@ import kotlin.time.Duration.Companion.seconds
  * mode (`-Dnucleus.aot.mode=training`). No-op otherwise.
  *
  * The [onTimeout] lambda runs on a non-daemon timer thread once the duration
- * elapses; by default it calls [NucleusApplicationScope.exitApplication] so
- * Compose can shut down cleanly. Override it to dump a profile, flush logs,
- * or call `exitProcess` for a hard exit.
+ * elapses; by default it calls [exitProcess] so JBR's AOT shutdown hooks fire
+ * and write the cache. Override it to dump a profile, flush logs, or call
+ * [NucleusApplicationScope.exitApplication] for a Compose-only shutdown.
  *
  * Safe to call multiple times — only the first invocation per process arms
  * the timer.
@@ -26,7 +27,7 @@ import kotlin.time.Duration.Companion.seconds
  */
 fun NucleusApplicationScope.aotTraining(
     duration: Duration = 15.seconds,
-    onTimeout: NucleusApplicationScope.() -> Unit = { exitApplication() },
+    onTimeout: NucleusApplicationScope.() -> Unit = { exitProcess(0) },
 ) {
     if (!isAotTraining) return
     if (!aotTrainingArmed.compareAndSet(false, true)) return
