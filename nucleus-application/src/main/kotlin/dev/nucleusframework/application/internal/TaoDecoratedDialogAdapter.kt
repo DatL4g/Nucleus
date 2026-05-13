@@ -2,6 +2,7 @@ package dev.nucleusframework.application.internal
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
@@ -16,9 +17,6 @@ import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
 import dev.nucleusframework.window.DecoratedDialogState
 import dev.nucleusframework.window.DecoratedWindowState
-import dev.nucleusframework.window.LocalIsDarkTheme
-import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
-import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
 import dev.nucleusframework.window.tao.DecoratedDialog as TaoDecoratedDialog
 
@@ -39,9 +37,9 @@ internal object TaoDecoratedDialogAdapter {
         onKeyEvent: (KeyEvent) -> Boolean,
         content: @Composable NucleusDecoratedDialogScope.() -> Unit,
     ) {
-        val outerIsDark = LocalIsDarkTheme.current
-        val outerWindowStyle = LocalDecoratedWindowStyle.current
-        val outerTitleBarStyle = LocalTitleBarStyle.current
+        // Bridge every CompositionLocal across the fresh Tao ComposeScene —
+        // see TaoDecoratedWindowAdapter for rationale.
+        val outerLocals = currentCompositionLocalContext
 
         with(scope.taoScope) {
             TaoDecoratedDialog(
@@ -74,14 +72,13 @@ internal object TaoDecoratedDialogAdapter {
                     remember(taoScope, nucleusWindow) {
                         TaoNucleusDecoratedDialogScope(taoScope, nucleusWindow)
                     }
-                CompositionLocalProvider(
-                    LocalNucleusBackend provides NucleusBackend.Tao,
-                    LocalNucleusWindow provides nucleusWindow,
-                    LocalIsDarkTheme provides outerIsDark,
-                    LocalDecoratedWindowStyle provides outerWindowStyle,
-                    LocalTitleBarStyle provides outerTitleBarStyle,
-                ) {
-                    nucleusScope.content()
+                CompositionLocalProvider(outerLocals) {
+                    CompositionLocalProvider(
+                        LocalNucleusBackend provides NucleusBackend.Tao,
+                        LocalNucleusWindow provides nucleusWindow,
+                    ) {
+                        nucleusScope.content()
+                    }
                 }
             }
         }
