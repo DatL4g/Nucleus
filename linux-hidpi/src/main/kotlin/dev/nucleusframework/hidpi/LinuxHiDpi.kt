@@ -7,9 +7,10 @@ package dev.nucleusframework.hidpi
  * Sources consulted in priority order:
  *   1. `J2D_UISCALE`   — explicit JVM override (env var)
  *   2. GSettings       — GNOME `org.gnome.desktop.interface` → `scaling-factor`
- *   3. `GDK_SCALE`     — GTK / GNOME session variable
- *   4. `GDK_DPI_SCALE` — GTK fractional DPI multiplier
- *   5. `Xft.dpi`       — X Resource Manager (KDE, legacy GNOME, …)
+ *   3. Mutter DBus     — GNOME fractional scale via `org.gnome.Mutter.DisplayConfig`
+ *   4. `GDK_SCALE`     — GTK / GNOME session variable
+ *   5. `GDK_DPI_SCALE` — GTK fractional DPI multiplier
+ *   6. `Xft.dpi`       — X Resource Manager (KDE, legacy GNOME, …)
  *
  * @return A positive scale factor (e.g. `2.0` for a 200 % HiDPI display),
  *         or `0.0` when the scale cannot be determined (let the JVM decide).

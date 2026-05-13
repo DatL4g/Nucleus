@@ -9,9 +9,10 @@
  * Detection order (same priority as JBR):
  *   1. J2D_UISCALE   — explicit JVM override (env var)
  *   2. GSettings     — GNOME integer scaling via libgio (dlopen, no hard dep)
- *   3. GDK_SCALE     — GTK environment variable
- *   4. GDK_DPI_SCALE — GTK fractional DPI multiplier
- *   5. Xft.dpi       — X Resource Manager via libX11 (dlopen, no hard dep)
+ *   3. Mutter DBus   — GNOME fractional scaling via libgio GDBus (dlopen)
+ *   4. GDK_SCALE     — GTK environment variable
+ *   5. GDK_DPI_SCALE — GTK fractional DPI multiplier
+ *   6. Xft.dpi       — X Resource Manager via libX11 (dlopen, no hard dep)
  *
  * All external libraries (libgio, libX11) are loaded at runtime via dlopen
  * so the .so itself has no hard link-time dependencies beyond libc/libdl.
@@ -98,6 +99,111 @@ static double readGnomeScaleFactor(void) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  readGnomeMutterScale                                               */
+/*  Queries the active logical-monitor scale from                      */
+/*  org.gnome.Mutter.DisplayConfig via libgio's GDBus client           */
+/*  (dlopened, same pattern as readGnomeScaleFactor). This is the      */
+/*  only source of truth for GNOME fractional scaling (1.25, 1.5,      */
+/*  5/3, …); on such sessions GSettings scaling-factor stays at 0.     */
+/*                                                                     */
+/*  Returns the scale of the logical monitor flagged primary, or the   */
+/*  first non-zero scale if none is marked primary, or 0.0 on any      */
+/*  failure (service missing, not on GNOME, dbus denied, parse error). */
+/* ------------------------------------------------------------------ */
+static double readGnomeMutterScale(void) {
+    void *libgio = dlopen("libgio-2.0.so.0", RTLD_LAZY | RTLD_LOCAL);
+    if (!libgio) return 0.0;
+
+    /* GBusType enum: SESSION = 2 */
+    typedef void *(*fn_bus_get)(int bus_type, void *cancellable, void **error);
+    typedef void *(*fn_dbus_call)(void *conn, const char *bus_name,
+                                  const char *obj_path, const char *iface,
+                                  const char *method, void *params,
+                                  void *reply_type, int flags, int timeout,
+                                  void *cancellable, void **error);
+    typedef void *(*fn_var_child)(void *variant, size_t index);
+    typedef size_t (*fn_var_n)(void *variant);
+    typedef double (*fn_var_dbl)(void *variant);
+    typedef int (*fn_var_bool)(void *variant);
+    typedef void (*fn_unref)(void *ptr);
+    typedef void (*fn_error_free)(void *error);
+
+    fn_bus_get     gbgs = (fn_bus_get)     dlsym(libgio, "g_bus_get_sync");
+    fn_dbus_call   gcs  = (fn_dbus_call)   dlsym(libgio, "g_dbus_connection_call_sync");
+    fn_var_child   gvcv = (fn_var_child)   dlsym(libgio, "g_variant_get_child_value");
+    fn_var_n       gvnc = (fn_var_n)       dlsym(libgio, "g_variant_n_children");
+    fn_var_dbl     gvgd = (fn_var_dbl)     dlsym(libgio, "g_variant_get_double");
+    fn_var_bool    gvgb = (fn_var_bool)    dlsym(libgio, "g_variant_get_boolean");
+    fn_unref       gvu  = (fn_unref)       dlsym(libgio, "g_variant_unref");
+    fn_unref       gou  = (fn_unref)       dlsym(libgio, "g_object_unref");
+    fn_error_free  gef  = (fn_error_free)  dlsym(libgio, "g_error_free");
+
+    double scale = 0.0;
+
+    if (gbgs && gcs && gvcv && gvnc && gvgd && gvgb && gvu && gou) {
+        void *error = NULL;
+        void *conn = gbgs(2 /* G_BUS_TYPE_SESSION */, NULL, &error);
+        if (conn && !error) {
+            void *reply = gcs(
+                conn,
+                "org.gnome.Mutter.DisplayConfig",
+                "/org/gnome/Mutter/DisplayConfig",
+                "org.gnome.Mutter.DisplayConfig",
+                "GetCurrentState",
+                NULL /* parameters */,
+                NULL /* reply_type */,
+                0    /* G_DBUS_CALL_FLAGS_NONE */,
+                2000 /* 2 s timeout */,
+                NULL /* cancellable */,
+                &error);
+            if (reply && !error) {
+                /*
+                 * Reply is the 4-tuple
+                 *   (uint32 serial, monitors, logical_monitors, properties)
+                 * Logical-monitor entries have the shape
+                 *   (int32 x, int32 y, double scale,
+                 *    uint32 transform, bool primary,
+                 *    array<monitor_spec>, dict properties)
+                 * We want index 2 (scale) of whichever entry is primary.
+                 */
+                void *logical = gvcv(reply, 2);
+                if (logical) {
+                    size_t n = gvnc(logical);
+                    double first = 0.0;
+                    for (size_t i = 0; i < n; i++) {
+                        void *lm = gvcv(logical, i);
+                        if (!lm) continue;
+                        void *sc_v = gvcv(lm, 2);
+                        void *pr_v = gvcv(lm, 4);
+                        double s = sc_v ? gvgd(sc_v) : 0.0;
+                        int prim = pr_v ? gvgb(pr_v) : 0;
+                        if (sc_v) gvu(sc_v);
+                        if (pr_v) gvu(pr_v);
+                        gvu(lm);
+                        if (s > 0.0) {
+                            if (prim) { scale = s; break; }
+                            if (first == 0.0) first = s;
+                        }
+                    }
+                    if (scale <= 0.0) scale = first;
+                    gvu(logical);
+                }
+                gvu(reply);
+            } else if (error && gef) {
+                gef(error);
+                error = NULL;
+            }
+            gou(conn);
+        } else if (error && gef) {
+            gef(error);
+        }
+    }
+
+    dlclose(libgio);
+    return scale;
+}
+
+/* ------------------------------------------------------------------ */
 /*  readXftScale                                                       */
 /*  Reads Xft.dpi from the X11 Resource Manager via dlopen(libX11).  */
 /*  No hard link-time dependency on libX11.                            */
@@ -172,15 +278,21 @@ Java_dev_nucleusframework_hidpi_HiDpiLinuxBridge_nativeGetScaleFactor(
     scale = readGnomeScaleFactor();
     if (scale > 0.0) return (jdouble)scale;
 
-    /* 3. GDK_SCALE — set by GNOME session / GTK apps */
+    /* 3. GNOME fractional scaling via Mutter DBus. This is the only
+     *    source on Wayland sessions that use scale-monitor-framebuffer,
+     *    where GSettings scaling-factor is 0 and the GDK_* vars are unset. */
+    scale = readGnomeMutterScale();
+    if (scale > 0.0) return (jdouble)scale;
+
+    /* 4. GDK_SCALE — set by GNOME session / GTK apps */
     scale = readEnvDouble("GDK_SCALE");
     if (scale > 0.0) return (jdouble)scale;
 
-    /* 4. GDK_DPI_SCALE — fractional DPI multiplier */
+    /* 5. GDK_DPI_SCALE — fractional DPI multiplier */
     scale = readEnvDouble("GDK_DPI_SCALE");
     if (scale > 0.0) return (jdouble)scale;
 
-    /* 5. Xft.dpi from X Resource Manager */
+    /* 6. Xft.dpi from X Resource Manager */
     scale = readXftScale();
     if (scale > 0.0) return (jdouble)scale;
 

@@ -60,6 +60,7 @@ fun NucleusApplicationScope.DecoratedWindow(
                     remember(awtScope, nucleusWindow) {
                         AwtNucleusDecoratedWindowScope(awtScope, nucleusWindow)
                     }
+                ObserveSingleInstanceRestore(nucleusWindow)
                 CompositionLocalProvider(
                     LocalNucleusBackend provides NucleusBackend.Awt,
                     LocalNucleusWindow provides nucleusWindow,

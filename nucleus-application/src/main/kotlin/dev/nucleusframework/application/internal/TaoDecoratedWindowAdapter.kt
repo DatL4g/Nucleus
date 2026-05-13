@@ -13,6 +13,7 @@ import dev.nucleusframework.application.LocalNucleusWindow
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
 import dev.nucleusframework.application.NucleusWindow
+import dev.nucleusframework.application.ObserveSingleInstanceRestore
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
 import dev.nucleusframework.window.DecoratedWindowState
@@ -81,6 +82,7 @@ internal object TaoDecoratedWindowAdapter {
                     remember(taoScope, nucleusWindow) {
                         TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
                     }
+                ObserveSingleInstanceRestore(nucleusWindow)
                 CompositionLocalProvider(
                     LocalNucleusBackend provides NucleusBackend.Tao,
                     LocalNucleusWindow provides nucleusWindow,

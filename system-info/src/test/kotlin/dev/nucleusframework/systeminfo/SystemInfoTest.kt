@@ -92,7 +92,9 @@ class SystemInfoTest {
     fun `hardware info returns valid data`() {
         val product = SystemInfo.product()
         assertNotNull(product)
-        assertNotNull(product.name, "Product name should not be null")
+        // DMI fields are legitimately nullable (VMs, containers, firmware with
+        // "Default string" placeholders). The contract only guarantees that
+        // product() returns a non-null record when the native bridge is loaded.
         println("Product: ${product.name} family=${product.family}")
     }
 

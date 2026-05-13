@@ -8,7 +8,12 @@ plugins {
     id("dev.nucleusframework")
 }
 
+// AGP's JdkImageTransform runs `jlink` against the toolchain JDK. JDK 25 is not
+// yet supported by AGP 8.10.1 (the core-for-system-modules.jar transform fails),
+// so we pin sample-cmp to JDK 21 — Gradle auto-provisions it via foojay.
 kotlin {
+    jvmToolchain(21)
+
     androidTarget {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)

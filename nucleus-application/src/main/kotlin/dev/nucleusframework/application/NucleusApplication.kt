@@ -37,9 +37,16 @@ import dev.nucleusframework.graalvm.GraalVmInitializer
 fun nucleusApplication(
     args: Array<String> = emptyArray(),
     backend: NucleusBackend = NucleusBackend.Auto,
+    enableSingleInstance: Boolean = true,
     content: @Composable NucleusApplicationScope.() -> Unit,
 ) {
     GraalVmInitializer.initialize()
+
+    if (enableSingleInstance) {
+        acquireSingleInstanceLock()
+    }
+
+    primePlatformIntegrations(args)
 
     when (resolveBackend(backend)) {
         NucleusBackend.Tao -> TaoLauncher.run(args, content)

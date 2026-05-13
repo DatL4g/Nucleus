@@ -62,16 +62,13 @@ import com.example.demo.icons.TablerTextDirectionRtl
 import com.example.demo.icons.VscodeCodiconsColorMode
 import com.materialkolor.DynamicMaterialTheme
 import com.materialkolor.PaletteStyle
-import dev.nucleusframework.aot.runtime.AotRuntime
+import dev.nucleusframework.application.aotTraining
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.autolaunch.AutoLaunch
-import dev.nucleusframework.core.runtime.DeepLinkHandler
 import dev.nucleusframework.core.runtime.NucleusApp
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.core.runtime.SingleInstanceManager
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.energymanager.EnergyManager
-import dev.nucleusframework.launcher.windows.WindowsJumpListManager
 import dev.nucleusframework.nativehttp.NativeHttpClient
 import dev.nucleusframework.systemcolor.systemAccentColor
 import dev.nucleusframework.updater.NucleusUpdater
@@ -87,9 +84,7 @@ import dev.nucleusframework.window.material.MaterialTitleBar
 import dev.nucleusframework.window.newFullscreenControls
 import java.io.File
 import java.net.URI
-import kotlin.system.exitProcess
-
-private const val AOT_TRAINING_DURATION_MS = 45_000L
+import kotlin.time.Duration.Companion.seconds
 
 private val deepLinkUri = mutableStateOf<URI?>(null)
 
@@ -100,280 +95,231 @@ fun main(args: Array<String>) =
     nucleusApplication(args) {
         remember {
             nucleusMainArgs = args
-            AutoLaunch.wasStartedAtLogin(args) // prime the cache for Win32 / MSIX
             MacLaunchDiagnostic.capture(args)
-
-            // Set AUMID before any window is created (required for jump lists in non-APPX mode)
-            if (Platform.Current == Platform.Windows) {
-                WindowsJumpListManager.setProcessAppId()
-            }
-
-            // Stop app after 15 seconds during AOT training mode
-            // Use -Dnucleus.aot.mode=training to test
-            if (AotRuntime.isTraining()) {
-                println("[AOT] Training mode - will exit in 15 seconds")
-
-                Thread({
-                    Thread.sleep(AOT_TRAINING_DURATION_MS)
-                    println("[AOT] Time's up, exiting...")
-                    exitProcess(0)
-                }, "aot-timer").apply {
-                    isDaemon = false
-                    start()
-                }
-            }
             true
         }
+
+        // Auto-exit after 45s when running with -Dnucleus.aot.mode=training.
+        aotTraining(duration = 45.seconds)
 
         onDeepLink { uri ->
             println("[JumpList/DeepLink] Received: $uri")
             deepLinkUri.value = uri
         }
 
-        var isWindowVisible by remember { mutableStateOf(true) }
-        var restoreRequestCount by remember { mutableStateOf(0) }
         var themeMode by remember { mutableStateOf(ThemeMode.System) }
         var showInfoDialog by remember { mutableStateOf(false) }
 
-        val isFirstInstance =
-            remember {
-                SingleInstanceManager.isSingleInstance(
-                    onRestoreFileCreated = { DeepLinkHandler.writeUriTo(this) },
-                    onRestoreRequest = {
-                        println("[Example] onRestoreRequest fired")
-                        DeepLinkHandler.readUriFrom(this)
-                        isWindowVisible = true
-                        restoreRequestCount++
-                    },
-                )
+        val isDark =
+            when (themeMode) {
+                ThemeMode.System -> isSystemInDarkMode()
+                ThemeMode.Dark -> true
+                ThemeMode.Light -> false
             }
+        val accentColor = systemAccentColor()
+        val seedColor = accentColor ?: Color.Yellow
 
-        if (!isFirstInstance) {
-            exitApplication()
-            return@nucleusApplication
-        }
+        var isRtl by remember { mutableStateOf(false) }
 
-        if (isWindowVisible) {
-            val isDark =
-                when (themeMode) {
-                    ThemeMode.System -> isSystemInDarkMode()
-                    ThemeMode.Dark -> true
-                    ThemeMode.Light -> false
-                }
-            val accentColor = systemAccentColor()
-            val seedColor = accentColor ?: Color.Yellow
-
-            var isRtl by remember { mutableStateOf(false) }
-
-            DynamicMaterialTheme(
-                seedColor = seedColor,
-                isDark = isDark,
-                animate = true,
-                style = PaletteStyle.TonalSpot,
+        DynamicMaterialTheme(
+            seedColor = seedColor,
+            isDark = isDark,
+            animate = true,
+            style = PaletteStyle.TonalSpot,
+        ) {
+            val state =
+                rememberWindowState(
+                    position = WindowPosition.Aligned(Alignment.Center),
+                    placement = WindowPlacement.Floating,
+                )
+            MaterialDecoratedWindow(
+                state = state,
+                onCloseRequest = ::exitApplication,
+                title = "Nucleus Demo",
+                minimumSize = DpSize(1200.dp, 480.dp),
             ) {
-                val state =
-                    rememberWindowState(
-                        position = WindowPosition.Aligned(Alignment.Center),
-                        placement = WindowPlacement.Floating,
-                    )
-                MaterialDecoratedWindow(
-                    state = state,
-                    onCloseRequest = ::exitApplication,
-                    title = "Nucleus Demo",
-                    minimumSize = DpSize(1200.dp, 480.dp),
+                CompositionLocalProvider(
+                    LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
                 ) {
-                    CompositionLocalProvider(
-                        LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
-                    ) {
-                        val tabs =
-                            buildList {
-                                addAll(listOf("Nucleus", "Gallery", "Taskbar"))
-                                add("Notifications (Common)")
-                                if (Platform.Current == Platform.MacOS ||
-                                    Platform.Current == Platform.Linux ||
-                                    Platform.Current == Platform.Windows
-                                ) {
-                                    add("Notifications")
-                                }
-                                if (Platform.Current == Platform.Windows ||
-                                    Platform.Current == Platform.Linux ||
-                                    Platform.Current == Platform.MacOS
-                                ) {
-                                    add("Launcher")
-                                }
-                                add("Media Control")
-                                add("Auto-Launch")
-
-                                add("Hotkeys")
-                                if (Platform.Current == Platform.MacOS) {
-                                    add("Menu")
-                                }
-                            }
-                        var selectedTab by remember { mutableStateOf("Nucleus") }
-
-                        MaterialTitleBar(modifier = Modifier.newFullscreenControls().macOSLargeCornerRadius()) { _ ->
-                            val titleBarAlignment =
-                                if (Platform.Current == Platform.MacOS) Alignment.End else Alignment.Start
-
-                            TitleBarIconButton(
-                                imageVector =
-                                    when (themeMode) {
-                                        ThemeMode.System -> VscodeCodiconsColorMode
-                                        ThemeMode.Dark -> MaterialIconsDark_mode
-                                        ThemeMode.Light -> MaterialIconsLight_mode
-                                    },
-                                contentDescription = "Toggle theme",
-                                modifier = Modifier.align(titleBarAlignment),
-                                onClick = { themeMode = themeMode.next() },
-                            )
-                            TitleBarIconButton(
-                                imageVector = MaterialIconsInfo,
-                                contentDescription = "System info",
-                                modifier = Modifier.align(titleBarAlignment),
-                                onClick = { showInfoDialog = true },
-                            )
-
-                            var caffeineActive by remember {
-                                mutableStateOf(EnergyManager.isScreenAwakeActive())
-                            }
-                            TitleBarIconButton(
-                                imageVector = if (caffeineActive) TablerCoffee else TablerCoffeeOff,
-                                contentDescription = if (caffeineActive) "Disable caffeine" else "Enable caffeine",
-                                modifier = Modifier.align(titleBarAlignment),
-                                onClick = {
-                                    if (caffeineActive) {
-                                        EnergyManager.releaseScreenAwake()
-                                    } else {
-                                        EnergyManager.keepScreenAwake()
-                                    }
-                                    caffeineActive = EnergyManager.isScreenAwakeActive()
-                                },
-                            )
-                            val isFullscreen = state.placement == WindowPlacement.Fullscreen
-                            TitleBarIconButton(
-                                imageVector = if (isFullscreen) RadixExitFullScreen else RadixEnterFullScreen,
-                                contentDescription = if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
-                                modifier = Modifier.align(titleBarAlignment),
-                                onClick = {
-                                    if (isFullscreen) {
-                                        // NativeFullscreenWindowState restores the previous placement internally.
-                                        // Setting any non-Fullscreen value on the delegate triggers the exit.
-                                        state.placement = WindowPlacement.Floating
-                                    } else {
-                                        state.placement = WindowPlacement.Fullscreen
-                                    }
-                                },
-                            )
-                            TitleBarIconButton(
-                                imageVector = if (isRtl) TablerTextDirectionRtl else TablerTextDirectionLtr,
-                                contentDescription = if (isRtl) "Switch to LTR" else "Switch to RTL",
-                                modifier = Modifier.align(titleBarAlignment),
-                                onClick = { isRtl = !isRtl },
-                            )
-                            DraggableTabs(
-                                tabs = tabs,
-                                selectedTab = selectedTab,
-                                onSelect = { selectedTab = it },
-                                onReorder = { _, _ -> },
-                                modifier = Modifier.align(Alignment.CenterHorizontally),
-                            )
-                        }
-                        LaunchedEffect(restoreRequestCount) {
-                            println("[Example] LaunchedEffect(restoreRequestCount=$restoreRequestCount) ran")
-                            if (restoreRequestCount > 0) {
-                                println("[Example] calling toFront() + requestFocus()")
-                                nucleusWindow.toFront()
-                                nucleusWindow.requestFocus()
-                            }
-                        }
-
-                        // Energy efficiency: full when minimized, light when unfocused
-                        val isWindowFocused by nucleusWindow.focusFlow.collectAsState()
-                        LaunchedEffect(state.isMinimized, isWindowFocused) {
-                            when {
-                                state.isMinimized -> {
-                                    EnergyManager.disableLightEfficiencyMode()
-                                    EnergyManager.enableEfficiencyMode()
-                                }
-                                !isWindowFocused -> {
-                                    EnergyManager.disableEfficiencyMode()
-                                    EnergyManager.enableLightEfficiencyMode()
-                                }
-                                else -> {
-                                    EnergyManager.disableEfficiencyMode()
-                                    EnergyManager.disableLightEfficiencyMode()
-                                }
-                            }
-                        }
-
-                        when (selectedTab) {
-                            "Nucleus" -> NucleusContent()
-                            "Notifications (Common)" -> CommonNotificationsScreen()
-                            "Gallery" -> {
-                                val currentDensity = LocalDensity.current
-                                CompositionLocalProvider(
-                                    LocalDensity provides
-                                        Density(
-                                            density = currentDensity.density * 0.75f,
-                                            fontScale = currentDensity.fontScale,
-                                        ),
-                                ) {
-                                    GalleryScreen(seedColor = seedColor)
-                                }
-                            }
-                            "Taskbar" -> TaskbarProgressScreen(nucleusWindow)
-                            "Notifications" -> {
-                                when (Platform.Current) {
-                                    Platform.MacOS -> NotificationsScreen()
-                                    Platform.Linux -> LinuxNotificationsScreen()
-                                    Platform.Windows -> WindowsNotificationsScreen()
-                                    else -> {}
-                                }
-                            }
-                            "Launcher" -> {
-                                when (Platform.Current) {
-                                    Platform.Windows -> WindowsLauncherScreen(nucleusWindow.unsafe.awtWindow!!)
-                                    Platform.MacOS -> MacOsLauncherScreen()
-                                    Platform.Linux -> LauncherScreen()
-                                    else -> {}
-                                }
-                            }
-                            "Media Control" -> MediaControlScreen()
-                            "Auto-Launch" -> AutoLaunchScreen()
-                            "Hotkeys" -> GlobalHotKeyScreen()
-                            "Menu" -> MacOsMenuScreen()
-                        }
-
-                        if (showInfoDialog) {
-                            MaterialDecoratedDialog(
-                                onCloseRequest = { showInfoDialog = false },
-                                state = DialogState(size = DpSize(400.dp, 350.dp)),
-                                title = "System Info",
+                    val tabs =
+                        buildList {
+                            addAll(listOf("Nucleus", "Gallery", "Taskbar"))
+                            add("Notifications (Common)")
+                            if (Platform.Current == Platform.MacOS ||
+                                Platform.Current == Platform.Linux ||
+                                Platform.Current == Platform.Windows
                             ) {
-                                MaterialDialogTitleBar { _ ->
-                                    Text(
-                                        title,
-                                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
+                                add("Notifications")
+                            }
+                            if (Platform.Current == Platform.Windows ||
+                                Platform.Current == Platform.Linux ||
+                                Platform.Current == Platform.MacOS
+                            ) {
+                                add("Launcher")
+                            }
+                            add("Media Control")
+                            add("Auto-Launch")
+
+                            add("Hotkeys")
+                            if (Platform.Current == Platform.MacOS) {
+                                add("Menu")
+                            }
+                        }
+                    var selectedTab by remember { mutableStateOf("Nucleus") }
+
+                    MaterialTitleBar(modifier = Modifier.newFullscreenControls().macOSLargeCornerRadius()) { _ ->
+                        val titleBarAlignment =
+                            if (Platform.Current == Platform.MacOS) Alignment.End else Alignment.Start
+
+                        TitleBarIconButton(
+                            imageVector =
+                                when (themeMode) {
+                                    ThemeMode.System -> VscodeCodiconsColorMode
+                                    ThemeMode.Dark -> MaterialIconsDark_mode
+                                    ThemeMode.Light -> MaterialIconsLight_mode
+                                },
+                            contentDescription = "Toggle theme",
+                            modifier = Modifier.align(titleBarAlignment),
+                            onClick = { themeMode = themeMode.next() },
+                        )
+                        TitleBarIconButton(
+                            imageVector = MaterialIconsInfo,
+                            contentDescription = "System info",
+                            modifier = Modifier.align(titleBarAlignment),
+                            onClick = { showInfoDialog = true },
+                        )
+
+                        var caffeineActive by remember {
+                            mutableStateOf(EnergyManager.isScreenAwakeActive())
+                        }
+                        TitleBarIconButton(
+                            imageVector = if (caffeineActive) TablerCoffee else TablerCoffeeOff,
+                            contentDescription = if (caffeineActive) "Disable caffeine" else "Enable caffeine",
+                            modifier = Modifier.align(titleBarAlignment),
+                            onClick = {
+                                if (caffeineActive) {
+                                    EnergyManager.releaseScreenAwake()
+                                } else {
+                                    EnergyManager.keepScreenAwake()
                                 }
-                                Surface(modifier = Modifier.fillMaxSize()) {
-                                    Column(
-                                        modifier = Modifier.fillMaxSize().padding(24.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center,
-                                    ) {
-                                        Text("App ID: ${NucleusApp.appId}")
-                                        NucleusApp.version?.let { Text("App Version: $it") }
-                                        NucleusApp.vendor?.let { Text("Vendor: $it") }
-                                        Spacer(Modifier.height(12.dp))
-                                        Text("OS: ${System.getProperty("os.name")} ${System.getProperty("os.arch")}")
-                                        Text(
-                                            "Java: ${System.getProperty("java.version")}" +
-                                                " (${System.getProperty("java.vendor")})",
-                                        )
-                                        Text("Runtime: ${System.getProperty("java.runtime.name", "Unknown")}")
-                                    }
+                                caffeineActive = EnergyManager.isScreenAwakeActive()
+                            },
+                        )
+                        val isFullscreen = state.placement == WindowPlacement.Fullscreen
+                        TitleBarIconButton(
+                            imageVector = if (isFullscreen) RadixExitFullScreen else RadixEnterFullScreen,
+                            contentDescription = if (isFullscreen) "Exit fullscreen" else "Enter fullscreen",
+                            modifier = Modifier.align(titleBarAlignment),
+                            onClick = {
+                                if (isFullscreen) {
+                                    // NativeFullscreenWindowState restores the previous placement internally.
+                                    // Setting any non-Fullscreen value on the delegate triggers the exit.
+                                    state.placement = WindowPlacement.Floating
+                                } else {
+                                    state.placement = WindowPlacement.Fullscreen
+                                }
+                            },
+                        )
+                        TitleBarIconButton(
+                            imageVector = if (isRtl) TablerTextDirectionRtl else TablerTextDirectionLtr,
+                            contentDescription = if (isRtl) "Switch to LTR" else "Switch to RTL",
+                            modifier = Modifier.align(titleBarAlignment),
+                            onClick = { isRtl = !isRtl },
+                        )
+                        DraggableTabs(
+                            tabs = tabs,
+                            selectedTab = selectedTab,
+                            onSelect = { selectedTab = it },
+                            onReorder = { _, _ -> },
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                        )
+                    }
+                    // Energy efficiency: full when minimized, light when unfocused
+                    val isWindowFocused by nucleusWindow.focusFlow.collectAsState()
+                    LaunchedEffect(state.isMinimized, isWindowFocused) {
+                        when {
+                            state.isMinimized -> {
+                                EnergyManager.disableLightEfficiencyMode()
+                                EnergyManager.enableEfficiencyMode()
+                            }
+                            !isWindowFocused -> {
+                                EnergyManager.disableEfficiencyMode()
+                                EnergyManager.enableLightEfficiencyMode()
+                            }
+                            else -> {
+                                EnergyManager.disableEfficiencyMode()
+                                EnergyManager.disableLightEfficiencyMode()
+                            }
+                        }
+                    }
+
+                    when (selectedTab) {
+                        "Nucleus" -> NucleusContent()
+                        "Notifications (Common)" -> CommonNotificationsScreen()
+                        "Gallery" -> {
+                            val currentDensity = LocalDensity.current
+                            CompositionLocalProvider(
+                                LocalDensity provides
+                                    Density(
+                                        density = currentDensity.density * 0.75f,
+                                        fontScale = currentDensity.fontScale,
+                                    ),
+                            ) {
+                                GalleryScreen(seedColor = seedColor)
+                            }
+                        }
+                        "Taskbar" -> TaskbarProgressScreen(nucleusWindow)
+                        "Notifications" -> {
+                            when (Platform.Current) {
+                                Platform.MacOS -> NotificationsScreen()
+                                Platform.Linux -> LinuxNotificationsScreen()
+                                Platform.Windows -> WindowsNotificationsScreen()
+                                else -> {}
+                            }
+                        }
+                        "Launcher" -> {
+                            when (Platform.Current) {
+                                Platform.Windows -> WindowsLauncherScreen(nucleusWindow.unsafe.awtWindow!!)
+                                Platform.MacOS -> MacOsLauncherScreen()
+                                Platform.Linux -> LauncherScreen()
+                                else -> {}
+                            }
+                        }
+                        "Media Control" -> MediaControlScreen()
+                        "Auto-Launch" -> AutoLaunchScreen()
+                        "Hotkeys" -> GlobalHotKeyScreen()
+                        "Menu" -> MacOsMenuScreen()
+                    }
+
+                    if (showInfoDialog) {
+                        MaterialDecoratedDialog(
+                            onCloseRequest = { showInfoDialog = false },
+                            state = DialogState(size = DpSize(400.dp, 350.dp)),
+                            title = "System Info",
+                        ) {
+                            MaterialDialogTitleBar { _ ->
+                                Text(
+                                    title,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Surface(modifier = Modifier.fillMaxSize()) {
+                                Column(
+                                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Text("App ID: ${NucleusApp.appId}")
+                                    NucleusApp.version?.let { Text("App Version: $it") }
+                                    NucleusApp.vendor?.let { Text("Vendor: $it") }
+                                    Spacer(Modifier.height(12.dp))
+                                    Text("OS: ${System.getProperty("os.name")} ${System.getProperty("os.arch")}")
+                                    Text(
+                                        "Java: ${System.getProperty("java.version")}" +
+                                            " (${System.getProperty("java.vendor")})",
+                                    )
+                                    Text("Runtime: ${System.getProperty("java.runtime.name", "Unknown")}")
                                 }
                             }
                         }
