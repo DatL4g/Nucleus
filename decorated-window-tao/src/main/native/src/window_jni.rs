@@ -225,6 +225,43 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     }
 }
 
+/// Begin an interactive resize drag in the given direction. Mirrors the JBR
+/// `WLDecoratedPeer.startResize(...)` peer-level hook: the Compose-side
+/// `ResizeFrameDecoration` hit-tests the edge band on `onPointerButton` and
+/// calls this BEFORE forwarding the event to `scene.sendPointerEvent`, so
+/// Compose never sees a click that was claimed by resize.
+///
+/// Direction encoding (matches Compose-side `ResizeDirection` ordinal):
+/// 0=N, 1=S, 2=E, 3=W, 4=NW, 5=NE, 6=SW, 7=SE.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeBeginResizeDrag(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    direction: jint,
+) {
+    use tao::window::ResizeDirection;
+    let dir = match direction {
+        0 => ResizeDirection::North,
+        1 => ResizeDirection::South,
+        2 => ResizeDirection::East,
+        3 => ResizeDirection::West,
+        4 => ResizeDirection::NorthWest,
+        5 => ResizeDirection::NorthEast,
+        6 => ResizeDirection::SouthWest,
+        7 => ResizeDirection::SouthEast,
+        _ => return,
+    };
+    let guard = match WINDOWS.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let Some(map) = guard.as_ref() else { return };
+    if let Some(window) = map.get(&(handle as u64)) {
+        let _ = window.drag_resize_window(dir);
+    }
+}
+
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeIsMaximized(
     _env: JNIEnv,

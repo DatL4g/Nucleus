@@ -256,6 +256,23 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeDragWindow(handle: Long)
 
+    /**
+     * Begin an interactive resize drag in [direction]. Linux-only meaningful
+     * today (X11 + Wayland through Tao's `Window::drag_resize_window`). The
+     * Compose-side `ResizeFrameDecoration` calls this from `onPointerButton`
+     * BEFORE forwarding the press to `scene.sendPointerEvent`, so it claims
+     * clicks even on top of a Compose scrollbar — same architectural pattern
+     * as JBR's `WLDecoratedPeer.startResize(...)`.
+     *
+     * Direction is the ordinal of `ResizeDirection`: 0=N, 1=S, 2=E, 3=W,
+     * 4=NW, 5=NE, 6=SW, 7=SE.
+     */
+    @JvmStatic
+    external fun nativeBeginResizeDrag(
+        handle: Long,
+        direction: Int,
+    )
+
     @JvmStatic
     external fun nativeIsMaximized(handle: Long): Boolean
 

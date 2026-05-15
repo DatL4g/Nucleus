@@ -491,134 +491,16 @@ impl<T: 'static> EventLoop<T> {
               glib::Propagation::Proceed
             });
 
-            // Allow resizing unmaximized non-fullscreen undecorated window
-            let fullscreen_ = fullscreen.clone();
-            // Tracks whether we last installed a resize cursor on this window.
-            // We only touch the cursor on edge entry / exit transitions so any
-            // application-level cursor (text I-beam, hand, custom icon) stays
-            // intact while the pointer moves through the bulk of the window.
-            let in_resize_zone = Rc::new(AtomicBool::new(false));
-            let in_resize_zone_ = in_resize_zone.clone();
-            window.connect_motion_notify_event(move |window, event| {
-              if !window.is_decorated() && window.is_resizable() && !window.is_maximized() {
-                if let Some(window) = window.window() {
-                  let (cx, cy) = event.root();
-                  let (left, top) = window.position();
-                  let (w, h) = (window.width(), window.height());
-                  let (right, bottom) = (left + w, top + h);
-                  let scale = window.scale_factor();
-                  let edge_band = scale * 8;
-                  let corner = scale * 16;
-                  let edge = crate::window::hit_test(
-                    (left, top, right, bottom),
-                    cx as _,
-                    cy as _,
-                    edge_band,
-                    edge_band,
-                    corner,
-                  );
-
-                  match edge {
-                    Some(direction) if !fullscreen_.load(Ordering::Relaxed) => {
-                      window.set_cursor(
-                        Cursor::from_name(&window.display(), direction.to_cursor_str()).as_ref(),
-                      );
-                      in_resize_zone_.store(true, Ordering::Relaxed);
-                    }
-                    _ => {
-                      // Pointer left the edge band: clear the surface cursor
-                      // so any inherited / per-device cursor (e.g. one set by
-                      // an embedded toolkit) shows through. Skipped when we
-                      // never installed a resize cursor in the first place.
-                      if in_resize_zone_.swap(false, Ordering::Relaxed) {
-                        window.set_cursor(None);
-                      }
-                    }
-                  }
-                }
-              }
-              glib::Propagation::Proceed
-            });
-            window.connect_button_press_event(move |window, event| {
-              const LMB: u32 = 1;
-              if (is_wayland || !window.is_decorated())
-                && window.is_resizable()
-                && !window.is_maximized()
-                && event.button() == LMB
-              {
-                let (cx, cy) = event.root();
-                let (left, top) = window.position();
-                let (w, h) = window.size();
-                let (right, bottom) = (left + w, top + h);
-                let scale = window.scale_factor();
-                let edge_band = scale * 8;
-                let corner = scale * 16;
-                let direction = crate::window::hit_test(
-                  (left, top, right, bottom),
-                  cx as _,
-                  cy as _,
-                  edge_band,
-                  edge_band,
-                  corner,
-                );
-                if let Some(direction) = direction {
-                  // Set the resize cursor before begin_resize_drag, otherwise GTK
-                  // shows the default cursor for the entire drag.
-                  if let Some(gdk_window) = window.window() {
-                    gdk_window.set_cursor(
-                      Cursor::from_name(&gdk_window.display(), direction.to_cursor_str()).as_ref(),
-                    );
-                  }
-                  let edge = direction.to_gtk_edge();
-                  window.begin_resize_drag(edge, LMB as i32, cx as i32, cy as i32, event.time());
-                }
-              }
-
-              glib::Propagation::Proceed
-            });
-            window.connect_touch_event(move |window, event| {
-              if !window.is_decorated() && window.is_resizable() && !window.is_maximized() {
-                if let Some(window) = window.window() {
-                  if let Some((cx, cy)) = event.root_coords() {
-                    if let Some(device) = event.device() {
-                      let (left, top) = window.position();
-                      let (w, h) = (window.width(), window.height());
-                      let (right, bottom) = (left + w, top + h);
-                      let scale = window.scale_factor();
-                      let edge_band = scale * 8;
-                      let corner = scale * 16;
-                      let edge = crate::window::hit_test(
-                        (left, top, right, bottom),
-                        cx as _,
-                        cy as _,
-                        edge_band,
-                        edge_band,
-                        corner,
-                      )
-                      .map(|d| d.to_gtk_edge())
-                      // we return `WindowEdge::__Unknown` to be ignored later.
-                      // we must return 8 or bigger, otherwise it will be the same as one of the other 7 variants of `WindowEdge` enum.
-                      .unwrap_or(WindowEdge::__Unknown(8));
-
-                      // Ignore the `__Unknown` variant so the window receives the click correctly if it is not on the edges.
-                      match edge {
-                        WindowEdge::__Unknown(_) => (),
-                        _ => window.begin_resize_drag_for_device(
-                          edge,
-                          &device,
-                          0,
-                          cx as i32,
-                          cy as i32,
-                          event.time(),
-                        ),
-                      }
-                    }
-                  }
-                }
-              }
-
-              glib::Propagation::Proceed
-            });
+            // Resize hit-test + cursor + begin_resize_drag have moved out of
+            // Tao into the embedder (nucleus_tao Kotlin side). The decoration
+            // helper runs in `TaoComposeSceneHostLinux.onPointerMove` /
+            // `onPointerButton` BEFORE forwarding the event to Compose, so it
+            // can claim clicks even on top of a Compose scrollbar — mirroring
+            // the JBR `WLDecoratedPeer.postMouseEvent` + `FrameDecoration`
+            // architecture. The embedder calls `Window::drag_resize_window`
+            // via the `nativeBeginResizeDrag` JNI entry point in `nucleus_tao`.
+            let _ = fullscreen;
+            let _ = is_wayland;
 
             let tx_clone = event_tx.clone();
             window.connect_delete_event(move |_, _| {

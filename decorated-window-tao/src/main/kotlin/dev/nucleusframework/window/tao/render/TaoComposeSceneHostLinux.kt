@@ -141,6 +141,15 @@ internal class TaoComposeSceneHostLinux(
     private var heightPx: Int = 0
     private var scale: Float = 1f
 
+    /**
+     * Peer-level resize hit-test, mirrors JBR's `WLDecoratedPeer` calling
+     * `FrameDecoration.processMouseEvent` before `super.postMouseEvent`. Only
+     * active for resizable (non-maximized, non-fullscreen) undecorated windows
+     * — Tao on Linux always presents the toplevel as `decorations=false` and
+     * paints chrome via Compose. See [onPointerMove] / [onPointerButton].
+     */
+    private val resizeDecoration = ResizeFrameDecoration(window.handle)
+
     // Coalescing: `onResized`/`onScaleFactorChanged` arrive at 60–120 Hz during
     // a user drag. Doing the X11 round-trip (XResizeWindow + rounded-shape
     // XShape rebuild) on every event is what was deadlocking the NVIDIA driver
@@ -918,6 +927,14 @@ internal class TaoComposeSceneHostLinux(
         val yPx = bFixed / 1024f
         lastPointerX = xPx
         lastPointerY = yPx
+
+        // JBR-style peer hook: hit-test the resize edge band BEFORE forwarding
+        // the move to Compose. When the pointer is inside the band we set the
+        // resize cursor and swallow the event so Compose's own cursor /
+        // `PointerIcon` plumbing can't overwrite it on the next motion.
+        val direction = currentResizeDirection(xPx, yPx)
+        if (resizeDecoration.onMove(direction)) return
+
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(xPx, yPx),
@@ -946,12 +963,42 @@ internal class TaoComposeSceneHostLinux(
         buttonCode: Int,
         pressed: Boolean,
     ) {
+        // JBR-style peer hook: a LMB press inside the resize band starts the
+        // native resize drag and is NOT forwarded to Compose. Matches
+        // `WLDecoratedPeer.postMouseEvent` calling
+        // `FrameDecoration.processMouseEvent` first.
+        if (pressed && buttonCode == dev.nucleusframework.window.tao.TaoMouseButton.LEFT) {
+            val direction = currentResizeDirection(lastPointerX, lastPointerY)
+            if (resizeDecoration.onLeftPress(direction)) return
+        }
+
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
             type = PointerType.Mouse,
             button = mapButton(buttonCode),
         )
+    }
+
+    /**
+     * Hit-test the resize band at the given logical-pixel position. Returns
+     * `null` (no resize) when the window is non-resizable, maximized, or
+     * fullscreen — same gating as JBR's `peer.isInteractivelyResizable()`.
+     *
+     * [widthPx] / [heightPx] are physical pixels; we divide by [scale] to
+     * compare against pointer coords (which the JNI bridge ships in logical
+     * pixels, see [onPointerMove]).
+     */
+    private fun currentResizeDirection(
+        xLogical: Float,
+        yLogical: Float,
+    ): ResizeFrameDecoration.Direction? {
+        if (!window.isResizable) return null
+        if (window.isFullscreen) return null
+        if (window.isMaximized) return null
+        val widthLogical = (widthPx / scale).toInt()
+        val heightLogical = (heightPx / scale).toInt()
+        return resizeDecoration.hitTest(xLogical, yLogical, widthLogical, heightLogical)
     }
 
     fun onPointerScroll(
