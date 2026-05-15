@@ -61,11 +61,21 @@ object TaoApplication {
         decorations: Boolean = true,
         resizable: Boolean = true,
         visible: Boolean = true,
+        maximized: Boolean = false,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
         val window = TaoWindow(handle, isResizable = resizable)
         windows[handle] = window
-        NativeTaoBridge.nativeCreateWindow(handle, title, width, height, decorations, resizable, visible)
+        NativeTaoBridge.nativeCreateWindow(
+            handle,
+            title,
+            width,
+            height,
+            decorations,
+            resizable,
+            visible,
+            maximized,
+        )
         return window
     }
 

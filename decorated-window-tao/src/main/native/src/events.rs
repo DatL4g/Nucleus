@@ -158,6 +158,14 @@ pub(crate) enum UserEvent {
         decorations: bool,
         resizable: bool,
         visible: bool,
+        // Initial maximized state, applied via `WindowBuilder::with_maximized`
+        // BEFORE the window is mapped. On Linux/Wayland a post-creation
+        // `set_maximized(true)` races the compositor's first xdg_toplevel
+        // configure handshake — the window appears at the requested logical
+        // size for one frame, then snaps to maximized (cf. tao docs:
+        // "Linux: most size methods like maximized are async"). Setting it
+        // at builder time avoids the glitch entirely.
+        maximized: bool,
     },
     SetVisible { handle: u64, visible: bool },
     SetTitle { handle: u64, title: String },

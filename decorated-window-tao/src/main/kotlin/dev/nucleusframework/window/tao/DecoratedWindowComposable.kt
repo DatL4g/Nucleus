@@ -104,17 +104,23 @@ fun ApplicationScope.DecoratedWindow(
                     enabled = enabled,
                     focusable = focusable,
                     alwaysOnTop = false,
+                    // Apply Maximized at builder time. Fullscreen still needs
+                    // a post-creation toggle because tao's `WindowBuilder` does
+                    // not expose `with_fullscreen` in the same way (it takes a
+                    // monitor handle which we don't have yet).
+                    maximized = state.placement == WindowPlacement.Maximized,
                     onPreviewKeyEvent = { latestPreview(it) },
                     onKeyEvent = { latestKey(it) },
                     macOSStyle = macOSStyle,
                     content = { latestContent.invoke(this) },
                 )
 
-            // Initial placement / minimised flag are applied imperatively here.
+            // Initial placement / minimised flag are applied imperatively here
+            // (Maximized is handled at builder time, above).
             // Position is handled by the LaunchedEffect on `state.position` to
             // cover both Absolute and Aligned variants uniformly.
             when (state.placement) {
-                WindowPlacement.Maximized -> w.setMaximized(true)
+                WindowPlacement.Maximized -> Unit
                 WindowPlacement.Fullscreen -> w.setFullscreen(true)
                 WindowPlacement.Floating -> Unit
             }

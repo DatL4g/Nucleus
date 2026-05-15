@@ -81,6 +81,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
+    maximized: Boolean = false,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
@@ -98,6 +99,12 @@ internal fun ApplicationScope.openDecoratedWindow(
             decorations = Platform.Current == Platform.MacOS,
             resizable = resizable,
             visible = false, // we show after first paint
+            // Pass `maximized` to the builder so Tao sets it BEFORE the window
+            // is mapped. Applying it post-creation (via `setMaximized(true)`)
+            // races the compositor's first configure on Linux/Wayland and
+            // produces a one-frame glitch where the window flashes at its
+            // requested logical size before snapping to maximized.
+            maximized = maximized,
         )
 
     if (Platform.Current == Platform.Windows) {

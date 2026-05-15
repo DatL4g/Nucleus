@@ -118,6 +118,7 @@ internal object NativeTaoBridge {
         decorations: Boolean,
         resizable: Boolean,
         visible: Boolean,
+        maximized: Boolean,
     )
 
     @JvmStatic

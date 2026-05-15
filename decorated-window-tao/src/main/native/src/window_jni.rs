@@ -66,6 +66,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     decorations: jboolean,
     resizable: jboolean,
     visible: jboolean,
+    maximized: jboolean,
 ) {
     let title: String = match env.get_string(&title) {
         Ok(s) => s.into(),
@@ -79,6 +80,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
         decorations: decorations != JNI_FALSE,
         resizable: resizable != JNI_FALSE,
         visible: visible != JNI_FALSE,
+        maximized: maximized != JNI_FALSE,
     });
 }
 

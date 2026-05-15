@@ -98,6 +98,7 @@ pub(crate) fn run_event_loop_blocking() {
                     decorations,
                     resizable,
                     visible,
+                    maximized,
                 } => {
                     #[allow(unused_mut)]
                     let mut builder = WindowBuilder::new()
@@ -105,7 +106,8 @@ pub(crate) fn run_event_loop_blocking() {
                         .with_inner_size(LogicalSize::new(width, height))
                         .with_decorations(decorations)
                         .with_resizable(resizable)
-                        .with_visible(visible);
+                        .with_visible(visible)
+                        .with_maximized(maximized);
                     // Linux: request an ARGB visual so the GTK window's X
                     // visual matches the canonical visual that Mesa's EGL
                     // exposes through its EGLConfigs. Without this, GDK
