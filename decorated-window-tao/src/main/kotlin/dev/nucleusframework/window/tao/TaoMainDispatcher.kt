@@ -23,6 +23,20 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
     private val pending = ConcurrentLinkedQueue<Runnable>()
 
     /**
+     * Thread reference for the Tao main thread. Captured eagerly from
+     * [TaoApplication.run] before [NativeTaoBridge.nativeRunBlocking] takes the
+     * thread over, so it is non-null as soon as user composition runs.
+     *
+     * Consumed by [TaoMainCoroutineDispatcher.isDispatchNeeded] and by
+     * downstream `Dispatchers.Main` resolvers (most notably AndroidX
+     * Lifecycle's `MainDispatcherChecker`) to recognise the Tao main thread as
+     * the canonical UI thread.
+     */
+    @Volatile
+    @JvmField
+    internal var taoMainThread: Thread? = null
+
+    /**
      * Coalesces native wake calls within a single pump cycle. Set on the
      * first dispatch after pump opened the gate, cleared in [pump] right
      * after the drain. While the gate is closed, subsequent dispatches just

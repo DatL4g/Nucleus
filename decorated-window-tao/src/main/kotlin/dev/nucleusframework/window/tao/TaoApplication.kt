@@ -34,6 +34,13 @@ object TaoApplication {
             "nucleus_tao native library is not available — supported targets: " +
                 "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."
         }
+        // Capture the Tao main thread eagerly, before the native event loop
+        // takes over this thread. Required so `Dispatchers.Main` consumers
+        // (notably AndroidX Lifecycle's synchronous `MainDispatcherChecker`)
+        // can resolve the Tao thread immediately — a lazy capture at first
+        // pump would race the very first `NavHost.setGraph` → `addObserver`
+        // call on real apps.
+        TaoMainDispatcher.taoMainThread = Thread.currentThread()
         onLaunched = block
         NativeTaoBridge.nativeRunBlocking(EventDispatcher)
     }
