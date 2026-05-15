@@ -541,3 +541,4 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeGetWindowR
     (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
     return arr;
 }
+

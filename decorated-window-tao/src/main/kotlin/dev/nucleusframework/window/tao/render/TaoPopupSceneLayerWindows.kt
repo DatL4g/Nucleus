@@ -62,6 +62,23 @@ internal class TaoPopupSceneLayerWindows(
     private var heightPx: Int = host.parentWindowSize.height.coerceAtLeast(1)
     private val scale: Float = host.scale
 
+    /**
+     * Layout-size constraint for the inner [CanvasLayersComposeScene] —
+     * mirrors [TaoPopupSceneLayer] on macOS. The popup HWND itself (and
+     * the WGL framebuffer) stays at `widthPx`/`heightPx` so we don't
+     * allocate a full-screen-sized surface, but the scene is laid out
+     * with screen-work-area constraints so popups anchored near the
+     * window edges (Tooltip in title bar, DropdownMenu in a small
+     * floating window…) can flip/extend without being artificially
+     * clipped — which manifested as an empty-content flicker on Windows
+     * when the parent's `parentWindowSize` constraint conflicted with
+     * the Popup.PositionProvider's layout pass.
+     */
+    private val sceneLayoutSize: IntSize =
+        host.workAreaSize.let {
+            IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
+        }
+
     private val panelHandle: Long =
         PopupNativeBridgeWindows
             .nativeCreatePanel(
@@ -87,7 +104,7 @@ internal class TaoPopupSceneLayerWindows(
         CanvasLayersComposeScene(
             density = _density,
             layoutDirection = _layoutDirection,
-            size = IntSize(widthPx, heightPx),
+            size = sceneLayoutSize,
             coroutineContext = host.sceneCoroutineContext,
             platformContext =
                 object : PlatformContext.Empty() {

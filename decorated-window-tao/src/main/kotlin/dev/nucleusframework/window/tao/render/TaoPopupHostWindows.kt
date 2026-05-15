@@ -29,6 +29,16 @@ internal interface TaoPopupHostWindows {
     /** Host window's content size in physical pixels. */
     val parentWindowSize: IntSize
 
+    /**
+     * Screen work area in physical pixels. Used as the inner scene's
+     * layout size so a tall popup (DropdownMenu, expanded Tooltip) in a
+     * small parent window lays out at full height instead of being
+     * artificially clipped by the owner window's bounds. Mirrors the
+     * macOS [TaoPopupHost.workAreaSize] contract. Defaults to
+     * [parentWindowSize] when the host can't resolve the monitor.
+     */
+    val workAreaSize: IntSize get() = parentWindowSize
+
     /** Coroutine context to feed inner scenes. */
     val sceneCoroutineContext: CoroutineContext
 

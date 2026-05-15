@@ -92,9 +92,10 @@ internal class TaoPopupSceneLayer(
      * height + the `Popup.PositionProvider` flips/clips at the screen
      * edge. Read once; not reactive (the popup is rebuilt on owner-move).
      */
-    private val sceneLayoutSize: IntSize = host.workAreaSize.let {
-        IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
-    }
+    private val sceneLayoutSize: IntSize =
+        host.workAreaSize.let {
+            IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
+        }
 
     /**
      * Panel created at parent-window-size offscreen so the inner scene

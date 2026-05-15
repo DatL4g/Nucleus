@@ -170,6 +170,7 @@ internal class TaoComposeSceneHostWindows(
         attachmentHandle = handle
 
         directContext = DirectContext.makeGL()
+        attachedHostCount.incrementAndGet()
 
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val dndManager =
@@ -645,7 +646,16 @@ internal class TaoComposeSceneHostWindows(
         // (state-cache invalidation only); calling it on every frame
         // unconditionally is too heavy for some drivers (nvoglv64 chokes),
         // so we gate on the flag.
-        if (hostContextDirtied) {
+        // Sibling-host mode: another TaoComposeSceneHostWindows is alive
+        // (e.g., DecoratedDialog over a DecoratedWindow). Each host owns
+        // its own HGLRC + DirectContext, and the dialog's onRedrawRequested
+        // can run between our frames — swapping the current WGL context
+        // behind our back. Our DirectContext's per-context GL state cache
+        // is then stale relative to GL, and the next flushAndSubmit
+        // reaches a NULL pointer inside the driver. Force resetGLAll on
+        // every frame entry while >1 host coexists; revert to the
+        // popup-only flag-gated path once it's just us.
+        if (hostContextDirtied || attachedHostCount.get() > 1) {
             ctx.resetGLAll()
             hostContextDirtied = false
         }
@@ -841,6 +851,23 @@ internal class TaoComposeSceneHostWindows(
             override val parentHwnd: Long get() = outer.hwnd
             override val scale: Float get() = outer.scale
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val workAreaSize: IntSize get() {
+                // Use the primary monitor's work area resolved via the
+                // existing JNI bridge — avoids touching AWT
+                // (GraphicsEnvironment.getLocalGraphicsEnvironment) on the
+                // Tao UI thread, which on Windows can lazily initialise
+                // Java2D's D3D pipeline and conflict with the WGL context
+                // bound to this thread (manifested as a hang + crash when
+                // a second host attached, e.g. on DecoratedDialog open).
+                if (!NativeTaoWindowsDecoBridge.isLoaded) return parentWindowSize
+                val area =
+                    NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea()
+                        ?: return parentWindowSize
+                if (area.size < 4) return parentWindowSize
+                val w = area[2].toInt().coerceAtLeast(1)
+                val h = area[3].toInt().coerceAtLeast(1)
+                return IntSize(w, h)
+            }
             override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
                 get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
             override val hostDirectContext: DirectContext get() = ctx
@@ -991,8 +1018,11 @@ internal class TaoComposeSceneHostWindows(
     fun detach() {
         scene?.close()
         scene = null
-        directContext?.close()
-        directContext = null
+        if (directContext != null) {
+            directContext?.close()
+            directContext = null
+            attachedHostCount.decrementAndGet()
+        }
         if (attachmentHandle != 0L) {
             NativeTaoGlBridge.nativeDetach(attachmentHandle)
             attachmentHandle = 0L
@@ -1014,6 +1044,23 @@ internal class TaoComposeSceneHostWindows(
         // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f
         private const val TOUCH_FORCE_SCALE: Float = 10_000f
+
+        /**
+         * Live attached-host count across the JVM. When > 1, every host
+         * shares the process with at least one sibling that owns its own
+         * HGLRC and DirectContext (e.g., main window + DecoratedDialog).
+         * Skia's per-DirectContext GL state cache can drift any time the
+         * other host's onRedrawRequested swaps WGL contexts behind our
+         * back, so we resetGLAll on every frame entry in that regime.
+         * The flag-gated path stays for the single-host case to keep the
+         * single-window hot path cheap.
+         */
+        private val attachedHostCount =
+            java
+                .util
+                .concurrent
+                .atomic
+                .AtomicInteger(0)
     }
 
     private inner class FlushingMainDispatcher : CoroutineDispatcher() {

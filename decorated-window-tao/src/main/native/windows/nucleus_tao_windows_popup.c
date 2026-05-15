@@ -7,18 +7,25 @@
  * WGL context joined to the host's share group via the shared
  * `nucleus_tao_overlay_gl_init` (rendering delegated to overlay_gl.c).
  *
- * Outside-click dismissal (per NATIVE_VIEW_WINDOWS_PLAN.md "Input/focus"):
- *   - `SetCapture(hwndPopup)` immediately after `ShowWindow(SW_SHOWNOACTIVATE)`
- *     when an outside-click monitor is installed.
- *   - In WM_LBUTTONDOWN/RBUTTONDOWN/MBUTTONDOWN: ClientToScreen +
- *     GetWindowRect + PtInRect; if outside, fire JNI listener; if
- *     inside, dispatch to Compose.
- *   - WM_CAPTURECHANGED handles capture loss (Alt-Tab, system modal,
- *     nested popup taking capture). Capture transfer to a known sibling
- *     popup is tracked via the active-popup chain so the outer popup
- *     doesn't treat it as outside-click.
- *
- * Replaces the heavier WH_MOUSE_LL global hook from earlier drafts.
+ * Outside-click dismissal:
+ *   - A thread-local `WH_MOUSE` hook (mouseHookProc) observes every
+ *     mouse message scheduled on the UI thread and, for each
+ *     WM_*BUTTONDOWN, walks the open-popup chain. Any popup whose rect
+ *     does not contain the click point AND whose HWND is not itself the
+ *     click target fires its outside listener (Compose's `Popup` then
+ *     calls `onDismissRequest`).
+ *   - The hook is process-local (single thread, our UI thread) and
+ *     refcounted: every popup that registers an outside listener
+ *     increments the count; the hook is unhooked when the last popup
+ *     drops it. The hook NEVER consumes the message — it returns
+ *     `CallNextHookEx` so the message dispatches normally to its real
+ *     target HWND.
+ *   - Mirrors macOS's `NSEvent.addLocalMonitor` semantics (observe,
+ *     don't consume). The earlier `SetCapture(popupHwnd)` approach
+ *     forced the popup HWND to become foreground despite
+ *     WS_EX_NOACTIVATE — the parent received WM_KILLFOCUS, Compose
+ *     rendered the parent as inactive, and clicks were swallowed
+ *     because `WindowInfo.isWindowFocused` flipped to false.
  *
  * Linked into nucleus_tao_windows_native_view.dll.
  */
@@ -49,12 +56,12 @@ struct PopupState {
     jobject eventCb;
     jobject outsideListener;
 
-    /* Set TRUE while SetCapture is held by this popup. */
-    BOOL captureHeld;
+    /* TRUE while the outside-click hook is active for this popup. */
+    BOOL outsideMonitorActive;
 
-    /* Linked list of currently-open popups (for capture handoff
-     * disambiguation between the outer menu and a freshly-opened
-     * child). The list is ordered most-recent-first. */
+    /* Linked list of currently-open popups (for outside-click
+     * disambiguation between sibling/nested popups). The list is
+     * ordered most-recent-first. */
     PopupState *nextOpen;
 };
 
@@ -68,6 +75,17 @@ static volatile LONG sPopupClassRegistered = 0;
 static CRITICAL_SECTION sOpenListLock;
 static volatile LONG sOpenListInited = 0;
 static PopupState *sOpenChainHead = NULL;
+
+/* WH_MOUSE thread-local hook: process-wide observation of mouse messages
+ * on the UI thread WITHOUT consuming them, mirroring macOS's
+ * `NSEvent.addLocalMonitor`. Replaces the earlier SetCapture-based
+ * outside-click monitor, which forced the popup HWND to become foreground
+ * (despite WS_EX_NOACTIVATE) and made the parent window receive
+ * WM_KILLFOCUS — Compose then rendered the parent as inactive and
+ * subsequent clicks were dropped because `WindowInfo.isWindowFocused`
+ * went false. */
+static HHOOK sMouseHook = NULL;
+static volatile LONG sMouseHookRefcount = 0;
 
 static JavaVM *sJVM = NULL;
 static jclass sEventCbClass = NULL;
@@ -217,15 +235,66 @@ static void fireOutsideClick(PopupState *p, int button) {
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
-/* If [screen] is outside [hwnd]'s rect, fires the outside listener and
- * returns TRUE (caller should skip dispatching to Compose). */
-static BOOL handleClickAgainstCapture(PopupState *p, int button, POINT screen) {
-    if (!p->captureHeld || !p->outsideListener) return FALSE;
-    RECT rc;
-    if (!GetWindowRect(p->gl.hwnd, &rc)) return FALSE;
-    if (PtInRect(&rc, screen)) return FALSE;
-    fireOutsideClick(p, button);
-    return TRUE;
+/* WH_MOUSE hook proc: observes every mouse message scheduled for
+ * dispatch on the UI thread. For each WM_*BUTTONDOWN, iterate the open
+ * popup chain; for any popup whose outside-click listener is installed
+ * and whose rect does NOT contain the click point (and whose HWND is
+ * not itself the click target — nested-popup case), fire the listener.
+ * Always returns CallNextHookEx so the message dispatches normally to
+ * its target HWND — no SetCapture, no focus theft, no swallowed clicks. */
+static LRESULT CALLBACK mouseHookProc(int code, WPARAM w, LPARAM l) {
+    if (code != HC_ACTION) return CallNextHookEx(NULL, code, w, l);
+    UINT msg = (UINT)w;
+    if (msg != WM_LBUTTONDOWN && msg != WM_RBUTTONDOWN && msg != WM_MBUTTONDOWN) {
+        return CallNextHookEx(NULL, code, w, l);
+    }
+    MOUSEHOOKSTRUCT *m = (MOUSEHOOKSTRUCT *)l;
+    if (!m) return CallNextHookEx(NULL, code, w, l);
+    int btn = (msg == WM_LBUTTONDOWN) ? BTN_PRIMARY :
+              (msg == WM_RBUTTONDOWN) ? BTN_SECONDARY : BTN_MIDDLE;
+
+    /* Snapshot the open chain under the lock; fire listeners without
+     * holding it so JNI calls don't pin the lock across an upcall. */
+    PopupState *snapshot[16];
+    int n = 0;
+    EnterCriticalSection(&sOpenListLock);
+    for (PopupState *q = sOpenChainHead; q && n < 16; q = q->nextOpen) {
+        snapshot[n++] = q;
+    }
+    /* Click on ANY known popup HWND is treated as "inside everything" —
+     * mirrors macOS's `e.window == p` short-circuit. Without this, the
+     * outer dropdown's outside listener would fire when the user clicks
+     * a nested submenu item. */
+    BOOL targetIsKnownPopup = m->hwnd && isCaptureHwndKnownPopupLocked(m->hwnd);
+    LeaveCriticalSection(&sOpenListLock);
+    if (targetIsKnownPopup) return CallNextHookEx(NULL, code, w, l);
+
+    for (int i = 0; i < n; i++) {
+        PopupState *q = snapshot[i];
+        if (!q->outsideMonitorActive || !q->outsideListener) continue;
+        if (!IsWindow(q->gl.hwnd)) continue;
+        RECT rc;
+        if (!GetWindowRect(q->gl.hwnd, &rc)) continue;
+        if (PtInRect(&rc, m->pt)) continue;
+        fireOutsideClick(q, btn);
+    }
+    return CallNextHookEx(NULL, code, w, l);
+}
+
+static void installMouseHookIfNeeded(void) {
+    if (InterlockedIncrement(&sMouseHookRefcount) == 1) {
+        sMouseHook = SetWindowsHookExW(WH_MOUSE, mouseHookProc,
+                                       NULL, GetCurrentThreadId());
+    }
+}
+
+static void uninstallMouseHookIfLast(void) {
+    if (InterlockedDecrement(&sMouseHookRefcount) == 0) {
+        if (sMouseHook) {
+            UnhookWindowsHookEx(sMouseHook);
+            sMouseHook = NULL;
+        }
+    }
 }
 
 /* ============================================================ */
@@ -247,17 +316,12 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     case WM_RBUTTONDOWN:
     case WM_MBUTTONDOWN: {
         if (!p) break;
+        /* Outside-click handling moved to the WH_MOUSE hook
+         * (mouseHookProc). Any click that reaches the WndProc here is
+         * by definition inside the popup's rect — dispatch straight to
+         * Compose. */
         int btn = (msg == WM_LBUTTONDOWN) ? BTN_PRIMARY :
                   (msg == WM_RBUTTONDOWN) ? BTN_SECONDARY : BTN_MIDDLE;
-        /* When SetCapture is held by us, the click point may land outside
-         * our window rect — that's the case for outside-click dismissal.
-         * Test the screen point against our rect; if outside, fire the
-         * listener and DON'T dispatch to Compose. */
-        POINT screen;
-        screen.x = (short)LOWORD(l);
-        screen.y = (short)HIWORD(l);
-        ClientToScreen(hwnd, &screen);
-        if (handleClickAgainstCapture(p, btn, screen)) return 0;
         dispatchPointer(p, EVT_PTR_DOWN, btn, l);
         return 0;
     }
@@ -280,24 +344,6 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         POINT pt; pt.x = (short)LOWORD(l); pt.y = (short)HIWORD(l);
         ScreenToClient(hwnd, &pt);
         dispatchScroll(p, pt.x, pt.y, (float)delta / WHEEL_DELTA_F, 0.0f);
-        return 0;
-    }
-
-    case WM_CAPTURECHANGED: {
-        /* Capture transferred to another HWND. Disambiguate: if the
-         * receiver is a known sibling popup, it's an inner menu opening
-         * — keep the listener installed (we'll re-acquire on dismiss).
-         * Otherwise (Alt-Tab, system modal, foreign window) treat as
-         * implicit dismiss: clear our capture state. */
-        if (p) {
-            HWND newCaptureHwnd = (HWND)l;
-            EnterCriticalSection(&sOpenListLock);
-            BOOL knownSibling = newCaptureHwnd && isCaptureHwndKnownPopupLocked(newCaptureHwnd);
-            LeaveCriticalSection(&sOpenListLock);
-            if (!knownSibling) {
-                p->captureHeld = FALSE;
-            }
-        }
         return 0;
     }
 
@@ -467,13 +513,14 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeInstallOutsi
     jobject prev = p->outsideListener;
     p->outsideListener = (*env)->NewGlobalRef(env, listener);
     if (prev) (*env)->DeleteGlobalRef(env, prev);
-    /* Acquire mouse capture so clicks anywhere in the process route to
-     * our WndProc — letting us test inside-vs-outside in WM_*BUTTONDOWN.
-     * For a nested popup, this transfers capture from the parent menu;
-     * the parent's WM_CAPTURECHANGED handler keeps captureHeld TRUE
-     * because we're a known sibling. */
-    SetCapture(p->gl.hwnd);
-    p->captureHeld = TRUE;
+    /* Install (refcounted) the thread-local WH_MOUSE hook. Replaces the
+     * earlier SetCapture(popupHwnd) — see sMouseHook comment for why
+     * SetCapture caused the parent to receive WM_KILLFOCUS and rendered
+     * as inactive. */
+    if (!p->outsideMonitorActive) {
+        p->outsideMonitorActive = TRUE;
+        installMouseHookIfNeeded();
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -482,10 +529,10 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeUninstallOut
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
     if (!p) return;
-    if (p->captureHeld && GetCapture() == p->gl.hwnd) {
-        ReleaseCapture();
+    if (p->outsideMonitorActive) {
+        p->outsideMonitorActive = FALSE;
+        uninstallMouseHookIfLast();
     }
-    p->captureHeld = FALSE;
     if (p->outsideListener) {
         (*env)->DeleteGlobalRef(env, p->outsideListener);
         p->outsideListener = NULL;
@@ -498,8 +545,11 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeRelease(
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
     if (!p) return;
-    if (p->captureHeld && GetCapture() == p->gl.hwnd) {
-        ReleaseCapture();
+    /* Safety net if nativeUninstallOutsideClickMonitor was not called
+     * before release (e.g., layer torn down without flushing). */
+    if (p->outsideMonitorActive) {
+        p->outsideMonitorActive = FALSE;
+        uninstallMouseHookIfLast();
     }
     chainRemove(p);
     nucleus_tao_overlay_gl_destroy(&p->gl);
