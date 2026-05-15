@@ -22,7 +22,12 @@ pub(crate) fn pack_modifiers(state: ModifiersState) -> i32 {
     if state.shift_key() { m |= MOD_MASK_SHIFT; }
     if state.control_key() { m |= MOD_MASK_CONTROL; }
     if state.alt_key() { m |= MOD_MASK_ALT; }
-    if state.super_key() { m |= MOD_MASK_META; }
+    // DIAGNOSTIC (Linux/Wayland): super_key() returns true permanently on some
+    // compositors after the first ModifiersChanged tick, contaminating every
+    // subsequent key event (Tab gets Meta, Backspace gets Meta → TextField
+    // mapping fails). Temporarily disabled while we verify the workaround
+    // approach. Re-enable once a per-key SuperLeft/SuperRight tracker is in.
+    let _ = state.super_key();
     m
 }
 

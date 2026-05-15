@@ -727,11 +727,14 @@ impl<T: 'static> EventLoop<T> {
                     "Failed to send modifiers changed event to event channel: {}",
                     e
                   );
-                } else {
-                  // stop here we don't want to send the key event
-                  // as we emit the `ModifiersChanged`
-                  return glib::ControlFlow::Continue;
                 }
+                // Nucleus patch: fall through and *also* emit `KeyboardInput`
+                // for modifier-only keypresses so the JVM side can observe Alt
+                // / Ctrl / Shift / Super press/release as plain Compose key
+                // events (needed by app-level handlers like
+                // `(ev.key == Key.AltLeft) && ev.type == KeyEventType.KeyUp`).
+                // Upstream tao stops here, which makes those handlers dead on
+                // the Linux backend.
               }
 
               // todo: implement repeat?
