@@ -4,9 +4,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Applier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Composition
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -57,7 +60,18 @@ fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
         coroutineScope.launch {
             try {
                 composition.setContent {
-                    if (scope.isOpen) scope.content()
+                    // Install root-level defaults for locals that Compose APIs may consult
+                    // before any window scene is mounted (e.g. compose-resources `Font(…)`
+                    // reads `LocalDensity.current` via `rememberEnvironment`). Mirrors the
+                    // exact pattern Compose Desktop's AWT `application { }` uses — see
+                    // `androidx.compose.ui.window.LayoutConfiguration.desktop.kt`. Per-window
+                    // ComposeScenes override these with their own platform-correct values.
+                    CompositionLocalProvider(
+                        LocalDensity provides GlobalDensity,
+                        LocalLayoutDirection provides GlobalLayoutDirection,
+                    ) {
+                        if (scope.isOpen) scope.content()
+                    }
                 }
                 while (scope.isOpen) yield()
                 recomposer.close()

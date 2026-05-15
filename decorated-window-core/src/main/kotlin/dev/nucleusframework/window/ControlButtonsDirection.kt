@@ -41,5 +41,5 @@ enum class ControlButtonsDirection {
  * On Linux (or if the native library is unavailable), falls back to checking
  * `user.language` system property against known RTL languages.
  */
-internal fun nativeSystemLayoutDirection(): LayoutDirection =
+fun nativeSystemLayoutDirection(): LayoutDirection =
     if (NativeLayoutDirectionBridge.nativeIsRTL()) LayoutDirection.Rtl else LayoutDirection.Ltr
