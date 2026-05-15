@@ -278,7 +278,23 @@ internal class TaoComposeSceneHostLinux(
                 platformContext =
                     LinuxTaoPlatformContext(
                         windowHandle = window.handle,
-                        topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
+                        // The custom CSD title bar is drawn inside the same Compose
+                        // scene as the rest of the content, so it shares the (0, 0)
+                        // origin with everything else. We must NOT report it as a
+                        // `PlatformInsets.top`: Compose's `RootMeasurePolicy` (cf.
+                        // `RootMeasurePolicy.skiko.kt::positionWithInsets`) applies
+                        // platform insets as an *additive offset* on the popup
+                        // position (designed for iOS notches / Android status
+                        // bars, where the safe area is outside the Compose surface).
+                        // Reporting `top = titleBarHeight` here shifts every Popup,
+                        // DropdownMenu, ContextMenu, and Tooltip down by that
+                        // amount — visible as a consistent "title-bar-height
+                        // downward drift" of every popup the user opens. Popups
+                        // are free to overlap the title bar zone; the title bar
+                        // composable's own z-order keeps it visually on top of
+                        // the page content but popups (rendered in a higher
+                        // ComposeSceneLayer) naturally float above both.
+                        topInsetPx = { 0 },
                         windowInfo = windowInfo,
                         semanticsOwnerListener = semanticsOwnerListener,
                         dragAndDropManager = dndManager,
