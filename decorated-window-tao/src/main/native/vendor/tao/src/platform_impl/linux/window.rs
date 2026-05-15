@@ -107,11 +107,26 @@ impl Window {
     window.resize(width, height);
 
     if attributes.maximized {
-      let maximize_process = util::WindowMaximizeProcess::new(window.clone(), attributes.resizable);
-      glib::idle_add_local_full(glib::Priority::HIGH_IDLE, move || {
-        let mut maximize_process = maximize_process.borrow_mut();
-        maximize_process.next_step()
-      });
+      // Nucleus patch: apply `maximize()` synchronously, before the GTK window
+      // is ever realized/mapped. GTK 3 explicitly supports this — its docs:
+      //   "If the window isn't yet visible on screen, this function modifies
+      //    its internal state ahead of time, so that the window will be
+      //    maximized when it is mapped to the screen."
+      // Upstream tao queues the maximize through a `glib::idle_add_local_full`
+      // tick which fires AFTER `window.show()` — on Wayland the first
+      // xdg_toplevel.configure handshake therefore reports the inner_size,
+      // the surface is mapped at the requested logical size for one frame,
+      // and only the next idle round trip snaps it to maximized. Synchronous
+      // application avoids the visible normal→maximized glitch.
+      //
+      // GTK 3 refuses to maximize a non-resizable window, so we temporarily
+      // flip `set_resizable(true)` around the call and restore the requested
+      // value immediately after (this matches `WindowMaximizeProcess`).
+      window.set_resizable(true);
+      window.maximize();
+      if !attributes.resizable {
+        window.set_resizable(false);
+      }
     } else {
       window.set_resizable(attributes.resizable);
     }
