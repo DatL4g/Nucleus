@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
 import dev.nucleusframework.window.tao.NativeMetalBridge
 import dev.nucleusframework.window.tao.NativeTaoBridge
@@ -283,7 +284,7 @@ internal class TaoComposeSceneHost(
         scene =
             PlatformLayersComposeScene(
                 density = Density(scale),
-                layoutDirection = LayoutDirection.Ltr,
+                layoutDirection = GlobalLayoutDirection,
                 size = IntSize(widthPx, heightPx),
                 coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                 composeSceneContext = composeSceneContext,

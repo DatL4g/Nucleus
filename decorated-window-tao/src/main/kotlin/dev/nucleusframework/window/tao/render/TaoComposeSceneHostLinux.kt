@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
+import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.NativeTaoBridge
 import dev.nucleusframework.window.tao.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.NativeTaoLinuxTouchBridge
@@ -272,7 +273,7 @@ internal class TaoComposeSceneHostLinux(
         scene =
             CanvasLayersComposeScene(
                 density = Density(scale),
-                layoutDirection = LayoutDirection.Ltr,
+                layoutDirection = GlobalLayoutDirection,
                 coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                 platformContext =
                     LinuxTaoPlatformContext(

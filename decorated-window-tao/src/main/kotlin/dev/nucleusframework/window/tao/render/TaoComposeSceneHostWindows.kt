@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.NativeTaoBridge
 import dev.nucleusframework.window.tao.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
@@ -203,7 +204,7 @@ internal class TaoComposeSceneHostWindows(
             if (popupHostForMain != null) {
                 PlatformLayersComposeScene(
                     density = Density(scale),
-                    layoutDirection = LayoutDirection.Ltr,
+                    layoutDirection = GlobalLayoutDirection,
                     coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     composeSceneContext =
                         TaoComposeSceneContextWindows(
@@ -215,7 +216,7 @@ internal class TaoComposeSceneHostWindows(
             } else {
                 CanvasLayersComposeScene(
                     density = Density(scale),
-                    layoutDirection = LayoutDirection.Ltr,
+                    layoutDirection = GlobalLayoutDirection,
                     coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     platformContext = platformContext,
                     invalidate = { window.requestRedraw() },
