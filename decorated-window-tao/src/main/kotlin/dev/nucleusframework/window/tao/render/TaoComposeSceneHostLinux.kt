@@ -1021,21 +1021,6 @@ internal class TaoComposeSceneHostLinux(
         modifiers: Int,
         codePoint: Int,
     ): Boolean {
-        // TEMPORARY DIAGNOSTIC — log every Tao key event reaching the scene host
-        // so we can correlate user-visible bugs (Tab triggering shortcut without
-        // Alt, Backspace not deleting in TextField) with the exact native event
-        // shape (vk code, modifier bitmask, codePoint) Tao forwards from libtao.
-        // Remove once the input routing is verified.
-        val typeName =
-            when (type) {
-                TaoEventCode.KEY_DOWN -> "KEY_DOWN"
-                TaoEventCode.KEY_UP -> "KEY_UP"
-                TaoEventCode.KEY_TYPED -> "KEY_TYPED"
-                else -> "OTHER($type)"
-            }
-        println(
-            "[TAO_KEY] $typeName vk=$vkCode loc=$keyLocation mods=0b${modifiers.toString(2).padStart(4, '0')} cp=$codePoint",
-        )
         val sc = scene ?: return false
         val isCtrl = (modifiers and TaoModifierMask.CONTROL) != 0
         val isMeta = (modifiers and TaoModifierMask.META) != 0
