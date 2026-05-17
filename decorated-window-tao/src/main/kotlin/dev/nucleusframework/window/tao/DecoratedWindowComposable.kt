@@ -233,7 +233,19 @@ fun ApplicationScope.DecoratedWindow(
     LaunchedEffect(window, alwaysOnTop) { window.setAlwaysOnTop(alwaysOnTop) }
     LaunchedEffect(window, focusable) { window.setFocusable(focusable) }
     LaunchedEffect(window, visible) {
-        if (visible) window.show() else window.hide()
+        if (visible) {
+            window.show()
+            // The JVM splash screen auto-closes when the first AWT Window becomes
+            // visible. The Tao backend never creates AWT windows, so we close it
+            // explicitly here — same semantic: "first app window is now shown".
+            try {
+                java.awt.SplashScreen.getSplashScreen()?.close()
+            } catch (_: Throwable) {
+                // No-op in headless or non-splash environments.
+            }
+        } else {
+            window.hide()
+        }
     }
     LaunchedEffect(window, minimumSize) {
         if (minimumSize != null) {
