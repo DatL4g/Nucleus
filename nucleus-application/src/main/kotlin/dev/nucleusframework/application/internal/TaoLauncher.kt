@@ -26,6 +26,16 @@ internal object TaoLauncher {
         // then are buffered and replayed by `TaoDeepLinkBridge`.
         TaoDeepLinkBridge.installNativeHandler()
 
+        // The JVM splash screen (launched via -splash:image.png) is designed for
+        // AWT: it auto-closes when the first java.awt.Window becomes visible.
+        // The Tao backend never creates AWT windows, so the splash would persist
+        // indefinitely. Close it explicitly before the Compose UI starts.
+        try {
+            java.awt.SplashScreen.getSplashScreen()?.close()
+        } catch (_: Throwable) {
+            // Headless JVMs or environments without libsplashscreen throw here.
+        }
+
         taoApplication {
             val scope = TaoNucleusApplicationScope(this, args)
             CompositionLocalProvider(LocalNucleusBackend provides NucleusBackend.Tao) {
