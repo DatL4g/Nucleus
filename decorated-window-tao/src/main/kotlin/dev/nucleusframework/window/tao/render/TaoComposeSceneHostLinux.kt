@@ -166,6 +166,24 @@ internal class TaoComposeSceneHostLinux(
     private var cachedRt: BackendRenderTarget? = null
     private var cachedSurface: Surface? = null
 
+    // Scene-size update throttle. Compose's layout cache is keyed on size: the
+    // first frame at any new size triggers a full remeasure (80-150ms for
+    // complex content), subsequent frames at the same size use cached layout
+    // (~10ms). On macOS, Core Animation throttles resize events to the display
+    // refresh rate so the scene sees the same size for multiple frames and
+    // benefits from the cache. GTK fires a resize event for every pixel of
+    // mouse movement, so without throttling EVERY frame during a drag is an
+    // expensive first-frame-at-new-size.
+    //
+    // Fix: update scene.size at most once per ~16ms (≈60fps). The EGL surface
+    // still resizes every event (correct display area), but Compose layout
+    // only recomputes at 60fps. Between updates the scene renders at the
+    // previous size; during the brief interval the content may be slightly
+    // clipped or have transparent margins, which is the same visual trade-off
+    // macOS makes during live-resize.
+    private var lastSceneSizeUpdateNs: Long = 0L
+    private val sceneSizeUpdateIntervalNs = 16_666_667L  // 60fps
+
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
@@ -744,12 +762,19 @@ internal class TaoComposeSceneHostLinux(
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
-        // Cheap state updates run inline so external callers (`applyRoundedShape`,
-        // composables reading `WindowInfo.containerSize`) see the new size
-        // immediately. The X11/GLX side is deferred to `onRedrawRequested` —
-        // see `applyPendingNativeResize`.
-        scene?.size = IntSize(widthPx, heightPx)
-        updateWindowInfoSize()
+
+        // Throttle scene.size updates to ~60fps so Compose can reuse its
+        // layout cache between resize events. GTK fires an event for every
+        // pixel of mouse movement; without throttling every frame is an
+        // expensive first-frame-at-new-size (full remeasure: 80-150ms).
+        // The EGL surface resize is deferred to `applyPendingNativeResize` in
+        // `onRedrawRequested`, so the native side is always in sync.
+        val now = System.nanoTime()
+        if (now - lastSceneSizeUpdateNs >= sceneSizeUpdateIntervalNs) {
+            scene?.size = IntSize(widthPx, heightPx)
+            updateWindowInfoSize()
+            lastSceneSizeUpdateNs = now
+        }
         requestRedrawCoalesced()
     }
 
@@ -777,6 +802,14 @@ internal class TaoComposeSceneHostLinux(
     private fun applyPendingNativeResize() {
         if (attachmentHandle == 0L) return
         if (widthPx <= 0 || heightPx <= 0) return
+        // Ensure scene size is caught up to the actual EGL surface size before
+        // rendering. The throttle in onResized may have skipped some updates.
+        val currentSize = IntSize(widthPx, heightPx)
+        if (scene?.size != currentSize) {
+            scene?.size = currentSize
+            updateWindowInfoSize()
+            lastSceneSizeUpdateNs = System.nanoTime()
+        }
         if (widthPx == lastAppliedWidthPx &&
             heightPx == lastAppliedHeightPx &&
             scale == lastAppliedScale
@@ -834,6 +867,9 @@ internal class TaoComposeSceneHostLinux(
         // invalidation machinery will naturally re-arm via
         // [requestRedrawCoalesced] when there's actual work; binding the
         // context now would race the swap thread.
+        // During active resize use a very short idle-wait timeout. The swap
+        // thread is doing eglSwapBuffers (which on EGL/Wayland blocks for the
+        // compositor's frame callback ~16ms). Waiting the full 100ms makes the
         val st = swapThread
         if (st != null && !st.waitForIdle()) {
             return
@@ -882,17 +918,11 @@ internal class TaoComposeSceneHostLinux(
             cachedSurface = surface
         }
 
-        // Clear to fully transparent so the carve pass below can zero out the
-        // alpha at the four rounded-corner cut-outs without leaving theme
-        // background pixels behind.
         surface.canvas.clear(0x00000000)
         sc.render(surface.canvas.asComposeCanvas(), now)
         if (cornerRadiusPx > 0 && !window.isMaximized && !window.isFullscreen) {
             carveRoundedCorners(surface.canvas, widthPx, heightPx, cornerRadiusPx)
         }
-        // Submit GL commands to the driver from this thread, then release
-        // the context so the swap thread can pick it up and call
-        // `eglSwapBuffers` (which blocks for vsync).
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()

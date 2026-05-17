@@ -94,6 +94,16 @@ internal object NativeTaoEglBridge {
     @JvmStatic
     external fun nativePresent(handle: Long)
 
+    /**
+     * Calls `eglSwapInterval` on the EGL display. Must be called while the
+     * EGL context is current (after [nativeMakeCurrent]).
+     * Use `interval = 0` to disable vsync during resize (avoids blocking
+     * for Wayland frame callbacks during buffer-size negotiation).
+     * Restore `interval = 1` on the first stable-size frame.
+     */
+    @JvmStatic
+    external fun nativeSetSwapInterval(handle: Long, interval: Int)
+
     @JvmStatic
     external fun nativeWidth(handle: Long): Int
 

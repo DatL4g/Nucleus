@@ -1396,6 +1396,19 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativePresent(
     p_eglSwapBuffers(att->display, att->surface);
 }
 
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeSetSwapInterval(
+    JNIEnv *env, jclass clazz, jlong handle, jint interval)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !p_eglSwapInterval) return;
+    /* eglSwapInterval requires the surface to be current. The swap thread
+     * always releases before signalling idle, so the caller must ensure it
+     * holds the context (nativeMakeCurrent) before calling this. */
+    p_eglSwapInterval(att->display, (EGLint) interval);
+}
+
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeWidth(
     JNIEnv *env, jclass clazz, jlong handle)
