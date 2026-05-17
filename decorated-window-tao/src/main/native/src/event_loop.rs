@@ -59,7 +59,7 @@ pub(crate) fn run_event_loop_blocking() {
         use tao::platform::unix::EventLoopBuilderExtUnix;
         builder.with_any_thread(true);
     }
-    let event_loop = builder.build();
+    let mut event_loop = builder.build();
     set_event_loop_proxy(event_loop.create_proxy());
 
     // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
@@ -76,7 +76,11 @@ pub(crate) fn run_event_loop_blocking() {
         crate::platform::macos::ffi::nucleus_tao_install_trackpad_gesture_monitor();
     }
 
-    event_loop.run(move |event, target, control_flow| {
+    // Use run_return() so this function returns to the JNI layer after the
+    // event loop exits. run() calls process::exit() directly, which bypasses
+    // JVM shutdown hooks (e.g. JDK 25 AOT cache writer, user shutdown hooks).
+    use tao::platform::run_return::EventLoopExtRunReturn;
+    event_loop.run_return(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         match event {
