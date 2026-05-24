@@ -25,6 +25,28 @@ fun DecoratedWindowScope.TitleBar(
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
+    BasicTitleBar(
+        modifier = modifier,
+        gradientStartColor = gradientStartColor,
+        style = style,
+        controlButtonsDirection = controlButtonsDirection,
+        layoutPolicy = TitleBarLayoutPolicy.Default,
+        backgroundContent = backgroundContent,
+        content = content,
+    )
+}
+
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+fun DecoratedWindowScope.BasicTitleBar(
+    modifier: Modifier = Modifier,
+    gradientStartColor: Color = Color.Unspecified,
+    style: TitleBarStyle = LocalTitleBarStyle.current,
+    controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
+    backgroundContent: @Composable () -> Unit = {},
+    content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
+) {
     val awtScope = this as AwtDecoratedWindowScope
     when (Platform.Current) {
         Platform.Linux ->
@@ -33,6 +55,7 @@ fun DecoratedWindowScope.TitleBar(
                 gradientStartColor,
                 style,
                 controlButtonsDirection,
+                layoutPolicy,
                 backgroundContent,
                 content,
             )
@@ -42,6 +65,7 @@ fun DecoratedWindowScope.TitleBar(
                 gradientStartColor,
                 style,
                 controlButtonsDirection,
+                layoutPolicy,
                 backgroundContent,
                 content,
             )
@@ -51,6 +75,7 @@ fun DecoratedWindowScope.TitleBar(
                 gradientStartColor,
                 style,
                 controlButtonsDirection,
+                layoutPolicy,
                 backgroundContent,
                 content,
             )

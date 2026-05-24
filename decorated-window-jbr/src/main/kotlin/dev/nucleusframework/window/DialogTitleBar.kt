@@ -19,6 +19,26 @@ fun DecoratedDialogScope.DialogTitleBar(
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
+    BasicDialogTitleBar(
+        modifier = modifier,
+        gradientStartColor = gradientStartColor,
+        style = style,
+        controlButtonsDirection = controlButtonsDirection,
+        layoutPolicy = TitleBarLayoutPolicy.Default,
+        content = content,
+    )
+}
+
+@Suppress("FunctionNaming")
+@Composable
+fun DecoratedDialogScope.BasicDialogTitleBar(
+    modifier: Modifier = Modifier,
+    gradientStartColor: Color = Color.Unspecified,
+    style: TitleBarStyle = LocalTitleBarStyle.current,
+    controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
+    content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
+) {
     val dialogTitleBarInfo = LocalDialogTitleBarInfo.current
     val titleBarInfo = remember { TitleBarInfo(dialogTitleBarInfo.title, dialogTitleBarInfo.icon) }
     LaunchedEffect(dialogTitleBarInfo.title) { titleBarInfo.title = dialogTitleBarInfo.title }
@@ -29,11 +49,32 @@ fun DecoratedDialogScope.DialogTitleBar(
     ) {
         when (Platform.Current) {
             Platform.Linux ->
-                awtScope.LinuxDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
+                awtScope.LinuxDialogTitleBar(
+                    modifier,
+                    gradientStartColor,
+                    style,
+                    controlButtonsDirection,
+                    layoutPolicy,
+                    content,
+                )
             Platform.Windows ->
-                awtScope.WindowsDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
+                awtScope.WindowsDialogTitleBar(
+                    modifier,
+                    gradientStartColor,
+                    style,
+                    controlButtonsDirection,
+                    layoutPolicy,
+                    content,
+                )
             Platform.MacOS ->
-                awtScope.MacOSDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
+                awtScope.MacOSDialogTitleBar(
+                    modifier,
+                    gradientStartColor,
+                    style,
+                    controlButtonsDirection,
+                    layoutPolicy,
+                    content,
+                )
             Platform.Unknown ->
                 error("DialogTitleBar is not supported on this platform(${System.getProperty("os.name")})")
         }

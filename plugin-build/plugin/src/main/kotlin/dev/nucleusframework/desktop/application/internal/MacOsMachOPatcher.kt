@@ -27,34 +27,48 @@ internal fun patchMachOBuildVersion(
 
     logger.lifecycle("Patching ${binary.name} LC_BUILD_VERSION: minos=$minVersion sdk=$sdkVersion")
 
-    // Remove existing code signature (vtool cannot modify signed binaries)
-    ProcessBuilder("codesign", "--remove-signature", binary.absolutePath)
-        .redirectErrorStream(true)
-        .start()
-        .waitFor()
+    return mutateMachOFileSafely(
+        binary = binary,
+        operation = "vtool patch LC_BUILD_VERSION",
+        logger = logger,
+        mutate = { copy, runner ->
+            runner.run(
+                listOf(
+                    vtool.absolutePath,
+                    "-set-build-version",
+                    "macos",
+                    minVersion,
+                    sdkVersion,
+                    "-tool",
+                    "ld",
+                    "0.0",
+                    "-replace",
+                    "-output",
+                    copy.absolutePath,
+                    copy.absolutePath,
+                ),
+            )
+        },
+        validateExtra = { copy, runner ->
+            val showBuildResult = runner.run(listOf(vtool.absolutePath, "-show-build", copy.absolutePath))
+            if (showBuildResult.exitCode != 0) {
+                "vtool -show-build failed (exit=${showBuildResult.exitCode})"
+            } else if (!hasExpectedBuildVersions(showBuildResult.output, minVersion, sdkVersion)) {
+                "vtool -show-build output does not contain expected minos/sdk values " +
+                    "(minos=$minVersion, sdk=$sdkVersion)"
+            } else {
+                null
+            }
+        },
+    )
+}
 
-    val vtoolExit =
-        ProcessBuilder(
-            vtool.absolutePath,
-            "-set-build-version",
-            "macos",
-            minVersion,
-            sdkVersion,
-            "-tool",
-            "ld",
-            "0.0",
-            "-replace",
-            "-output",
-            binary.absolutePath,
-            binary.absolutePath,
-        ).redirectErrorStream(true)
-            .start()
-            .waitFor()
-
-    if (vtoolExit != 0) {
-        logger.warn("vtool exited with code $vtoolExit for ${binary.name} — build version patch may have failed")
-        return false
-    }
-
-    return true
+private fun hasExpectedBuildVersions(
+    showBuildOutput: String,
+    minVersion: String,
+    sdkVersion: String,
+): Boolean {
+    val minPattern = Regex("""\bminos\s+${Regex.escape(minVersion)}\b""", RegexOption.IGNORE_CASE)
+    val sdkPattern = Regex("""\bsdk\s+${Regex.escape(sdkVersion)}\b""", RegexOption.IGNORE_CASE)
+    return minPattern.containsMatchIn(showBuildOutput) && sdkPattern.containsMatchIn(showBuildOutput)
 }

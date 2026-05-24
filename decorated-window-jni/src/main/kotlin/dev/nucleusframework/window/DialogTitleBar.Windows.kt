@@ -4,11 +4,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
@@ -22,8 +24,12 @@ internal fun AwtDecoratedDialogScope.WindowsDialogTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
+    val controlDir = controlButtonsDirection.resolve()
+    val controlsSide = if (controlDir == LayoutDirection.Rtl) WindowControlsSide.Start else WindowControlsSide.End
+
     if (JniWindowsDecorationBridge.isLoaded) {
         DisposableEffect(window) {
             val hwnd = JniWindowsWindowUtil.getHwnd(window)
@@ -43,17 +49,20 @@ internal fun AwtDecoratedDialogScope.WindowsDialogTitleBar(
         }
     }
 
-    DialogTitleBarImpl(
-        modifier = modifier,
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlButtonsDirection.resolve(),
-        applyTitleBar = { _, _ -> PaddingValues(0.dp) },
-        backgroundContent = {
-            Spacer(modifier = Modifier.fillMaxSize().windowDragHandler(window))
-        },
-    ) { dialogState ->
-        WindowsDialogCloseButton(window, dialogState, style)
-        content(dialogState)
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        DialogTitleBarImpl(
+            modifier = modifier,
+            gradientStartColor = gradientStartColor,
+            style = style,
+            controlButtonsDirection = controlDir,
+            layoutPolicy = layoutPolicy,
+            applyTitleBar = { _, _ -> PaddingValues(0.dp) },
+            backgroundContent = {
+                Spacer(modifier = Modifier.fillMaxSize().windowDragHandler(window))
+            },
+        ) { dialogState ->
+            WindowsDialogCloseButton(window, dialogState, style)
+            content(dialogState)
+        }
     }
 }

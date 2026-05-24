@@ -109,6 +109,7 @@ fun main(args: Array<String>) =
 
         var themeMode by remember { mutableStateOf(ThemeMode.System) }
         var showInfoDialog by remember { mutableStateOf(false) }
+        var isFillCenterWindowVisible by remember { mutableStateOf(false) }
 
         val isDark =
             when (themeMode) {
@@ -143,7 +144,7 @@ fun main(args: Array<String>) =
                 ) {
                     val tabs =
                         buildList {
-                            addAll(listOf("Nucleus", "Gallery", "Taskbar"))
+                            addAll(listOf("Nucleus", "Fill Title", "Gallery", "Taskbar"))
                             add("Notifications (Common)")
                             if (Platform.Current == Platform.MacOS ||
                                 Platform.Current == Platform.Linux ||
@@ -255,6 +256,10 @@ fun main(args: Array<String>) =
 
                     when (selectedTab) {
                         "Nucleus" -> NucleusContent()
+                        "Fill Title" ->
+                            FillCenterDemoEntryTab(
+                                onOpenDemo = { isFillCenterWindowVisible = true },
+                            )
                         "Notifications (Common)" -> CommonNotificationsScreen()
                         "Gallery" -> {
                             val currentDensity = LocalDensity.current
@@ -326,11 +331,28 @@ fun main(args: Array<String>) =
                     }
                 }
             }
+
+            FillCenterDemoWindow(
+                visible = isFillCenterWindowVisible,
+                onCloseRequest = { isFillCenterWindowVisible = false },
+                seedColor = seedColor,
+            )
         }
     }
 
 @Composable
-fun NucleusContent() {
+private fun FillCenterDemoEntryTab(onOpenDemo: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Button(onClick = onOpenDemo) {
+                Text("Open Fill Title Window")
+            }
+        }
+    }
+}
+
+@Composable
+internal fun NucleusContent() {
     val currentDeepLink by deepLinkUri
     // macOS: the kAEOpenApplication AppleEvent is delivered after NSApp.run()
     // starts processing — which is exactly when this composable first runs.
@@ -427,11 +449,11 @@ fun NucleusContent() {
                 )
             }
 
-            if (updater.isUpdateSupported()) {
-                Column(
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (updater.isUpdateSupported()) {
                     Text(
                         text = "Auto-Update",
                         style = MaterialTheme.typography.titleMedium,

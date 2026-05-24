@@ -24,29 +24,22 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.Measurable
-import androidx.compose.ui.layout.MeasurePolicy
-import androidx.compose.ui.layout.MeasureResult
-import androidx.compose.ui.layout.MeasureScope
-import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.ParentDataModifierNode
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.offset
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
-import kotlin.math.max
 
 private const val GRADIENT_MIDPOINT = 0.5f
 
@@ -68,6 +61,7 @@ fun GenericTitleBarImpl(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     onPlace: (() -> Unit)? = null,
     backgroundContent: @Composable () -> Unit = {},
@@ -126,145 +120,17 @@ fun GenericTitleBarImpl(
                     scope.content(state)
                 }
             },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().onPlaced { onPlace?.invoke() },
             measurePolicy =
-                rememberTitleBarMeasurePolicy(state, applyTitleBar, controlButtonsDirection, onPlace),
+                rememberTitleBarMeasurePolicy(
+                    state = state,
+                    applyTitleBar = applyTitleBar,
+                    controlButtonsDirection = controlButtonsDirection,
+                    layoutPolicy = layoutPolicy,
+                ),
         )
     }
 }
-
-class TitleBarMeasurePolicy(
-    private val state: DecoratedWindowState,
-    private val applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
-    private val controlButtonsDirection: LayoutDirection,
-    private val onPlace: (() -> Unit)? = null,
-) : MeasurePolicy {
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
-    override fun MeasureScope.measure(
-        measurables: List<Measurable>,
-        constraints: Constraints,
-    ): MeasureResult {
-        if (measurables.isEmpty()) {
-            return layout(width = constraints.minWidth, height = constraints.minHeight) {}
-        }
-
-        var maxSpaceVertically = constraints.minHeight
-        val contentConstraints = constraints.copy(minWidth = 0, minHeight = 0)
-
-        // Two-pass measurement: End items are measured independently so they
-        // don't reduce the available width for Start/Center items.  This keeps
-        // behaviour consistent with JBR where native caption buttons reserve
-        // space via padding insets rather than Compose item measurement.
-        val endMeasurables = mutableListOf<Pair<Measurable, Placeable>>()
-        val otherMeasurables = mutableListOf<Pair<Measurable, Placeable>>()
-
-        // Pass 1 – measure End-aligned items among themselves
-        var endOccupied = 0
-        for (it in measurables) {
-            val alignment = (it.parentData as? TitleBarChildDataNode)?.horizontalAlignment
-            if (alignment != Alignment.End) continue
-            val placeable = it.measure(contentConstraints.offset(horizontal = -endOccupied))
-            endOccupied += placeable.width
-            maxSpaceVertically = max(maxSpaceVertically, placeable.height)
-            endMeasurables += it to placeable
-        }
-
-        // Pass 2 – measure non-End items with full available width
-        var otherOccupied = 0
-        @Suppress("LoopWithTooManyJumpStatements")
-        for (it in measurables) {
-            val alignment = (it.parentData as? TitleBarChildDataNode)?.horizontalAlignment
-            if (alignment == Alignment.End) continue
-            val placeable = it.measure(contentConstraints.offset(horizontal = -otherOccupied))
-            if (constraints.maxWidth < otherOccupied + placeable.width) break
-            otherOccupied += placeable.width
-            maxSpaceVertically = max(maxSpaceVertically, placeable.height)
-            otherMeasurables += it to placeable
-        }
-
-        val measuredPlaceable = endMeasurables + otherMeasurables
-        val boxHeight = maxSpaceVertically
-
-        val contentPadding = applyTitleBar(boxHeight.toDp(), state)
-
-        // Use Ltr to get absolute left/right insets.
-        val leftInset = contentPadding.calculateLeftPadding(LayoutDirection.Ltr).roundToPx()
-        val rightInset = contentPadding.calculateRightPadding(LayoutDirection.Ltr).roundToPx()
-
-        val occupiedSpaceHorizontally = endOccupied + otherOccupied + leftInset + rightInset
-        val boxWidth = maxOf(constraints.minWidth, occupiedSpaceHorizontally)
-
-        return layout(boxWidth, boxHeight) {
-            onPlace?.invoke()
-
-            val placeableGroups =
-                measuredPlaceable.groupBy { (measurable, _) ->
-                    (measurable.parentData as? TitleBarChildDataNode)?.horizontalAlignment
-                        ?: Alignment.CenterHorizontally
-                }
-
-            val contentIsRtl = layoutDirection == LayoutDirection.Rtl
-            val controlsOnRight = controlButtonsDirection == LayoutDirection.Ltr
-
-            // Absolute occupied-space tracking for each side
-            var leftUsed = leftInset
-            var rightUsed = rightInset
-
-            // End items (control buttons) first — they claim the extreme edge
-            // before Start items, so they always stay at their designated side
-            // even when content and controls share the same edge.
-            placeableGroups[Alignment.End]?.forEach { (_, placeable) ->
-                val y = Alignment.CenterVertically.align(placeable.height, boxHeight)
-                if (controlsOnRight) {
-                    placeable.place(boxWidth - rightUsed - placeable.width, y)
-                    rightUsed += placeable.width
-                } else {
-                    placeable.place(leftUsed, y)
-                    leftUsed += placeable.width
-                }
-            }
-
-            // Start items: leading edge of the content direction
-            placeableGroups[Alignment.Start]?.forEach { (_, placeable) ->
-                val y = Alignment.CenterVertically.align(placeable.height, boxHeight)
-                if (contentIsRtl) {
-                    placeable.place(boxWidth - rightUsed - placeable.width, y)
-                    rightUsed += placeable.width
-                } else {
-                    placeable.place(leftUsed, y)
-                    leftUsed += placeable.width
-                }
-            }
-
-            // Center items: clamped between occupied edges
-            val centerPlaceable = placeableGroups[Alignment.CenterHorizontally].orEmpty()
-            val requiredCenterSpace = centerPlaceable.sumOf { it.second.width }
-            val minX = leftUsed
-            val maxX = boxWidth - rightUsed - requiredCenterSpace
-            var centerX = (boxWidth - requiredCenterSpace) / 2
-
-            if (minX <= maxX) {
-                centerX = centerX.coerceIn(minX, maxX)
-                centerPlaceable.forEach { (_, placeable) ->
-                    val y = Alignment.CenterVertically.align(placeable.height, boxHeight)
-                    placeable.place(centerX, y)
-                    centerX += placeable.width
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun rememberTitleBarMeasurePolicy(
-    state: DecoratedWindowState,
-    applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
-    controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
-    onPlace: (() -> Unit)? = null,
-): MeasurePolicy =
-    remember(state, applyTitleBar, controlButtonsDirection, onPlace) {
-        TitleBarMeasurePolicy(state, applyTitleBar, controlButtonsDirection, onPlace)
-    }
 
 @Stable
 interface TitleBarScope {
@@ -279,7 +145,7 @@ interface TitleBarScope {
      * fullscreen on non-notch screens.
      *
      * Standard [clickable][androidx.compose.foundation.clickable] requires a
-     * complete Press → Release (tap) gesture. On some JDK/macOS combinations,
+     * complete Press -> Release (tap) gesture. On some JDK/macOS combinations,
      * the system injects phantom pointer-exit events between Press and Release
      * in fullscreen, which cancels the tap gesture and prevents `onClick` from
      * firing.

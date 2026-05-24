@@ -894,14 +894,37 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
         }
 
     val stripDylibs =
-        tasks.register<Exec>(
+        tasks.register<DefaultTask>(
             taskNameAction = "strip",
             taskNameObject = "graalvmDylibs",
         ) {
             description = "Strip debug symbols from dylibs"
             dependsOn(copyAwtDylibs)
-            val macosDir = appBundleDir.map { it.dir("MacOS") }
-            commandLine("bash", "-c", "strip -x '${macosDir.get().asFile.absolutePath}'/*.dylib")
+
+            doLast {
+                val macosDir = appBundleDir.get().dir("MacOS").asFile
+                val dylibs =
+                    macosDir
+                        .listFiles { file -> file.isFile && file.extension == "dylib" }
+                        ?.sortedBy { it.name }
+                        .orEmpty()
+
+                var successCount = 0
+                var failureCount = 0
+
+                dylibs.forEach { dylib ->
+                    val stripped = stripMachOFileSafely(dylib, logger)
+                    if (stripped) {
+                        successCount++
+                    } else {
+                        failureCount++
+                    }
+                }
+
+                logger.lifecycle(
+                    "stripDylibs summary: total=${dylibs.size}, stripped=$successCount, keptOriginal=$failureCount",
+                )
+            }
         }
 
     // Patch LC_BUILD_VERSION on all Mach-O binaries and dylibs so that:
@@ -931,8 +954,22 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
                     .filter { it.isDirectory }
                     .flatMap { dir -> dir.listFiles()?.asSequence() ?: emptySequence() }
                     .filter { it.isFile && (it.extension == "dylib" || it.canExecute()) }
-                    .forEach { file ->
-                        patchMachOBuildVersion(file, minVer, sdkVer, logger)
+                    .toList()
+                    .also { files ->
+                        var successCount = 0
+                        var failureCount = 0
+                        files.forEach { file ->
+                            val patched = patchMachOBuildVersion(file, minVer, sdkVer, logger)
+                            if (patched) {
+                                successCount++
+                            } else {
+                                failureCount++
+                            }
+                        }
+
+                        logger.lifecycle(
+                            "patchBuildVersion summary: total=${files.size}, patched=$successCount, keptOriginal=$failureCount",
+                        )
                     }
             }
         }

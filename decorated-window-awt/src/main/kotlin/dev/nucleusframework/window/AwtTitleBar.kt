@@ -16,13 +16,14 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import java.awt.Window
 
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "LongParameterList")
 @Composable
 fun AwtDecoratedWindowScope.TitleBarImpl(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     onPlace: (() -> Unit)? = null,
     backgroundContent: @Composable () -> Unit = {},
@@ -34,6 +35,7 @@ fun AwtDecoratedWindowScope.TitleBarImpl(
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlButtonsDirection,
+        layoutPolicy = layoutPolicy,
         applyTitleBar = applyTitleBar,
         onPlace = onPlace,
         backgroundContent = backgroundContent,

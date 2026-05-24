@@ -10,7 +10,7 @@ plugins {
 
 dependencies {
     implementation(compose.desktop.currentOs)
-    implementation(compose.material3)
+    implementation(libs.compose.material3)
     implementation(project(":core-runtime"))
     implementation(project(":nucleus-application"))
     implementation(project(":service-management-macos"))

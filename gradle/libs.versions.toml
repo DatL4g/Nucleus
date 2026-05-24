@@ -1,29 +1,31 @@
 [versions]
-coilVersion = "3.4.0"
-detekt = "2.0.0-alpha.3"
-icons = "253.31033.145"
-kotlin = "2.3.21"
-ktlintGradle = "14.2.0"
-pluginPublish = "2.1.1"
-versionCheck = "0.54.0"
-compose = "1.11.0"
-agp = "8.12.3"
-downloadTask = "5.7.0"
-kotlinPoet = "2.3.0"
+agp = "8.13.2"
+asm = "9.9.1"
 batik = "1.19"
-vanniktechMavenPublish = "0.36.0"
-jbrApi = "1.10.1"
-jna = "5.18.1"
-graalvmNative = "1.1.0"
-lighthouse = "2.1.1"
-okhttp = "5.3.2"
-ktor = "3.4.3"
+coilVersion = "3.4.0"
+compose = "1.11.0"
 coroutines = "1.11.0"
-jewel = "0.37.0-262.4852.74"
+detekt = "2.0.0-alpha.3"
+downloadTask = "5.7.0"
+graalvmNative = "1.1.0"
+icons = "261.23567.174"
+jbrApi = "1.10.1"
+jewel = "0.37.0-262.4852.51"
+jna = "5.18.1"
+kotlin = "2.3.21"
+kotlinPoet = "2.3.0"
+kotlinxSerialization = "1.11.0"
+ktlintGradle = "14.2.0"
+ktor = "3.4.3"
+lighthouse = "2.1.1"
+material3 = "1.9.0"
+materialIcons = "1.7.3"
+okhttp = "5.3.2"
+pluginPublish = "2.1.1"
 reorderable = "3.1.0"
 thumbnailator = "0.4.21"
-asm = "9.9.1"
-kotlinxSerialization = "1.11.0"
+vanniktechMavenPublish = "0.36.0"
+versionCheck = "0.54.0"
 
 [plugins]
 detekt = { id = "dev.detekt", version.ref = "detekt"}
@@ -73,8 +75,8 @@ compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.re
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose" }
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose" }
 compose-material = { module = "org.jetbrains.compose.material:material", version.ref = "compose" }
-compose-material3 = { module = "org.jetbrains.compose.material3:material3", version = "1.9.0" }
-compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version = "1.7.3" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
+compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "materialIcons" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 thumbnailator = { module = "net.coobird:thumbnailator", version.ref = "thumbnailator" }
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }

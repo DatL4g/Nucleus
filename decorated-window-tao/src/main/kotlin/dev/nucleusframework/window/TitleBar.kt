@@ -89,13 +89,35 @@ private const val MENU_BAR_ANIMATION_MS = 200
  * - KDE breeze 4 dp edge padding applied on the controls side.
  * - Linux + Windows control buttons are injected here (no native chrome).
  */
-@Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
+@Suppress("FunctionNaming")
 @Composable
 fun DecoratedWindowScope.TitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    backgroundContent: @Composable () -> Unit = {},
+    content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
+) {
+    BasicTitleBar(
+        modifier = modifier,
+        gradientStartColor = gradientStartColor,
+        style = style,
+        controlButtonsDirection = controlButtonsDirection,
+        layoutPolicy = TitleBarLayoutPolicy.Default,
+        backgroundContent = backgroundContent,
+        content = content,
+    )
+}
+
+@Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
+@Composable
+fun DecoratedWindowScope.BasicTitleBar(
+    modifier: Modifier = Modifier,
+    gradientStartColor: Color = Color.Unspecified,
+    style: TitleBarStyle = LocalTitleBarStyle.current,
+    controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -285,6 +307,7 @@ fun DecoratedWindowScope.TitleBar(
             gradientStartColor = gradientStartColor,
             style = style,
             controlButtonsDirection = controlDir,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { measuredHeight, titleBarState ->
                 // In overlay mode the bar lives outside the user content tree;
                 // the inline slot is collapsed so heightHolder must stay at 0

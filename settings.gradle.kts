@@ -11,12 +11,11 @@ dependencyResolutionManagement {
         mavenCentral()
         google()
         maven("https://www.jetbrains.com/intellij-repository/releases")
-        maven("https://www.jetbrains.com/intellij-repository/snapshots")
     }
 }
 
 plugins {
-    id("com.gradle.develocity") version "4.3.2"
+    id("com.gradle.develocity") version "4.4.1"
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
