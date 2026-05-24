@@ -382,9 +382,16 @@ impl AppState {
   }
 
   pub fn cleared(panic_info: Weak<PanicInfo>) {
-    let panic_info = panic_info
-      .upgrade()
-      .expect("The panic info must exist here. This failure indicates a developer error.");
+    // The strong PanicInfo Arc lives on the event-loop stack frame in
+    // `EventLoop::run_return`. When the loop is exited via `exitApplication()`
+    // (Nucleus AOT training shutdown), AppKit can fire one final
+    // `applicationDidUpdate -> cleared` callback after that frame has unwound,
+    // so the Weak is dangling. Treat that as "nothing to do" rather than
+    // panicking — the loop is already torn down.
+    let panic_info = match panic_info.upgrade() {
+      Some(info) => info,
+      None => return,
+    };
     // Return when in callback due to https://github.com/rust-windowing/winit/issues/1779
     if panic_info.is_panicking() || !HANDLER.is_ready() || HANDLER.get_in_callback() {
       return;
