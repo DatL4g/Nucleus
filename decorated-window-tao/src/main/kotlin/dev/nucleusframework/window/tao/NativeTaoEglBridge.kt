@@ -21,6 +21,7 @@ private const val LIBRARY_NAME = "nucleus_tao_egl"
  * is per-thread. In our usage that's the Tao event-loop thread, same model
  * as the GLX path.
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoEglBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoEglBridge::class.java)
 
@@ -102,7 +103,10 @@ internal object NativeTaoEglBridge {
      * Restore `interval = 1` on the first stable-size frame.
      */
     @JvmStatic
-    external fun nativeSetSwapInterval(handle: Long, interval: Int)
+    external fun nativeSetSwapInterval(
+        handle: Long,
+        interval: Int,
+    )
 
     @JvmStatic
     external fun nativeWidth(handle: Long): Int

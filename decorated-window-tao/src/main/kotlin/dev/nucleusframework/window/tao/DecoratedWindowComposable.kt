@@ -239,7 +239,9 @@ fun ApplicationScope.DecoratedWindow(
             // visible. The Tao backend never creates AWT windows, so we close it
             // explicitly here — same semantic: "first app window is now shown".
             try {
-                java.awt.SplashScreen.getSplashScreen()?.close()
+                java.awt.SplashScreen
+                    .getSplashScreen()
+                    ?.close()
             } catch (_: Throwable) {
                 // No-op in headless or non-splash environments.
             }

@@ -22,7 +22,6 @@ import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
@@ -182,7 +181,7 @@ internal class TaoComposeSceneHostLinux(
     // clipped or have transparent margins, which is the same visual trade-off
     // macOS makes during live-resize.
     private var lastSceneSizeUpdateNs: Long = 0L
-    private val sceneSizeUpdateIntervalNs = 16_666_667L  // 60fps
+    private val sceneSizeUpdateIntervalNs = 16_666_667L // 60fps
 
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f

@@ -35,7 +35,9 @@ import kotlin.coroutines.CoroutineContext
  * service loader, mirroring `kotlinx-coroutines-swing`.
  */
 @OptIn(InternalCoroutinesApi::class)
-internal sealed class TaoMainCoroutineDispatcher : MainCoroutineDispatcher(), Delay {
+internal sealed class TaoMainCoroutineDispatcher :
+    MainCoroutineDispatcher(),
+    Delay {
     override fun dispatch(
         context: CoroutineContext,
         block: Runnable,

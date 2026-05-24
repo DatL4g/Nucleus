@@ -3,21 +3,26 @@
 
 package dev.nucleusframework.window.tao
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.DecoratedWindowState
+import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.LocalTitleBarInfo
 import dev.nucleusframework.window.TitleBarInfo
 import dev.nucleusframework.window.tao.render.LocalTaoPopupHost
@@ -374,13 +379,37 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                         gnomeCornerArc = 24f,
                         kdeCornerArc = 10f,
                     )
-                FullscreenOverlayHost(
-                    holder = fullscreenHolder,
-                    isFullscreen = stateHolder.value.isFullscreen,
-                    modifier = Modifier.fillMaxSize().then(border),
+                val modalCount =
+                    remember {
+                        mutableStateOf(0)
+                    }
+                CompositionLocalProvider(
+                    dev.nucleusframework.window.LocalModalDialogCount provides modalCount,
                 ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        scopeFactory().content()
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        FullscreenOverlayHost(
+                            holder = fullscreenHolder,
+                            isFullscreen = stateHolder.value.isFullscreen,
+                            modifier = Modifier.fillMaxSize().then(border),
+                        ) {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                scopeFactory().content()
+                            }
+                        }
+                        if (modalCount.value > 0) {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .fillMaxSize()
+                                        .pointerInput(Unit) {
+                                            awaitPointerEventScope {
+                                                while (true) {
+                                                    awaitPointerEvent(PointerEventPass.Initial)
+                                                }
+                                            }
+                                        },
+                            )
+                        }
                     }
                 }
             }
@@ -566,13 +595,37 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                         gnomeCornerArc = 24f,
                         kdeCornerArc = 10f,
                     )
-                FullscreenOverlayHost(
-                    holder = fullscreenHolder,
-                    isFullscreen = stateHolder.value.isFullscreen,
-                    modifier = Modifier.fillMaxSize().then(border),
+                val modalCount =
+                    remember {
+                        mutableStateOf(0)
+                    }
+                CompositionLocalProvider(
+                    dev.nucleusframework.window.LocalModalDialogCount provides modalCount,
                 ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        scopeFactory().content()
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        FullscreenOverlayHost(
+                            holder = fullscreenHolder,
+                            isFullscreen = stateHolder.value.isFullscreen,
+                            modifier = Modifier.fillMaxSize().then(border),
+                        ) {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                scopeFactory().content()
+                            }
+                        }
+                        if (modalCount.value > 0) {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .fillMaxSize()
+                                        .pointerInput(Unit) {
+                                            awaitPointerEventScope {
+                                                while (true) {
+                                                    awaitPointerEvent(PointerEventPass.Initial)
+                                                }
+                                            }
+                                        },
+                            )
+                        }
                     }
                 }
             }

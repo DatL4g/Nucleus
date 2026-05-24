@@ -30,9 +30,11 @@ import kotlinx.coroutines.internal.MainDispatcherFactory
  * touched native code here, every test JVM would fail to initialise
  * `Dispatchers.Main`.
  */
+private const val LOAD_PRIORITY = 100
+
 @OptIn(InternalCoroutinesApi::class)
 internal class TaoMainDispatcherFactory : MainDispatcherFactory {
-    override val loadPriority: Int = 100
+    override val loadPriority: Int = LOAD_PRIORITY
 
     override fun createDispatcher(allFactories: List<MainDispatcherFactory>): MainCoroutineDispatcher =
         ImmediateTaoMainDispatcher
