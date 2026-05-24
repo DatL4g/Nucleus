@@ -65,6 +65,8 @@ fun ApplicationScope.DecoratedWindow(
     val latestContent by rememberUpdatedState(content)
     val latestState by rememberUpdatedState(state)
 
+    state.inflateToMinimumSize(minimumSize)
+
     // Mirrors Compose Desktop's `appliedState` pattern: tracks the last value
     // we wrote to the window so the native→state listeners can ignore echoes.
     val applied =
@@ -358,6 +360,29 @@ private fun effectiveAlignedSize(
     val w = if (size.width.value < minimumSize.width.value) minimumSize.width else size.width
     val h = if (size.height.value < minimumSize.height.value) minimumSize.height else size.height
     return DpSize(w, h)
+}
+
+/**
+ * Inflates [WindowState.size] before Tao creates the native window.
+ *
+ * This mirrors the AWT backend's first-frame fix. On native Wayland, clients
+ * cannot force an absolute toplevel position, so the compositor places the
+ * window at map time. Creating the window at the smaller default size and
+ * applying [minimumSize] afterward can make that compositor placement visibly
+ * shift or land off-centre. Updating [WindowState.size] up-front gives the
+ * compositor the final geometry from the first map.
+ */
+@Composable
+private fun WindowState.inflateToMinimumSize(minimumSize: DpSize?) {
+    remember(this, minimumSize) {
+        if (minimumSize != null) {
+            val w = size.width
+            val h = size.height
+            if (w < minimumSize.width || h < minimumSize.height) {
+                size = DpSize(maxOf(w, minimumSize.width), maxOf(h, minimumSize.height))
+            }
+        }
+    }
 }
 
 /**
