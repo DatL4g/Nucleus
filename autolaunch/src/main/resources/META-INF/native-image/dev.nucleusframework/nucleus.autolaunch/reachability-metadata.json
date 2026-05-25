@@ -1,6 +1,9 @@
 {
     "reflection": [
         {
+            "type": "dev.nucleusframework.autolaunch.AutoLaunch"
+        },
+        {
             "type": "dev.nucleusframework.autolaunch.windows.NativeAutoLaunchBridge",
             "jniAccessible": true
         },

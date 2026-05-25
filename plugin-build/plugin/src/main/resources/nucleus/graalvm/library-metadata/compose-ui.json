@@ -31,6 +31,15 @@
         },
         {
             "type": "androidx.compose.ui.awt.SwingInteropViewGroup"
+        },
+        {
+            "type": "androidx.compose.ui.input.pointer.AwtCursor",
+            "methods": [
+                {
+                    "name": "getCursor",
+                    "parameterTypes": []
+                }
+            ]
         }
     ]
 }

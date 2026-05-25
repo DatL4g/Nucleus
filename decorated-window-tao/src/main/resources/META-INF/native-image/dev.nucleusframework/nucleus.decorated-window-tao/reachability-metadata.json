@@ -1,6 +1,18 @@
 {
     "reflection": [
         {
+            "type": "dev.nucleusframework.window.tao.TaoApplication"
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.TaoMainDispatcherFactory",
+            "methods": [
+                {
+                    "name": "<init>",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.NativeTaoBridge",
             "jniAccessible": true,
             "methods": [

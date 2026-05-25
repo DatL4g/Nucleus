@@ -5,6 +5,26 @@
             "io.sentry"
         ]
     },
+    "reflection": [
+        {
+            "type": "io.sentry.opentelemetry.OtelContextScopesStorage"
+        },
+        {
+            "type": "io.sentry.opentelemetry.OtelSpanFactory"
+        },
+        {
+            "type": "io.sentry.opentelemetry.agent.AgentMarker"
+        },
+        {
+            "type": "io.sentry.opentelemetry.agent.AgentlessMarker"
+        },
+        {
+            "type": "io.sentry.opentelemetry.agent.AgentlessSpringMarker"
+        },
+        {
+            "type": "io.sentry.spotlight.SpotlightIntegration"
+        }
+    ],
     "resources": [
         {
             "glob": "sentry-debug-meta.properties"
