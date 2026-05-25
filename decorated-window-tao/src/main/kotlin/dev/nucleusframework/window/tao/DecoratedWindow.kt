@@ -120,6 +120,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             enabled,
             focusable,
             alwaysOnTop,
+            maximized,
             icon,
             minimumSize,
             onCloseRequest,
@@ -137,6 +138,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             enabled,
             focusable,
             alwaysOnTop,
+            maximized,
             icon,
             minimumSize,
             onCloseRequest,
@@ -172,7 +174,7 @@ internal fun ApplicationScope.openDecoratedWindow(
         )
     host.semanticsOwnerListener = a11yObserver
 
-    val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
+    val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true, maximized = maximized))
     // Single source of truth shared with the host (which feeds it as a top
     // inset to the PlatformContext) and the TitleBar composable (which
     // updates it via SideEffect from its requested height).
@@ -313,6 +315,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     enabled: Boolean,
     focusable: Boolean,
     alwaysOnTop: Boolean,
+    maximized: Boolean,
     icon: Painter?,
     minimumSize: DpSize?,
     onCloseRequest: () -> Unit,
@@ -339,7 +342,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         )
     host.semanticsOwnerListener = a11yObserver
 
-    val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
+    val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true, maximized = maximized))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
 
     val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
@@ -414,7 +417,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 }
             }
         }
-        host.onResized(w, h)
+        val (initialW, initialH) = initialLinuxSize(window, w, h, maximized)
+        host.onResized(initialW, initialH)
         // First paint must happen *after* the surface is shown:
         //  - X11: a pre-show synchronous render leaves the GLX backbuffer
         //    invalidated by the subsequent map, so the dialog stayed black
@@ -522,6 +526,31 @@ private fun pushA11yBoundsLinux(
     )
 }
 
+private fun initialLinuxSize(
+    window: TaoWindow,
+    fallbackW: Int,
+    fallbackH: Int,
+    maximized: Boolean,
+): Pair<Int, Int> {
+    // For a maximized first frame, swap WINDOW_READY's requested size for the
+    // primary monitor's work area so Compose lays out at the final size before
+    // the compositor's first configure — avoids the one-frame glitch at the
+    // requested logical size before snapping to maximized.
+    //
+    // `host.onResized` stores into `widthPx`/`heightPx` (physical pixels — fed
+    // directly to `nativeResize` and used by Compose with `Density(scale)`),
+    // and monitor.rs already returns the work area in physical pixels, so we
+    // pass the values through unchanged.
+    if (!maximized || !NativeTaoBridge.isLoaded) return fallbackW to fallbackH
+    val workArea =
+        NativeTaoBridge.nativeLinuxPrimaryMonitorWorkArea(window.handle)
+            ?: return fallbackW to fallbackH
+    if (workArea.size != 4) return fallbackW to fallbackH
+    val width = workArea[2].toInt()
+    val height = workArea[3].toInt()
+    return if (width > 0 && height > 0) width to height else fallbackW to fallbackH
+}
+
 /**
  * Windows path for [DecoratedWindow]: WGL renderer + custom WndProc decoration.
  * Boutons min/max/close drawn in Compose by the user content (the [TitleBar]
@@ -539,6 +568,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     enabled: Boolean,
     focusable: Boolean,
     alwaysOnTop: Boolean,
+    maximized: Boolean,
     icon: Painter?,
     minimumSize: DpSize?,
     onCloseRequest: () -> Unit,
@@ -563,7 +593,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         )
     host.semanticsOwnerListener = a11yObserver
 
-    val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
+    val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true, maximized = maximized))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
 
     val scopeFactory: androidx.compose.foundation.layout.ColumnScope.() -> TaoDecoratedWindowScope = {
