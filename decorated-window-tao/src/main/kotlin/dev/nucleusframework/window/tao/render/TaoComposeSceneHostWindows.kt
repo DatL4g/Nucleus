@@ -356,7 +356,36 @@ internal class TaoComposeSceneHostWindows(
                     type = PointerType.Touch,
                 )
             }
-        sc.sendPointerEvent(eventType = composeType, pointers = pointers)
+        // Compose Desktop's `clickable`, `detectTapGestures` and other higher-
+        // level pointer modifiers gate "primary click" on either
+        // `PointerEvent.button == Primary` (the event-level button) or
+        // `PointerEvent.buttons.isPrimaryPressed` (the snapshot mask). For
+        // touch, neither is set by default. AWT's touchscreen path on JVM
+        // (java.awt.event.MouseEvent.BUTTON1) and Compose's iOS / Android
+        // backends both synthesise BUTTON1 / primary so taps reach
+        // `clickable`. We mirror that here: report `Primary` on Press,
+        // Move-with-contact, and clear on Release.
+        val anyPressed = pointers.any { it.pressed }
+        val touchButton =
+            when (composeType) {
+                PointerEventType.Press -> androidx.compose.ui.input.pointer.PointerButton.Primary
+                PointerEventType.Release -> androidx.compose.ui.input.pointer.PointerButton.Primary
+                else -> null
+            }
+        val touchButtons =
+            if (anyPressed) {
+                androidx.compose.ui.input.pointer.PointerButtons(
+                    isPrimaryPressed = true,
+                )
+            } else {
+                androidx.compose.ui.input.pointer.PointerButtons()
+            }
+        sc.sendPointerEvent(
+            eventType = composeType,
+            pointers = pointers,
+            buttons = touchButtons,
+            button = touchButton,
+        )
 
         // Purge after the dispatch so the JVM saw the released finger one
         // last time with `pressed=false` — same convention as Linux.

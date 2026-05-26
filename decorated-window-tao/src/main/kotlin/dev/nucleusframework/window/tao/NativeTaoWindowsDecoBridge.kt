@@ -90,4 +90,19 @@ internal object NativeTaoWindowsDecoBridge {
      */
     @JvmStatic
     external fun nativeGetPrimaryMonitorScaleMilli(): Int
+
+    /**
+     * Converts a window-client physical-pixel position to screen physical
+     * pixels (`ClientToScreen`). Returns `[screenX, screenY]` or `null` on
+     * failure. Used by the touch drag path in `TitleBar.titleBarHitTestHandler`
+     * to compute window-move deltas — `RegisterTouchWindow` suppresses
+     * mouse-message synthesis, so the standard `WM_NCLBUTTONDOWN HTCAPTION`
+     * drag loop never fires for touch.
+     */
+    @JvmStatic
+    external fun nativeClientToScreen(
+        hwnd: Long,
+        xClientPx: Int,
+        yClientPx: Int,
+    ): IntArray?
 }

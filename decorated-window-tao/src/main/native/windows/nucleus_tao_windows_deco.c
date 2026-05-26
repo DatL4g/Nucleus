@@ -519,6 +519,29 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimary
     return arr;
 }
 
+/* Converts a window-client physical pixel position to screen physical
+ * pixels. Returns [screenX, screenY] or NULL on failure. Used by the
+ * touch-drag path in TitleBar.kt to compute window-move deltas: with
+ * `RegisterTouchWindow` active, Windows does not synthesize mouse
+ * messages from touch, so `WM_NCLBUTTONDOWN HTCAPTION` (PostMessage)
+ * cannot drive a drag during a touch sequence. We instead track the
+ * finger's screen position ourselves and apply `setOuterPosition`. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeClientToScreen(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint xClient, jint yClient)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return NULL;
+    POINT p; p.x = xClient; p.y = yClient;
+    if (!ClientToScreen(hwnd, &p)) return NULL;
+    jintArray arr = (*env)->NewIntArray(env, 2);
+    if (!arr) return NULL;
+    jint values[2] = { (jint)p.x, (jint)p.y };
+    (*env)->SetIntArrayRegion(env, arr, 0, 2, values);
+    return arr;
+}
+
 /* Returns [x, y, width, height] of the window's outer bounds in screen
  * coordinates (physical pixels). Used by DecoratedDialog to centre itself on
  * its parent. Returns NULL if hwnd is invalid. */
