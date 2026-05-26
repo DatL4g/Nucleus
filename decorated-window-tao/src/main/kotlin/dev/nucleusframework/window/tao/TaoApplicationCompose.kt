@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.system.exitProcess
 
 /**
  * Top-level launcher for the Tao backend. Mirrors Compose Desktop's
@@ -30,6 +31,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Inside [content] you may call `@Composable` [DecoratedWindow]s, use
  * `LaunchedEffect`/`DisposableEffect`, observe `MutableState`, etc. The
  * composition lives until [ApplicationScope.exitApplication] is called.
+ *
+ * The JVM is terminated with `exitProcess(0)` once the Tao event loop
+ * returns. Required because Compose/Skiko initialisation indirectly touches
+ * AWT, which spawns the non-daemon EDT, and that thread keeps the JVM alive
+ * long after the Tao loop has shut down. Mirrors Compose Desktop's
+ * `application { … }` (which also force-exits the process).
  */
 @OptIn(ExperimentalFoundationApi::class)
 fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
@@ -84,6 +91,7 @@ fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
         // Return → Tao event loop continues. Pumps fire MAIN_EVENTS_CLEARED
         // and the Compose machinery resumes between platform events.
     }
+    exitProcess(0)
 }
 
 /**

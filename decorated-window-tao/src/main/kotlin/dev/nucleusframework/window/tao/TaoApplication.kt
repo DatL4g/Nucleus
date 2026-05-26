@@ -41,6 +41,11 @@ object TaoApplication {
         // pump would race the very first `NavHost.setGraph` → `addObserver`
         // call on real apps.
         TaoMainDispatcher.taoMainThread = Thread.currentThread()
+        // Pre-seed Lifecycle's MainDispatcherChecker so its lazy
+        // `runBlocking(Dispatchers.Main.immediate)` probe never fires from
+        // inside the pump — on Lifecycle 2.10.x that probe deadlocks the
+        // first `NavController.setGraph` call.
+        LifecycleMainDispatcherPriming.primeWithCurrentThread()
         onLaunched = block
         NativeTaoBridge.nativeRunBlocking(EventDispatcher)
     }
