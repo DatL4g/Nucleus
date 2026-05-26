@@ -322,17 +322,24 @@ impl WindowFlags {
       return;
     }
 
+    // PATCH(nucleus): when the window transitions from invisible -> visible
+    // AND should be maximized, combine show + maximize into a single
+    // SW_SHOWMAXIMIZED to avoid the "restored flash then maximize animation"
+    // ghost. The MAXIMIZED block below is skipped in that case.
+    let mut handled_show_maximized = false;
     if new.contains(WindowFlags::VISIBLE) {
+      let becoming_visible = !self.contains(WindowFlags::VISIBLE);
+      let show_cmd = if becoming_visible && new.contains(WindowFlags::MAXIMIZED) {
+        handled_show_maximized = true;
+        SW_SHOWMAXIMIZED
+      } else if self.contains(WindowFlags::MARKER_DONT_FOCUS) {
+        self.set(WindowFlags::MARKER_DONT_FOCUS, false);
+        SW_SHOWNOACTIVATE
+      } else {
+        SW_SHOW
+      };
       unsafe {
-        let _ = ShowWindow(
-          window,
-          if self.contains(WindowFlags::MARKER_DONT_FOCUS) {
-            self.set(WindowFlags::MARKER_DONT_FOCUS, false);
-            SW_SHOWNOACTIVATE
-          } else {
-            SW_SHOW
-          },
-        );
+        let _ = ShowWindow(window, show_cmd);
       }
     }
 
@@ -374,7 +381,16 @@ impl WindowFlags {
       }
     }
 
-    if diff.contains(WindowFlags::MAXIMIZED) || new.contains(WindowFlags::MAXIMIZED) {
+    // PATCH(nucleus): only invoke ShowWindow(SW_MAXIMIZE) when the window
+    // is (and will remain) visible. Calling it on an invisible window would
+    // briefly show it before the trailing SW_HIDE below, causing a ghost
+    // flash. The MAXIMIZED bit is still kept in window_state and will be
+    // honored by the SW_SHOWMAXIMIZED branch above on the next visible
+    // transition. Also skip when we already issued SW_SHOWMAXIMIZED.
+    if !handled_show_maximized
+      && new.contains(WindowFlags::VISIBLE)
+      && (diff.contains(WindowFlags::MAXIMIZED) || new.contains(WindowFlags::MAXIMIZED))
+    {
       unsafe {
         let _ = ShowWindow(
           window,
