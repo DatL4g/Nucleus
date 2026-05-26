@@ -1242,7 +1242,15 @@ unsafe fn public_window_callback_inner<T: 'static>(
           .window_flags()
           .contains(WindowFlags::MARKER_RETAIN_STATE_ON_SIZE)
         {
-          let maximized = wparam.0 == win32wm::SIZE_MAXIMIZED as _;
+          // PATCH(nucleus): trust `IsZoomed` (Win32 truth) over wparam. A
+          // SW_HIDE on a maximized window — emitted by `apply_diff` when an
+          // initially-maximized window is created with `visible=false` —
+          // delivers WM_SIZE with wparam = SIZE_RESTORED even though the
+          // WS_MAXIMIZE style bit is still set. Acting on the wparam alone
+          // would turn the cached MAXIMIZED flag to false, which then
+          // propagates up to `Window::is_maximized()` and breaks any host
+          // doing exit-then-enter placement work on the flag change.
+          let maximized = unsafe { IsZoomed(window).as_bool() };
           w.set_window_flags_in_place(|f| f.set(WindowFlags::MAXIMIZED, maximized));
         }
       }

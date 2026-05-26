@@ -660,7 +660,30 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 }
             }
         }
-        host.onResized(w, h)
+        // For an initially-maximized window, EVENT_WINDOW_READY carries the
+        // requested *logical* size (e.g. 800x600), not the actual maximized
+        // size — the WindowEvent::Resized that would update Compose to the
+        // maximized dimensions hasn't been dispatched yet. Without this fix
+        // Compose lays out at 800x600 inside a 2560x1040 GL surface and the
+        // user sees their content in the top-left corner with white margins.
+        // Use the monitor's work area: the client size of a maximized
+        // borderless window matches rcWork exactly (Tao's WM_NCCALCSIZE
+        // clips the client to rcWork for the maximized borderless case).
+        // GetWindowRect would return the *outer* rect which extends ~8px past
+        // every edge (Win32 frame quirk), and sizing the GL surface to that
+        // would draw Compose content into the off-screen frame area.
+        val (initialW, initialH) =
+            if (maximized && NativeTaoWindowsDecoBridge.isLoaded) {
+                val workArea = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea()
+                if (workArea != null && workArea.size == 4) {
+                    workArea[2].toInt() to workArea[3].toInt()
+                } else {
+                    w to h
+                }
+            } else {
+                w to h
+            }
+        host.onResized(initialW, initialH)
         host.syncTitleBarHeight()
         host.onRedrawRequested()
         if (visible) window.show()

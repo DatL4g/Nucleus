@@ -323,9 +323,17 @@ impl Window {
       window_state.size_constraints.min_height = height;
     }
 
-    // Make windows re-check the window size bounds.
-    let size = self.inner_size();
-    self.set_inner_size(size.into());
+    // PATCH: do NOT call `self.set_inner_size(...)` here. Upstream tao re-runs
+    // the inner-size path so Windows re-checks the size bounds, but
+    // `set_inner_size` unconditionally clears `WindowFlags::MAXIMIZED`. For an
+    // initially-maximized window the host calls `setMinimumSize(...)` right
+    // after creation; the upstream behavior un-maximizes the window before
+    // it's ever shown. The constraints take effect via WM_GETMINMAXINFO on
+    // the next user-driven resize, which is good enough.
+    //
+    // If the current size already violates the new minimum, the user can
+    // observe the constraint being applied lazily — same as set_max_inner_size
+    // would behave after we apply the symmetric fix if needed.
   }
 
   #[inline]
@@ -1348,6 +1356,17 @@ unsafe fn init<T: 'static>(
 
   win.set_visible(attributes.visible);
   win.set_closable(attributes.closable);
+
+  // PATCH(nucleus): initial maximized + invisible windows. The SW_HIDE issued
+  // during apply_diff (`set_visible(false)` above) fires WM_SIZE with
+  // wparam = SIZE_RESTORED which would normally clear the MAXIMIZED flag the
+  // user just asked us to set. Re-stamp it now that all init-time messages
+  // have been processed — defensive in case the WM_SIZE handler's IsZoomed
+  // probe also misreports during the hide transition.
+  if attributes.maximized && !attributes.visible {
+    let mut w = win.window_state.lock();
+    w.set_window_flags_in_place(|f| f.set(WindowFlags::MAXIMIZED, true));
+  }
 
   Ok(win)
 }

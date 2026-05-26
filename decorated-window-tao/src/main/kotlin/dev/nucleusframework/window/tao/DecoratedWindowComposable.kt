@@ -171,7 +171,13 @@ fun ApplicationScope.DecoratedWindow(
     }
 
     // ── State → window sync ──
-    LaunchedEffect(window, state.size) {
+    LaunchedEffect(window, state.size, state.placement) {
+        // Maximized / Fullscreen windows derive their size from the
+        // OS-managed placement, not from `state.size`. Skip the
+        // `setInnerSize` call so we don't shrink the window back to the
+        // requested logical size while Win32/Wayland think it should
+        // fill the monitor.
+        if (state.placement != WindowPlacement.Floating) return@LaunchedEffect
         if (state.size != applied.size) {
             window.setInnerSize(
                 state.size.width.value
@@ -182,7 +188,12 @@ fun ApplicationScope.DecoratedWindow(
             applied.size = state.size
         }
     }
-    LaunchedEffect(window, state.position) {
+    LaunchedEffect(window, state.position, state.placement) {
+        // Same reasoning as size: an Aligned(Center) request would move
+        // the maximized window away from the work area's origin (Win32
+        // happily moves a WS_MAXIMIZE window) — visible as a maximized
+        // window offset diagonally from the screen corner.
+        if (state.placement != WindowPlacement.Floating) return@LaunchedEffect
         val pos = state.position
         if (pos == applied.position) return@LaunchedEffect
         when (pos) {
