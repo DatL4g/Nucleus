@@ -230,7 +230,15 @@ internal fun ApplicationScope.openDecoratedWindow(
                 }
             }
         }
-        host.onResized(w, h)
+        // For an initially-maximized window, EVENT_WINDOW_READY carries the
+        // requested *logical* size (e.g. 800x600). Tao's macOS backend now
+        // applies the zoom synchronously during `build()` (so the NSWindow's
+        // frame already matches `visibleFrame` by the time we get here), but
+        // the dispatched size still reflects the original request. Swap it for
+        // the primary screen's `visibleFrame` so Compose lays out at the
+        // maximized size on the very first frame — mirrors the Windows path.
+        val (initialW, initialH) = initialMacOsSize(w, h, maximized)
+        host.onResized(initialW, initialH)
         host.onRedrawRequested()
         if (visible) window.show()
     }
@@ -524,6 +532,19 @@ private fun pushA11yBoundsLinux(
         w.toLong(),
         h.toLong(),
     )
+}
+
+private fun initialMacOsSize(
+    fallbackW: Int,
+    fallbackH: Int,
+    maximized: Boolean,
+): Pair<Int, Int> {
+    if (!maximized || !NativeTaoMacOsDecoBridge.isLoaded) return fallbackW to fallbackH
+    val workArea = NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return fallbackW to fallbackH
+    if (workArea.size != 4) return fallbackW to fallbackH
+    val width = workArea[2].toInt()
+    val height = workArea[3].toInt()
+    return if (width > 0 && height > 0) width to height else fallbackW to fallbackH
 }
 
 private fun initialLinuxSize(

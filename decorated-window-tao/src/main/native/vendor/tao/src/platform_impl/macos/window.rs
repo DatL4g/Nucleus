@@ -637,7 +637,52 @@ impl UnownedWindow {
     }
 
     if maximized {
-      window.set_maximized(maximized);
+      // PATCH(nucleus): apply the maximized state SYNCHRONOUSLY at window
+      // creation time, WITHOUT animation. Upstream tao queues an async block
+      // on the main dispatch queue via `set_maximized_async`, which calls
+      // `zoom:` on the next runloop tick. `zoom:` animates (~250 ms) — the
+      // animation is still in progress by the time our Kotlin host runs
+      // `show()`, producing a visible "floating then maximized" flash on
+      // screen.
+      //
+      // We're already on the main thread inside `build()`, so we set the
+      // frame directly via `setFrame:display:NO,animate:NO` — instantaneous.
+      // Side effect: AppKit's `NSWindow.isZoomed` flag stays clear (it only
+      // flips when `zoom:` is invoked); `is_zoomed()` (below) is patched to
+      // compare the frame against `visibleFrame` so the state stays
+      // consistent. `shared_state.maximized` was already populated from
+      // `WindowAttributes` via `impl From<WindowAttributes> for SharedState`.
+      //
+      // We also pre-apply `FullSizeContentView` to the styleMask. The Kotlin
+      // host's `nativeConfigureChrome` adds the same bit a few callbacks
+      // later, and that change makes AppKit "preserve contentSize" — it
+      // shrinks the outer frame down by the title-bar height. Setting it
+      // here means the styleMask is already correct by the time we setFrame,
+      // so the maximized outer frame survives the chrome configuration.
+      unsafe {
+        let mtm = MainThreadMarker::new_unchecked();
+        let screen = window
+          .ns_window
+          .screen()
+          .or_else(|| NSScreen::mainScreen(mtm));
+        if let Some(screen) = screen {
+          let mut mask = window.ns_window.styleMask();
+          if !mask.contains(NSWindowStyleMask::FullSizeContentView) {
+            mask |= NSWindowStyleMask::FullSizeContentView;
+            window.ns_window.setStyleMask(mask);
+          }
+          let mut shared_state_lock = window.shared_state.lock().unwrap();
+          shared_state_lock.standard_frame = Some(window.ns_window.frame());
+          drop(shared_state_lock);
+          let visible_frame = NSScreen::visibleFrame(&screen);
+          let _: () = msg_send![
+            &*window.ns_window,
+            setFrame: visible_frame,
+            display: NO,
+            animate: NO
+          ];
+        }
+      }
     }
 
     Ok((window, delegate))
@@ -994,28 +1039,24 @@ impl UnownedWindow {
   }
 
   pub(crate) fn is_zoomed(&self) -> bool {
-    // Previously, is_zoomed temporarily mutated the window's styleMask(or resizable)
-    // to force macOS to return a valid result for borderless windows.
-    // This synchronous mutation could trigger unnecessary layout passes or state inconsistencies.
-    // Related issue: https://github.com/rust-windowing/winit/issues/4071 and https://github.com/tauri-apps/plugins-workspace/issues/3240
-
+    // PATCH(nucleus): always compare the frame against `visibleFrame`.
+    // Upstream returns `NSWindow.isZoomed` for Titled+Resizable windows,
+    // but that tracks an internal AppKit flag set only by `zoom:`. We
+    // bypass `zoom:` at init time (via `setFrame:`) to avoid the maximize
+    // animation flash, so the flag stays clear even when the window
+    // visually fills the visible frame. Without this patch,
+    // `is_maximized()` reports false, the Compose state-sync layer thinks
+    // the window is "Floating", and `setMaximized(true)` is re-issued —
+    // which *does* call `zoom:` and produces exactly the animation we
+    // just avoided. Frame comparison gives a consistent answer regardless
+    // of how the maximized state was applied.
     unsafe {
-      let curr_mask = self.ns_window.styleMask();
-
-      let required = NSWindowStyleMask::Titled | NSWindowStyleMask::Resizable;
-      if curr_mask.contains(required) {
-        return self.ns_window.isZoomed();
-      }
-
       if let Some(screen) = self.ns_window.screen() {
         let frame = self.ns_window.frame();
         let visible_frame = screen.visibleFrame();
-
         return (frame.size.width - visible_frame.size.width).abs() < 1.0
           && (frame.size.height - visible_frame.size.height).abs() < 1.0;
       }
-
-      // Fallback to original `isZoomed` check
       self.ns_window.isZoomed()
     }
   }

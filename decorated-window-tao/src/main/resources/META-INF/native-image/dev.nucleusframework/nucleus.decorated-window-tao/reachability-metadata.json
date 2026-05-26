@@ -400,7 +400,7 @@
         { "type": "javax.swing.JPanel", "allDeclaredConstructors": true },
         {
             "type": "androidx.lifecycle.MainDispatcherChecker",
-            "condition": { "typeReachable": "androidx.lifecycle.MainDispatcherChecker" },
+            "condition": { "typeReached": "androidx.lifecycle.MainDispatcherChecker" },
             "fields": [
                 { "name": "INSTANCE" },
                 { "name": "mainDispatcherThread" },
