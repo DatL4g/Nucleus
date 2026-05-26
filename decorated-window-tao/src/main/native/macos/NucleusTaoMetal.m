@@ -63,6 +63,13 @@ static const char kTaoNewFullscreenControlsKey = 11;
 // install time so the menu-bar monitor block can route the JNI callback
 // using the same opaque key Kotlin used to subscribe.
 static const char kTaoNsViewPtrKey = 12;
+// Holds the title-bar passthrough view that forwards every mouse event to
+// the contentView. Without it, AppKit's NSTitlebarContainerView swallows
+// mouseMoved / mouseEntered / mouseExited in the title-bar zone, leaving
+// Compose's hover detection (and thus TooltipBox, hover styling, cursor
+// changes) dead on anything drawn over the title bar. Mirrors
+// `decorated-window-jni`'s NucleusDragView.
+static const char kTaoPassthroughViewKey = 13;
 
 // Same metrics as decorated-window-jni's applyConstraints — keeps the
 // traffic-lights at the same offsets Apple's own apps use.
@@ -872,6 +879,62 @@ static void removeButtonConstraints(NSWindow *window) {
     if (zoomBtn != nil) zoomBtn.translatesAutoresizingMaskIntoConstraints = YES;
 }
 
+// ── Title-bar event passthrough view ────────────────────────────────────
+//
+// AppKit's NSTitlebarContainerView sits in front of the contentView and
+// intercepts mouseMoved / mouseEntered / mouseExited in the title-bar
+// zone. Even with `setMovable:NO` and `acceptsMouseMovedEvents:YES`, these
+// events never reach the contentView when the cursor hovers the titlebar,
+// so Compose's hover state machine (`TooltipBox`, hover styling, cursor
+// changes) is dead on tabs / buttons drawn over the title bar.
+//
+// Mirrors `decorated-window-jni`'s `NucleusDragView`: a transparent view
+// pinned over the entire titlebar that overrides every mouse handler and
+// forwards to `[self.window contentView]`. Installed below the traffic-
+// light buttons (NSWindowBelow positioning) so close/min/max controls
+// still receive their own clicks normally. The view persists across
+// constraint updates so the forwarding chain is never torn down.
+@interface NucleusTaoPassthroughView : NSView
+@end
+
+@implementation NucleusTaoPassthroughView
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { (void)event; return YES; }
+- (void)mouseDown:(NSEvent *)event         { [[self.window contentView] mouseDown:event]; }
+- (void)mouseUp:(NSEvent *)event           { [[self.window contentView] mouseUp:event]; }
+- (void)mouseDragged:(NSEvent *)event      { [[self.window contentView] mouseDragged:event]; }
+- (void)mouseMoved:(NSEvent *)event        { [[self.window contentView] mouseMoved:event]; }
+- (void)mouseEntered:(NSEvent *)event      { [[self.window contentView] mouseEntered:event]; }
+- (void)mouseExited:(NSEvent *)event       { [[self.window contentView] mouseExited:event]; }
+- (void)rightMouseDown:(NSEvent *)event    { [[self.window contentView] rightMouseDown:event]; }
+- (void)rightMouseUp:(NSEvent *)event      { [[self.window contentView] rightMouseUp:event]; }
+- (void)rightMouseDragged:(NSEvent *)event { [[self.window contentView] rightMouseDragged:event]; }
+- (void)otherMouseDown:(NSEvent *)event    { [[self.window contentView] otherMouseDown:event]; }
+- (void)otherMouseUp:(NSEvent *)event      { [[self.window contentView] otherMouseUp:event]; }
+- (void)otherMouseDragged:(NSEvent *)event { [[self.window contentView] otherMouseDragged:event]; }
+- (void)scrollWheel:(NSEvent *)event       { [[self.window contentView] scrollWheel:event]; }
+@end
+
+// Installs the passthrough view once in the title bar. Idempotent — repeat
+// calls return the cached instance. Returns nil if the AppKit title-bar
+// hierarchy isn't materialised yet (early-init race; constraints will be
+// reapplied on the next `nativeApplyButtonLayout` once it is).
+static NucleusTaoPassthroughView *ensureTaoPassthroughView(NSWindow *window) {
+    NucleusTaoPassthroughView *existing =
+        objc_getAssociatedObject(window, &kTaoPassthroughViewKey);
+    if (existing != nil) return existing;
+
+    NSView *closeBtn = [window standardWindowButton:NSWindowCloseButton];
+    if (closeBtn == nil) return nil;
+    NSView *titlebar = closeBtn.superview;
+    if (titlebar == nil) return nil;
+
+    NucleusTaoPassthroughView *view = [[NucleusTaoPassthroughView alloc] init];
+    [titlebar addSubview:view positioned:NSWindowBelow relativeTo:closeBtn];
+    objc_setAssociatedObject(window, &kTaoPassthroughViewKey, view,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return view;
+}
+
 /**
  * Repositions the standard NSWindow buttons (close / miniaturise / zoom) so
  * they are vertically centred inside a custom-height title bar drawn by
@@ -916,6 +979,17 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
         [titlebar.topAnchor    constraintEqualToAnchor:titlebarContainer.topAnchor],
         [titlebar.bottomAnchor constraintEqualToAnchor:titlebarContainer.bottomAnchor],
     ]];
+
+    NucleusTaoPassthroughView *passthrough = ensureTaoPassthroughView(window);
+    if (passthrough != nil) {
+        passthrough.translatesAutoresizingMaskIntoConstraints = NO;
+        [constraints addObjectsFromArray:@[
+            [passthrough.leftAnchor   constraintEqualToAnchor:titlebarContainer.leftAnchor],
+            [passthrough.rightAnchor  constraintEqualToAnchor:titlebarContainer.rightAnchor],
+            [passthrough.topAnchor    constraintEqualToAnchor:titlebarContainer.topAnchor],
+            [passthrough.bottomAnchor constraintEqualToAnchor:titlebarContainer.bottomAnchor],
+        ]];
+    }
 
     float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
     float offset       = shrinkFactor * kDefaultButtonOffset;
