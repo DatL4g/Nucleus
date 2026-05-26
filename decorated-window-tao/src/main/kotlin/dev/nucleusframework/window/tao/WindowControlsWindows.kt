@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,6 +23,8 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.LocalIsDarkTheme
@@ -94,97 +97,109 @@ internal fun WindowControlsWindows(
     onExitFullscreen: (() -> Unit)? = null,
 ) {
     val isDark = LocalIsDarkTheme.current
-    Row(modifier = modifier.fillMaxHeight()) {
-        // Minimize
-        WindowsCaptionButton(
-            onClick = { win.minimize() },
-            isDark = isDark,
-            icon =
-                if (state.isActive) {
-                    if (isDark) WindowsControlButtonIcons.MinimizeDark else WindowsControlButtonIcons.Minimize
-                } else {
-                    if (isDark) {
-                        WindowsControlButtonIcons.MinimizeInactiveDark
+    // Force LTR for the buttons row so the canonical Windows order
+    // Minimize → Maximize → Close is preserved even when the app uses an RTL
+    // global LayoutDirection (e.g., Hebrew/Arabic UIs). Outer placement on the
+    // title bar's leading/trailing edge is still controlled by the
+    // TitleBarMeasurePolicy's `controlIsRtl`, so RTL users see the group on the
+    // expected side; only the internal child order is pinned here.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Row(modifier = modifier.fillMaxHeight()) {
+            // Minimize
+            WindowsCaptionButton(
+                onClick = { win.minimize() },
+                isDark = isDark,
+                icon =
+                    if (state.isActive) {
+                        if (isDark) WindowsControlButtonIcons.MinimizeDark else WindowsControlButtonIcons.Minimize
                     } else {
-                        WindowsControlButtonIcons.MinimizeInactive
-                    }
-                },
-            contentDescription = "Minimize",
-        )
+                        if (isDark) {
+                            WindowsControlButtonIcons.MinimizeInactiveDark
+                        } else {
+                            WindowsControlButtonIcons.MinimizeInactive
+                        }
+                    },
+                contentDescription = "Minimize",
+            )
 
-        // Fullscreen → exit-fullscreen button replaces maximize/restore.
-        // Mirrors decorated-window-jni's WindowsWindowControlArea behaviour.
-        if (isFullscreen && onExitFullscreen != null) {
+            // Fullscreen → exit-fullscreen button replaces maximize/restore.
+            // Mirrors decorated-window-jni's WindowsWindowControlArea behaviour.
+            if (isFullscreen && onExitFullscreen != null) {
+                WindowsCaptionButton(
+                    onClick = onExitFullscreen,
+                    isDark = isDark,
+                    icon =
+                        if (state.isActive) {
+                            if (isDark) {
+                                WindowsControlButtonIcons.CloseFullscreenDark
+                            } else {
+                                WindowsControlButtonIcons.CloseFullscreen
+                            }
+                        } else {
+                            if (isDark) {
+                                WindowsControlButtonIcons.CloseFullscreenInactiveDark
+                            } else {
+                                WindowsControlButtonIcons.CloseFullscreenInactive
+                            }
+                        },
+                    contentDescription = "Exit fullscreen",
+                )
+            } else if (state.isMaximized) {
+                // Maximize / Restore — switches icon based on actual window state
+                WindowsCaptionButton(
+                    onClick = { win.setMaximized(false) },
+                    isDark = isDark,
+                    icon =
+                        if (state.isActive) {
+                            if (isDark) WindowsControlButtonIcons.RestoreDark else WindowsControlButtonIcons.Restore
+                        } else {
+                            if (isDark) {
+                                WindowsControlButtonIcons.RestoreInactiveDark
+                            } else {
+                                WindowsControlButtonIcons.RestoreInactive
+                            }
+                        },
+                    contentDescription = "Restore",
+                )
+            } else {
+                WindowsCaptionButton(
+                    onClick = { win.setMaximized(true) },
+                    isDark = isDark,
+                    icon =
+                        if (state.isActive) {
+                            if (isDark) WindowsControlButtonIcons.MaximizeDark else WindowsControlButtonIcons.Maximize
+                        } else {
+                            if (isDark) {
+                                WindowsControlButtonIcons.MaximizeInactiveDark
+                            } else {
+                                WindowsControlButtonIcons.MaximizeInactive
+                            }
+                        },
+                    contentDescription = "Maximize",
+                )
+            }
+
+            // Close — fire user's onCloseRequest (mirrors AWT's WINDOW_CLOSING
+            // dispatch). Calling `requestClose()` directly would destroy the
+            // window without giving the app a chance to exit the Tao event loop.
             WindowsCaptionButton(
-                onClick = onExitFullscreen,
+                onClick = { win.requestUserClose() },
                 isDark = isDark,
                 icon =
                     if (state.isActive) {
-                        if (isDark) {
-                            WindowsControlButtonIcons.CloseFullscreenDark
-                        } else {
-                            WindowsControlButtonIcons.CloseFullscreen
-                        }
+                        if (isDark) WindowsControlButtonIcons.CloseDark else WindowsControlButtonIcons.Close
                     } else {
                         if (isDark) {
-                            WindowsControlButtonIcons.CloseFullscreenInactiveDark
+                            WindowsControlButtonIcons.CloseInactiveDark
                         } else {
-                            WindowsControlButtonIcons.CloseFullscreenInactive
+                            WindowsControlButtonIcons.CloseInactive
                         }
                     },
-                contentDescription = "Exit fullscreen",
-            )
-        } else if (state.isMaximized) {
-            // Maximize / Restore — switches icon based on actual window state
-            WindowsCaptionButton(
-                onClick = { win.setMaximized(false) },
-                isDark = isDark,
-                icon =
-                    if (state.isActive) {
-                        if (isDark) WindowsControlButtonIcons.RestoreDark else WindowsControlButtonIcons.Restore
-                    } else {
-                        if (isDark) {
-                            WindowsControlButtonIcons.RestoreInactiveDark
-                        } else {
-                            WindowsControlButtonIcons.RestoreInactive
-                        }
-                    },
-                contentDescription = "Restore",
-            )
-        } else {
-            WindowsCaptionButton(
-                onClick = { win.setMaximized(true) },
-                isDark = isDark,
-                icon =
-                    if (state.isActive) {
-                        if (isDark) WindowsControlButtonIcons.MaximizeDark else WindowsControlButtonIcons.Maximize
-                    } else {
-                        if (isDark) {
-                            WindowsControlButtonIcons.MaximizeInactiveDark
-                        } else {
-                            WindowsControlButtonIcons.MaximizeInactive
-                        }
-                    },
-                contentDescription = "Maximize",
+                iconHover = WindowsControlButtonIcons.CloseHover,
+                isCloseButton = true,
+                contentDescription = "Close",
             )
         }
-
-        // Close — fire user's onCloseRequest (mirrors AWT's WINDOW_CLOSING
-        // dispatch). Calling `requestClose()` directly would destroy the
-        // window without giving the app a chance to exit the Tao event loop.
-        WindowsCaptionButton(
-            onClick = { win.requestUserClose() },
-            isDark = isDark,
-            icon =
-                if (state.isActive) {
-                    if (isDark) WindowsControlButtonIcons.CloseDark else WindowsControlButtonIcons.Close
-                } else {
-                    if (isDark) WindowsControlButtonIcons.CloseInactiveDark else WindowsControlButtonIcons.CloseInactive
-                },
-            iconHover = WindowsControlButtonIcons.CloseHover,
-            isCloseButton = true,
-            contentDescription = "Close",
-        )
     }
 }
 

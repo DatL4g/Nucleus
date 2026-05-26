@@ -193,7 +193,20 @@ internal class TaoComposeSceneHostWindows(
         val platformContext =
             WindowsTaoPlatformContext(
                 windowHandle = window.handle,
-                topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
+                // The custom title bar is drawn inside the same Compose scene as
+                // the rest of the content, so it shares the (0, 0) origin with
+                // everything else. We must NOT report it as a `PlatformInsets.top`:
+                // Compose's `RootMeasurePolicy` (cf. RootMeasurePolicy.skiko.kt::
+                // positionWithInsets) applies platform insets as an *additive
+                // offset* on the popup position (designed for iOS notches /
+                // Android status bars, where the safe area is outside the Compose
+                // surface). Reporting `top = titleBarHeight` here shifts every
+                // Popup, DropdownMenu, ContextMenu, and Tooltip down by that
+                // amount — visible as a consistent "title-bar-height downward
+                // drift" of every popup the user opens. Popups are free to
+                // overlap the title bar zone; popup scene layers naturally float
+                // above content via z-order. Same fix as Linux (commit 2d8ca500).
+                topInsetPx = { 0 },
                 windowInfo = windowInfo,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
