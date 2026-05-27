@@ -430,11 +430,10 @@ pub(crate) fn run_event_loop_blocking() {
                         );
                     }
                     WindowEvent::Touch(touch) => {
-                        // Tao 0.35 enables `RegisterTouchWindow` on Windows by
-                        // default, so the OS no longer synthesises mouse-event
-                        // fallbacks for touchscreen input — we must route the
-                        // raw touches ourselves or `LazyColumn`, drag-gestures,
-                        // pinch-zoom, etc. don't react on tablets / 2-in-1s.
+                        // Tao routes Windows touchscreen input through WM_POINTER.
+                        // We must forward raw touches ourselves or `LazyColumn`,
+                        // drag gestures, pinch-zoom, etc. don't react on tablets /
+                        // 2-in-1s.
                         let phase = match touch.phase {
                             TouchPhase::Started => TOUCH_EVENT_PRESS,
                             TouchPhase::Moved => TOUCH_EVENT_MOVE,

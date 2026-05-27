@@ -215,6 +215,22 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
     OverlayState *s = (OverlayState *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
     switch (msg) {
+    case WM_POINTERACTIVATE:
+        if (s && s->owner) {
+            SetForegroundWindow(s->owner);
+            SetActiveWindow(s->owner);
+            SetFocus(s->owner);
+        }
+        return PA_NOACTIVATE;
+
+    case WM_POINTERDOWN:
+        if (s && s->owner) {
+            SetForegroundWindow(s->owner);
+            SetActiveWindow(s->owner);
+            SetFocus(s->owner);
+        }
+        break;
+
     case WM_MOUSEACTIVATE:
         return MA_NOACTIVATE;
 

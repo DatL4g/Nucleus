@@ -775,6 +775,12 @@ fn normalize_pointer_pressure(pressure: u32) -> Option<Force> {
   }
 }
 
+unsafe fn focus_pointer_input_window(window: HWND) {
+  let _ = SetForegroundWindow(window);
+  let _ = SetActiveWindow(window);
+  let _ = SetFocus(Some(window));
+}
+
 /// Flush redraw events for Tao's windows.
 ///
 /// Tao's API guarantees that all redraw events will be clustered together and dispatched all at
@@ -1624,6 +1630,11 @@ unsafe fn public_window_callback_inner<T: 'static>(
       {
         inputs.set_len(pcount);
         for input in &inputs {
+          let touch_started = (input.dwFlags & TOUCHEVENTF_DOWN) != Default::default();
+          if touch_started {
+            focus_pointer_input_window(window);
+          }
+
           let mut location = POINT {
             x: input.x / 100,
             y: input.y / 100,
@@ -1639,7 +1650,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
           subclass_input.send_event(Event::WindowEvent {
             window_id: RootWindowId(WindowId(window.0 as _)),
             event: WindowEvent::Touch(Touch {
-              phase: if (input.dwFlags & TOUCHEVENTF_DOWN) != Default::default() {
+              phase: if touch_started {
                 TouchPhase::Started
               } else if (input.dwFlags & TOUCHEVENTF_UP) != Default::default() {
                 TouchPhase::Ended
@@ -1660,7 +1671,16 @@ unsafe fn public_window_callback_inner<T: 'static>(
       result = ProcResult::Value(LRESULT(0));
     }
 
+    win32wm::WM_POINTERACTIVATE => {
+      focus_pointer_input_window(window);
+      result = ProcResult::Value(LRESULT(win32wm::PA_ACTIVATE as isize));
+    }
+
     win32wm::WM_POINTERDOWN | win32wm::WM_POINTERUPDATE | win32wm::WM_POINTERUP => {
+      if msg == win32wm::WM_POINTERDOWN {
+        focus_pointer_input_window(window);
+      }
+
       if let (
         Some(GetPointerFrameInfoHistory),
         Some(SkipPointerFrameMessages),

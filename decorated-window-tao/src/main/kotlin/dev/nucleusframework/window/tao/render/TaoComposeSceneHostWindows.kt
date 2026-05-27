@@ -264,14 +264,19 @@ internal class TaoComposeSceneHostWindows(
         for (cb in ownerFocusGainedListeners.values.toList()) cb()
     }
 
+    private fun markOwnerFocusedFromPointerInput() {
+        if (windowInfo.isWindowFocused) return
+        windowInfo.isWindowFocused = true
+        onOwnerFocusGained()
+    }
+
     // ── Touch (Windows) ───────────────────────────────────────────────────
     //
-    // Tao 0.35 enables `RegisterTouchWindow` on Windows by default, so the
-    // OS no longer synthesises mouse events for touchscreen input. Without
-    // routing `WindowEvent::Touch` to Compose, `LazyColumn` scroll, drag
-    // gestures, and `detectTransformGestures` (pinch / rotate) would not
-    // react on tablets / 2-in-1s — same gap Compose Desktop officiel hits
-    // on this platform (JBR-2702).
+    // Tao routes Windows touchscreen input through WM_POINTER. Without routing
+    // `WindowEvent::Touch` to Compose, `LazyColumn` scroll, drag gestures, and
+    // `detectTransformGestures` (pinch / rotate) would not react on tablets /
+    // 2-in-1s - same gap Compose Desktop officiel hits on this platform
+    // (JBR-2702).
     //
     // The Rust side dispatches one event per finger update; we accumulate
     // the active set here and issue a single `sendPointerEvent` with the
@@ -319,6 +324,7 @@ internal class TaoComposeSceneHostWindows(
         val composeType =
             when (phase) {
                 TaoTouchEvent.PRESS -> {
+                    markOwnerFocusedFromPointerInput()
                     activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure = pressure)
                     PointerEventType.Press
                 }
@@ -328,13 +334,15 @@ internal class TaoComposeSceneHostWindows(
                         existing.xPx = xPx
                         existing.yPx = yPx
                         existing.pressure = pressure
+                        PointerEventType.Move
                     } else {
-                        // Synthetic Press for an unknown id — defensive in case Tao
+                        // Synthetic Press for an unknown id - defensive in case Tao
                         // ever forwards a Move without a prior Started (palm-reject
                         // race observed on some Surface drivers).
+                        markOwnerFocusedFromPointerInput()
                         activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure = pressure)
+                        PointerEventType.Press
                     }
-                    PointerEventType.Move
                 }
                 TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> {
                     val existing = activeTouches[id]

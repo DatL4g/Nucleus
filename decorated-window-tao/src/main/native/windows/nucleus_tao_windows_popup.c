@@ -305,6 +305,17 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     PopupState *p = (PopupState *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
     switch (msg) {
+    case WM_POINTERACTIVATE:
+        return p && p->focusable ? PA_ACTIVATE : PA_NOACTIVATE;
+
+    case WM_POINTERDOWN:
+        if (p && p->parent && !p->focusable) {
+            SetForegroundWindow(p->parent);
+            SetActiveWindow(p->parent);
+            SetFocus(p->parent);
+        }
+        break;
+
     case WM_MOUSEACTIVATE:
         return p && p->focusable ? MA_ACTIVATE : MA_NOACTIVATE;
 
