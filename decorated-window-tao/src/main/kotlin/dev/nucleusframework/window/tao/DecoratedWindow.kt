@@ -581,7 +581,7 @@ private fun initialLinuxSize(
  * the entire title bar zone — never HTMINBUTTON/HTMAXBUTTON/HTCLOSE — so DWM
  * doesn't repaint native buttons on top of our Compose UI.
  */
-@Suppress("FunctionNaming", "LongParameterList", "LongMethod")
+@Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 private fun ApplicationScope.openDecoratedWindowWindows(
     window: TaoWindow,
     title: String,

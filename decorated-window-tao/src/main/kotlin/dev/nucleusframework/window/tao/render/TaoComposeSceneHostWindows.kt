@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
@@ -369,17 +371,17 @@ internal class TaoComposeSceneHostWindows(
         val anyPressed = pointers.any { it.pressed }
         val touchButton =
             when (composeType) {
-                PointerEventType.Press -> androidx.compose.ui.input.pointer.PointerButton.Primary
-                PointerEventType.Release -> androidx.compose.ui.input.pointer.PointerButton.Primary
+                PointerEventType.Press -> PointerButton.Primary
+                PointerEventType.Release -> PointerButton.Primary
                 else -> null
             }
         val touchButtons =
             if (anyPressed) {
-                androidx.compose.ui.input.pointer.PointerButtons(
+                PointerButtons(
                     isPrimaryPressed = true,
                 )
             } else {
-                androidx.compose.ui.input.pointer.PointerButtons()
+                PointerButtons()
             }
         sc.sendPointerEvent(
             eventType = composeType,
@@ -622,6 +624,9 @@ internal class TaoComposeSceneHostWindows(
         widthPxNew: Int,
         heightPxNew: Int,
     ) {
+        // Win32 emits WM_SIZE/SIZE_MINIMIZED as 0x0. Keep the last real
+        // ComposeScene size so taskbar previews and restore do not collapse.
+        if (widthPxNew <= 0 || heightPxNew <= 0) return
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
@@ -1130,15 +1135,15 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    private fun mapButton(code: Int): androidx.compose.ui.input.pointer.PointerButton =
+    private fun mapButton(code: Int): PointerButton =
         when (code) {
             dev.nucleusframework.window.tao.TaoMouseButton.LEFT ->
-                androidx.compose.ui.input.pointer.PointerButton.Primary
+                PointerButton.Primary
             dev.nucleusframework.window.tao.TaoMouseButton.RIGHT ->
-                androidx.compose.ui.input.pointer.PointerButton.Secondary
+                PointerButton.Secondary
             dev.nucleusframework.window.tao.TaoMouseButton.MIDDLE ->
-                androidx.compose.ui.input.pointer.PointerButton.Tertiary
-            else -> androidx.compose.ui.input.pointer.PointerButton.Primary
+                PointerButton.Tertiary
+            else -> PointerButton.Primary
         }
 }
 

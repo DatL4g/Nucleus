@@ -1226,6 +1226,17 @@ unsafe fn public_window_callback_inner<T: 'static>(
 
     win32wm::WM_SIZE => {
       use crate::event::WindowEvent::Resized;
+
+      // Win32 reports a minimized HWND as a 0x0 client area. Forwarding that
+      // as Resized collapses Compose's scene and breaks the DWM taskbar
+      // thumbnail; keep the last real size until restore.
+      if wparam.0 == SIZE_MINIMIZED as _ {
+        let mut w = subclass_input.window_state.lock();
+        w.set_window_flags_in_place(|f| f.set(WindowFlags::MINIMIZED, true));
+        result = ProcResult::Value(LRESULT(0));
+        return;
+      }
+
       let w = u32::from(util::LOWORD(lparam.0 as u32));
       let h = u32::from(util::HIWORD(lparam.0 as u32));
 
@@ -1237,6 +1248,9 @@ unsafe fn public_window_callback_inner<T: 'static>(
 
       {
         let mut w = subclass_input.window_state.lock();
+        if wparam.0 == SIZE_RESTORED as _ || wparam.0 == SIZE_MAXIMIZED as _ {
+          w.set_window_flags_in_place(|f| f.set(WindowFlags::MINIMIZED, false));
+        }
         // See WindowFlags::MARKER_RETAIN_STATE_ON_SIZE docs for info on why this `if` check exists.
         if !w
           .window_flags()

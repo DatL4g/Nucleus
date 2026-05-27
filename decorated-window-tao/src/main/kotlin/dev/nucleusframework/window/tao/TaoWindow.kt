@@ -511,7 +511,12 @@ class TaoWindow internal constructor(
     ) {
         when (code) {
             TaoEventCode.WINDOW_READY -> readyListener?.invoke(a, b)
-            TaoEventCode.RESIZED -> resizedListeners.forEach { it.invoke(a, b) }
+            TaoEventCode.RESIZED -> {
+                // Win32 emits WM_SIZE/SIZE_MINIMIZED as 0x0. Keep resize
+                // listeners on the last real content size while minimized.
+                if (a <= 0 || b <= 0) return
+                resizedListeners.forEach { it.invoke(a, b) }
+            }
             TaoEventCode.MOVED -> movedListeners.forEach { it.invoke(a, b) }
             TaoEventCode.SCALE_FACTOR_CHANGED -> scaleFactorListener?.invoke(a / 1000f)
             TaoEventCode.CLOSE_REQUESTED -> closeRequestedListener?.invoke()

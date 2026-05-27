@@ -68,6 +68,8 @@ private val isLinuxKde: Boolean =
 // auto-hide/auto-show transition timing so the title bar slides in lockstep
 // with the system menu bar — visually identical to Safari's fullscreen.
 private const val MENU_BAR_ANIMATION_MS = 200
+private const val WINDOW_RECT_COMPONENT_COUNT = 4
+private const val SCREEN_POINT_COMPONENT_COUNT = 2
 
 /**
  * Platform-aware title bar for the Tao-backed [DecoratedWindow].
@@ -486,7 +488,8 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                         when (event.type) {
                             PointerEventType.Press -> {
                                 val touchOnWindows =
-                                    isTouch && Platform.Current == Platform.Windows &&
+                                    isTouch &&
+                                        Platform.Current == Platform.Windows &&
                                         dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge.isLoaded
                                 pendingDrag = !touchOnWindows
                                 if (touchOnWindows) {
@@ -519,8 +522,11 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                                         } else {
                                             null
                                         }
-                                    if (rect != null && rect.size == 4 &&
-                                        screen != null && screen.size == 2
+                                    if (
+                                        rect != null &&
+                                        rect.size == WINDOW_RECT_COMPONENT_COUNT &&
+                                        screen != null &&
+                                        screen.size == SCREEN_POINT_COMPONENT_COUNT
                                     ) {
                                         window.beginWindowsTitleBarTouchDrag(
                                             touchId = it.id.value,

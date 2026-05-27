@@ -13,6 +13,7 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_deco"
  * minus the Skiko-AWT child-window plumbing (Tao renders into the HWND
  * directly via WGL).
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoWindowsDecoBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoWindowsDecoBridge::class.java)
 
@@ -137,5 +138,4 @@ internal object NativeTaoWindowsDecoBridge {
         startScreenX: Int,
         startScreenY: Int,
     ): LongArray?
-
 }

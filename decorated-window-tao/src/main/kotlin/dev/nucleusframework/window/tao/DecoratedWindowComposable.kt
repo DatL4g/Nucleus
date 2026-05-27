@@ -133,6 +133,9 @@ fun ApplicationScope.DecoratedWindow(
             // Native → state sync (resize / move). Read scale per-event since the
             // user can move the window between displays of differing densities.
             w.onResized { wPx, hPx ->
+                // Windows reports a 0x0 client area while minimized. Do not
+                // persist that transient value into the public WindowState.
+                if (wPx <= 0 || hPx <= 0) return@onResized
                 val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
                 val newSize = DpSize((wPx / scale).dp, (hPx / scale).dp)
                 if (newSize != applied.size) {
