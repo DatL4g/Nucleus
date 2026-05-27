@@ -21,7 +21,6 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
-import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -180,18 +179,13 @@ internal class TaoComposeSceneHostWindows(
                 getRootNode = { scene!!.rootDragAndDropNode },
                 outboundLauncher = ::launchWindowsOutboundDrag,
             )
-        // PlatformLayersComposeScene + TaoComposeSceneContextWindows route
-        // every Compose Popup / DropdownMenu / Tooltip / context-menu in
-        // the main scene through TaoPopupSceneLayerWindows — i.e. real
-        // top-level HWNDs that can extend beyond the Tao window. Without
-        // this, CanvasLayersComposeScene clamped them inside the main GL
-        // canvas (a regression compared to macOS/Linux).
-        //
-        // Safe with Phase 4's share group: the popup HGLRCs are created
-        // via wglCreateContextAttribsARB(.., hostHGLRC, ..) so they share
-        // server-side GL objects with the host. Each popup keeps its own
-        // GrDirectContext and we resetGLAll() on every context switch
-        // (cross-context sync section in onRedrawRequested).
+        // Match the Linux backend for the main scene: keep Compose Popup /
+        // DropdownMenu / Tooltip layers inside the same GL render target
+        // instead of materialising them as native WS_POPUP windows. This
+        // avoids Windows-only WGL/native-window compositor artifacts in the
+        // custom title bar path. NativeView overlay scenes can still opt into
+        // TaoComposeSceneContextWindows when they need popups outside their
+        // overlay bounds.
         val platformContext =
             WindowsTaoPlatformContext(
                 windowHandle = window.handle,
@@ -213,29 +207,14 @@ internal class TaoComposeSceneHostWindows(
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
             )
-        val popupHostForMain = popupHost()
         scene =
-            if (popupHostForMain != null) {
-                PlatformLayersComposeScene(
-                    density = Density(scale),
-                    layoutDirection = GlobalLayoutDirection,
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                    composeSceneContext =
-                        TaoComposeSceneContextWindows(
-                            platformContext = platformContext,
-                            popupHost = popupHostForMain,
-                        ),
-                    invalidate = { window.requestRedraw() },
-                )
-            } else {
-                CanvasLayersComposeScene(
-                    density = Density(scale),
-                    layoutDirection = GlobalLayoutDirection,
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                    platformContext = platformContext,
-                    invalidate = { window.requestRedraw() },
-                )
-            }
+            CanvasLayersComposeScene(
+                density = Density(scale),
+                layoutDirection = GlobalLayoutDirection,
+                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                platformContext = platformContext,
+                invalidate = { window.requestRedraw() },
+            )
 
         registerInboundDnD()
         registerTouchInput()

@@ -9,11 +9,10 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 
 /**
- * Windows port of [TaoComposeSceneContext]. Plugged into
- * `PlatformLayersComposeScene` so every Compose `Popup` /
- * `DropdownMenu` / `Tooltip` / context menu materialises as a
- * [TaoPopupSceneLayerWindows] — a borderless transparent owned
- * WS_POPUP HWND with its own WGL context.
+ * Windows port of [TaoComposeSceneContext]. Used by overlay scenes that
+ * explicitly need popups outside their own HWND bounds. The main host
+ * scene follows the Linux backend and keeps its popups inside the same
+ * Compose render target.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoComposeSceneContextWindows(
