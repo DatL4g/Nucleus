@@ -97,7 +97,7 @@ internal fun AwtDecoratedWindowScope.MacOSTitleBar(
     // correct side. Uses the control buttons direction (decoupled from content).
     val controlDir = controlButtonsDirection.resolve()
     val controlIsRtl = controlDir == LayoutDirection.Rtl
-    val controlsSide = if (controlIsRtl) WindowControlsSide.Start else WindowControlsSide.End
+    val controlsSide = if (controlIsRtl) WindowControlsSide.End else WindowControlsSide.Start
     LaunchedEffect(window, controlIsRtl) {
         val ptr = JniMacWindowUtil.getWindowPtr(window)
         if (ptr != 0L && JniMacTitleBarBridge.isLoaded) {

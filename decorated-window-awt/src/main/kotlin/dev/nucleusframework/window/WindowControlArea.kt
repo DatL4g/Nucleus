@@ -143,6 +143,8 @@ fun TitleBarScope.DialogCloseButton(
 ) {
     CompositionLocalProvider(LocalLayoutDirection provides LocalControlButtonsDirection.current) {
         val icons = linuxTitleBarIcons()
+        val layout = rememberLinuxButtonLayout()
+        val buttonAlignment = if (layout.controlsOnRight) Alignment.End else Alignment.Start
         val windowState = state.toDecoratedWindowState()
         val closeHover = if (windowState.isActive) icons.closeHoverFocused else icons.closeHover
         val closePressed = if (windowState.isActive) icons.closePressedFocused else icons.closePressed
@@ -155,6 +157,7 @@ fun TitleBarScope.DialogCloseButton(
             iconPressed = closePressed,
             contentDescription = "Close",
             style = style,
+            alignment = buttonAlignment,
             isCloseButton = true,
         )
     }

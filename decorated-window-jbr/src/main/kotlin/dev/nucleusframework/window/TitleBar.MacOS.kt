@@ -46,7 +46,7 @@ internal fun AwtDecoratedWindowScope.MacOSTitleBar(
 
     val controlDir = controlButtonsDirection.resolve()
     val controlIsRtl = controlDir == LayoutDirection.Rtl
-    val controlsSide = if (controlIsRtl) WindowControlsSide.Start else WindowControlsSide.End
+    val controlsSide = if (controlIsRtl) WindowControlsSide.End else WindowControlsSide.Start
 
     CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
         TitleBarImpl(

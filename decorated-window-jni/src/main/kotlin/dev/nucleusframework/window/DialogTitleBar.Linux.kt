@@ -1,6 +1,5 @@
 package dev.nucleusframework.window
 
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -13,10 +12,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.dp
-import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.utils.linux.JniLinuxWindowBridge
+import dev.nucleusframework.window.utils.linux.rememberLinuxButtonLayout
 import java.awt.MouseInfo
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -31,7 +29,8 @@ internal fun AwtDecoratedDialogScope.LinuxDialogTitleBar(
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     val controlDir = controlButtonsDirection.resolve()
-    val controlsSide = if (controlDir == LayoutDirection.Rtl) WindowControlsSide.Start else WindowControlsSide.End
+    val controlsOnRight = rememberLinuxButtonLayout().controlsOnRight
+    val controlsSide = if (controlsOnRight) WindowControlsSide.End else WindowControlsSide.Start
 
     if (JniLinuxWindowBridge.isLoaded) {
         NativeLinuxDialogTitleBar(
@@ -80,15 +79,7 @@ private fun AwtDecoratedDialogScope.NativeLinuxDialogTitleBar(
             style = linuxStyle,
             controlButtonsDirection = controlButtonsDirection,
             layoutPolicy = layoutPolicy,
-            applyTitleBar = { _, _ ->
-                val padding =
-                    if (LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {
-                        PaddingValues(end = 4.dp)
-                    } else {
-                        PaddingValues(0.dp)
-                    }
-                padding
-            },
+            applyTitleBar = { _, _ -> kdePaddingForButtonLayout() },
             backgroundContent = {
                 Spacer(
                     modifier =
@@ -152,15 +143,7 @@ private fun AwtDecoratedDialogScope.FallbackLinuxDialogTitleBar(
             style = linuxStyle,
             controlButtonsDirection = controlButtonsDirection,
             layoutPolicy = layoutPolicy,
-            applyTitleBar = { _, _ ->
-                val padding =
-                    if (LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {
-                        PaddingValues(end = 4.dp)
-                    } else {
-                        PaddingValues(0.dp)
-                    }
-                padding
-            },
+            applyTitleBar = { _, _ -> kdePaddingForButtonLayout() },
             backgroundContent = {
                 Spacer(modifier = Modifier.fillMaxSize().windowDragHandler(window))
             },

@@ -29,7 +29,7 @@ internal fun AwtDecoratedDialogScope.MacOSDialogTitleBar(
 
     val controlDir = controlButtonsDirection.resolve()
     val isRtl = controlDir == LayoutDirection.Rtl
-    val controlsSide = if (isRtl) WindowControlsSide.Start else WindowControlsSide.End
+    val controlsSide = if (isRtl) WindowControlsSide.End else WindowControlsSide.Start
 
     CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
         DialogTitleBarImpl(
