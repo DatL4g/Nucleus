@@ -108,6 +108,14 @@ internal object NativeTaoWindowsDecoBridge {
     ): IntArray?
 
     /**
+     * Returns true when the cursor is over [hwnd] or an owned Tao popup.
+     * Used to ignore the synthetic owner WM_MOUSELEAVE produced when a
+     * popup HWND appears under the cursor.
+     */
+    @JvmStatic
+    external fun nativeIsCursorOverWindowOrOwnedPopup(hwnd: Long): Boolean
+
+    /**
      * Synchronous `SetWindowPos(SWP_NOSIZE)`. Used by the Windows touch
      * title-bar drag path — Tao's [TaoWindow.setOuterPosition] posts a user
      * event onto the Tao loop, which lags under a touch stream of

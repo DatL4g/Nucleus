@@ -788,6 +788,13 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onPointerExited() {
+        if (
+            hwnd != 0L &&
+            NativeTaoWindowsDecoBridge.isLoaded &&
+            NativeTaoWindowsDecoBridge.nativeIsCursorOverWindowOrOwnedPopup(hwnd)
+        ) {
+            return
+        }
         scene?.sendPointerEvent(
             eventType = PointerEventType.Exit,
             position = Offset(lastPointerX, lastPointerY),

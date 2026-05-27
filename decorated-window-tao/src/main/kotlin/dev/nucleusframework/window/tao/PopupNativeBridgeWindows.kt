@@ -3,19 +3,14 @@ package dev.nucleusframework.window.tao
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 
 /**
- * Windows counterpart to the macOS [PopupNativeBridge]. Each instance
- * of `TaoPopupSceneLayerWindows` owns a top-level `WS_POPUP` HWND with
- * `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`, plus its own transparent WGL
- * context joined to the host's share group (per
- * `nucleus_tao_windows_overlay_gl.c`).
+ * Windows counterpart to the macOS [PopupNativeBridge]. Each
+ * TaoPopupSceneLayerWindows owns a top-level WS_POPUP HWND with
+ * WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, plus a transparent WGL surface
+ * using the host HGLRC.
  *
- * Outside-click dismissal is implemented via `SetCapture(hwndPopup)` +
- * tests in WM_LBUTTONDOWN/RBUTTONDOWN/MBUTTONDOWN against the popup
- * rect — replaces the heavier `WH_MOUSE_LL` global hook. The native
- * side handles capture handoff for nested popups (parent transfers to
- * child on open, child returns to parent on dismiss).
- *
- * Threading: every entry point runs on the parent HWND's UI thread.
+ * Outside-click dismissal uses a thread-local WH_MOUSE hook. The native
+ * side compares clicks against the logical content rect, not the inflated
+ * draw-bounds HWND used for Compose-drawn elevation.
  */
 internal object PopupNativeBridgeWindows {
     private const val LIBRARY_NAME = "nucleus_tao_windows_native_view"
@@ -73,6 +68,10 @@ internal object PopupNativeBridgeWindows {
         yPx: Int,
         widthPx: Int,
         heightPx: Int,
+        contentXPx: Int,
+        contentYPx: Int,
+        contentWidthPx: Int,
+        contentHeightPx: Int,
     )
 
     @JvmStatic
@@ -81,7 +80,7 @@ internal object PopupNativeBridgeWindows {
         focusable: Boolean,
     )
 
-    /** Returns the popup HWND itself (the popup has no separate "content view" on Windows). */
+    /** Returns the popup HWND itself. */
     @JvmStatic
     external fun nativeContentHwnd(panel: Long): Long
 

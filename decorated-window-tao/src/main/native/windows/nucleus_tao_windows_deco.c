@@ -98,6 +98,21 @@ static BOOL isAutoHideTaskbar(UINT edge, RECT monitorRect) {
     return (BOOL)SHAppBarMessage(ABM_GETAUTOHIDEBAR, &abd);
 }
 
+static BOOL isOwnedTaoPopup(HWND root, HWND owner) {
+    if (!root || !owner || root == owner) return FALSE;
+
+    wchar_t className[64];
+    if (!GetClassNameW(root, className, 64)) return FALSE;
+    if (lstrcmpW(className, L"NucleusTaoPopupCls") != 0) return FALSE;
+
+    HWND currentOwner = GetWindow(root, GW_OWNER);
+    while (currentOwner) {
+        if (currentOwner == owner) return TRUE;
+        currentOwner = GetWindow(currentOwner, GW_OWNER);
+    }
+    return FALSE;
+}
+
 /* WndProc subclass */
 static LRESULT CALLBACK decoWndProc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -542,6 +557,25 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeClientToSc
     return arr;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsCursorOverWindowOrOwnedPopup(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND owner = (HWND)(uintptr_t)hwndLong;
+    if (!owner || !IsWindow(owner)) return JNI_FALSE;
+
+    POINT pt;
+    if (!GetCursorPos(&pt)) return JNI_FALSE;
+    HWND hit = WindowFromPoint(pt);
+    if (!hit) return JNI_FALSE;
+
+    HWND root = GetAncestor(hit, GA_ROOT);
+    if (!root) root = hit;
+    if (root == owner) return JNI_TRUE;
+    return isOwnedTaoPopup(root, owner) ? JNI_TRUE : JNI_FALSE;
+}
+
 /* Returns [x, y, width, height] of the window's outer bounds in screen
  * coordinates (physical pixels). Used by DecoratedDialog to centre itself on
  * its parent. Returns NULL if hwnd is invalid. */
@@ -704,4 +738,3 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetWindowO
     SetWindowPos(hwnd, NULL, (int)xPx, (int)yPx, 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
-

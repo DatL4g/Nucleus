@@ -59,6 +59,14 @@ struct PopupState {
     /* TRUE while the outside-click hook is active for this popup. */
     BOOL outsideMonitorActive;
 
+    /* Logical content rect inside the HWND. The HWND can be larger than
+     * content to include Compose-drawn shadows/elevation, matching AWT's
+     * drawBounds vs boundsInWindow split. */
+    int contentX;
+    int contentY;
+    int contentWidth;
+    int contentHeight;
+
     /* Linked list of currently-open popups (for outside-click
      * disambiguation between sibling/nested popups). The list is
      * ordered most-recent-first. */
@@ -184,11 +192,31 @@ static void chainRemove(PopupState *p) {
     LeaveCriticalSection(&sOpenListLock);
 }
 
-static BOOL isCaptureHwndKnownPopupLocked(HWND captureHwnd) {
+static PopupState *findPopupByHwndLocked(HWND hwnd) {
     for (PopupState *q = sOpenChainHead; q; q = q->nextOpen) {
-        if (q->gl.hwnd == captureHwnd) return TRUE;
+        if (q->gl.hwnd == hwnd) return q;
     }
-    return FALSE;
+    return NULL;
+}
+
+static BOOL pointInsideContentLocal(PopupState *p, int x, int y) {
+    if (!p) return FALSE;
+    return x >= p->contentX &&
+           y >= p->contentY &&
+           x < p->contentX + p->contentWidth &&
+           y < p->contentY + p->contentHeight;
+}
+
+static BOOL pointInsideContentScreen(PopupState *p, POINT pt) {
+    if (!p || !IsWindow(p->gl.hwnd)) return FALSE;
+    RECT wr;
+    if (!GetWindowRect(p->gl.hwnd, &wr)) return FALSE;
+    RECT content;
+    content.left = wr.left + p->contentX;
+    content.top = wr.top + p->contentY;
+    content.right = content.left + p->contentWidth;
+    content.bottom = content.top + p->contentHeight;
+    return PtInRect(&content, pt);
 }
 
 /* ============================================================ */
@@ -261,21 +289,19 @@ static LRESULT CALLBACK mouseHookProc(int code, WPARAM w, LPARAM l) {
     for (PopupState *q = sOpenChainHead; q && n < 16; q = q->nextOpen) {
         snapshot[n++] = q;
     }
-    /* Click on ANY known popup HWND is treated as "inside everything" —
+    /* Click inside ANY known popup content is treated as "inside everything" —
      * mirrors macOS's `e.window == p` short-circuit. Without this, the
      * outer dropdown's outside listener would fire when the user clicks
      * a nested submenu item. */
-    BOOL targetIsKnownPopup = m->hwnd && isCaptureHwndKnownPopupLocked(m->hwnd);
+    PopupState *targetPopup = m->hwnd ? findPopupByHwndLocked(m->hwnd) : NULL;
+    BOOL targetIsKnownPopup = targetPopup && pointInsideContentScreen(targetPopup, m->pt);
     LeaveCriticalSection(&sOpenListLock);
     if (targetIsKnownPopup) return CallNextHookEx(NULL, code, w, l);
 
     for (int i = 0; i < n; i++) {
         PopupState *q = snapshot[i];
         if (!q->outsideMonitorActive || !q->outsideListener) continue;
-        if (!IsWindow(q->gl.hwnd)) continue;
-        RECT rc;
-        if (!GetWindowRect(q->gl.hwnd, &rc)) continue;
-        if (PtInRect(&rc, m->pt)) continue;
+        if (pointInsideContentScreen(q, m->pt)) continue;
         fireOutsideClick(q, btn);
     }
     return CallNextHookEx(NULL, code, w, l);
@@ -319,9 +345,14 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     case WM_MOUSEACTIVATE:
         return p && p->focusable ? MA_ACTIVATE : MA_NOACTIVATE;
 
-    case WM_NCHITTEST:
-        /* Popup is interactive everywhere inside its bounds. */
-        return HTCLIENT;
+    case WM_NCHITTEST: {
+        if (!p) return HTCLIENT;
+        POINT pt;
+        pt.x = (short)LOWORD(l);
+        pt.y = (short)HIWORD(l);
+        ScreenToClient(hwnd, &pt);
+        return pointInsideContentLocal(p, pt.x, pt.y) ? HTCLIENT : HTTRANSPARENT;
+    }
 
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
@@ -437,9 +468,13 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
     p->parent = parent;
     p->gl.hwnd = hwnd;
     p->focusable = FALSE;
+    p->contentX = 0;
+    p->contentY = 0;
+    p->contentWidth = widthPx;
+    p->contentHeight = heightPx;
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)p);
 
-    if (!nucleus_tao_overlay_gl_init(&p->gl)) {
+    if (!nucleus_tao_overlay_gl_init(&p->gl, FALSE)) {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         DestroyWindow(hwnd);
         HeapFree(GetProcessHeap(), 0, p);
@@ -453,12 +488,19 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
 
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetFrameInWindow(
-    JNIEnv *env, jclass clazz, jlong panel, jint xPx, jint yPx, jint widthPx, jint heightPx) {
+    JNIEnv *env, jclass clazz, jlong panel, jint xPx, jint yPx, jint widthPx, jint heightPx,
+    jint contentXPx, jint contentYPx, jint contentWidthPx, jint contentHeightPx) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
     if (!p || !IsWindow(p->gl.hwnd) || !IsWindow(p->parent)) return;
     if (widthPx < 1) widthPx = 1;
     if (heightPx < 1) heightPx = 1;
+    if (contentWidthPx < 1) contentWidthPx = 1;
+    if (contentHeightPx < 1) contentHeightPx = 1;
+    p->contentX = (int)contentXPx;
+    p->contentY = (int)contentYPx;
+    p->contentWidth = (int)contentWidthPx;
+    p->contentHeight = (int)contentHeightPx;
     POINT origin = {0, 0};
     ClientToScreen(p->parent, &origin);
     SetWindowPos(p->gl.hwnd, NULL,

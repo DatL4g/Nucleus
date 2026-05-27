@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -26,20 +27,13 @@ import dev.nucleusframework.window.tao.PopupNativeBridgeWindows
 import org.jetbrains.skia.DirectContext
 
 /**
- * Windows port of [TaoPopupSceneLayer]. Each Compose `Popup` /
- * `DropdownMenu` / `Tooltip` / context menu mounted from the host or
- * overlay scene becomes its own borderless WS_POPUP HWND owned by the
- * Tao main HWND, with a transparent WGL context joined to the host's
- * share group via `wglCreateContextAttribsARB(.., hostHGLRC, ..)`.
+ * Windows popup layer backed by a transparent owned WS_POPUP HWND.
  *
- * Mirrors the macOS layer 1:1 — same chicken-and-egg defenses for
- * measurement (inner scene at parent window size so layout has real
- * constraints), same per-frame render driver via [TaoPopupHostWindows],
- * same composition-local context propagation through [setContent],
- * same outside-click dismissal contract via the popup bridge's
- * SetCapture-based monitor.
- *
- * Threading: every method must run on the host HWND's UI thread.
+ * The coordinate model mirrors Compose Desktop's AWT WindowComposeSceneLayer:
+ * boundsInWindow is the logical content rect, and rendering happens in
+ * parent-window coordinates. The native WGL popup surface is kept exactly
+ * at content bounds because transparent pixels around the content are not
+ * reliably alpha-composited by DWM on all Windows drivers.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoPopupSceneLayerWindows(
@@ -58,27 +52,20 @@ internal class TaoPopupSceneLayerWindows(
 
     private val rendererToken: Any = Any()
     private val moveListenerToken: Any = Any()
-    private var widthPx: Int = host.parentWindowSize.width.coerceAtLeast(1)
-    private var heightPx: Int = host.parentWindowSize.height.coerceAtLeast(1)
-    private val scale: Float = host.scale
 
-    /**
-     * Layout-size constraint for the inner [CanvasLayersComposeScene] —
-     * mirrors [TaoPopupSceneLayer] on macOS. The popup HWND itself (and
-     * the WGL framebuffer) stays at `widthPx`/`heightPx` so we don't
-     * allocate a full-screen-sized surface, but the scene is laid out
-     * with screen-work-area constraints so popups anchored near the
-     * window edges (Tooltip in title bar, DropdownMenu in a small
-     * floating window…) can flip/extend without being artificially
-     * clipped — which manifested as an empty-content flicker on Windows
-     * when the parent's `parentWindowSize` constraint conflicted with
-     * the Popup.PositionProvider's layout pass.
-     */
     private val sceneLayoutSize: IntSize =
-        host.workAreaSize.let {
+        host.parentWindowSize.let {
             IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
         }
+    private var drawBounds: IntRect = IntRect(0, 0, 1, 1)
+    private var widthPx: Int = 1
+    private var heightPx: Int = 1
 
+    /**
+     * Created as a tiny offscreen HWND. The inner scene has real layout
+     * constraints already, so the native surface doesn't need to start at
+     * parent-window size.
+     */
     private val panelHandle: Long =
         PopupNativeBridgeWindows
             .nativeCreatePanel(
@@ -91,13 +78,12 @@ internal class TaoPopupSceneLayerWindows(
                 require(it != 0L) { "Failed to allocate popup HWND" }
             }
 
-    /** Single-HGLRC architecture: shared with the host + every other popup. */
     private val directContext: DirectContext = host.hostDirectContext
 
     private val popupWindowInfo: androidx.compose.ui.platform.WindowInfo =
         object : androidx.compose.ui.platform.WindowInfo {
             override val isWindowFocused: Boolean = true
-            override val containerSize: IntSize get() = IntSize(widthPx, heightPx)
+            override val containerSize: IntSize get() = sceneLayoutSize
         }
 
     private val innerScene: ComposeScene =
@@ -140,7 +126,7 @@ internal class TaoPopupSceneLayerWindows(
                 }
             innerScene.sendPointerEvent(
                 eventType = eventType,
-                position = Offset(x, y),
+                position = scenePosition(x, y),
                 type = PointerType.Mouse,
                 button = pointerButton,
             )
@@ -154,7 +140,7 @@ internal class TaoPopupSceneLayerWindows(
         ) {
             innerScene.sendPointerEvent(
                 eventType = PointerEventType.Scroll,
-                position = Offset(x, y),
+                position = scenePosition(x, y),
                 scrollDelta = Offset(dx, dy),
                 type = PointerType.Mouse,
             )
@@ -203,30 +189,15 @@ internal class TaoPopupSceneLayerWindows(
     }
 
     init {
-        // Single-HGLRC: directContext is the host's, no makeGL needed
-        // here. The popup's HDC will share the host's HGLRC via
-        // wglMakeCurrent on each renderFrame.
         PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, PopupEventCallback())
         PopupNativeBridgeWindows.nativeSetFocusable(panelHandle, _focusable)
         host.registerRenderer(rendererToken) { renderFrame() }
-        // Re-issue nativeSetFrameInWindow whenever the host moves on
-        // screen — the popup is top-level and its screen coords don't
-        // auto-track the owner.
         host.registerOwnerMoveListener(moveListenerToken) {
             if (panelHandle != 0L && _bounds != IntRect.Zero) {
-                val offset = host.coordinateOffset
-                PopupNativeBridgeWindows.nativeSetFrameInWindow(
-                    panel = panelHandle,
-                    xPx = _bounds.left + offset.x,
-                    yPx = _bounds.top + offset.y,
-                    widthPx = _bounds.width.coerceAtLeast(1),
-                    heightPx = _bounds.height.coerceAtLeast(1),
-                )
+                updateNativeFrame()
             }
         }
     }
-
-    // ── ComposeSceneLayer surface ──────────────────────────────────────
 
     override var density: Density
         get() = _density
@@ -246,20 +217,7 @@ internal class TaoPopupSceneLayerWindows(
         get() = _bounds
         set(value) {
             _bounds = value
-            val offset = host.coordinateOffset
-            PopupNativeBridgeWindows.nativeSetFrameInWindow(
-                panel = panelHandle,
-                xPx = value.left + offset.x,
-                yPx = value.top + offset.y,
-                widthPx = value.width.coerceAtLeast(1),
-                heightPx = value.height.coerceAtLeast(1),
-            )
-            val w = value.width.coerceAtLeast(1)
-            val h = value.height.coerceAtLeast(1)
-            if (w != widthPx || h != heightPx) {
-                widthPx = w
-                heightPx = h
-            }
+            updateDrawBoundsFromBounds()
             host.requestRedraw()
         }
 
@@ -272,7 +230,7 @@ internal class TaoPopupSceneLayerWindows(
     override var scrimColor: Color?
         get() = _scrimColor
         set(value) {
-            _scrimColor = value // HACK: full-window scrim surface
+            _scrimColor = value
         }
 
     override var focusable: Boolean
@@ -283,20 +241,12 @@ internal class TaoPopupSceneLayerWindows(
         }
 
     override fun close() {
-        // Notify parent scenes (overlay) so they can flush focus state
-        // BEFORE the popup HWND is destroyed and Compose's PlatformLayer
-        // chain unwinds — at that later point the BasicTextField that
-        // captured focus on right-click is in a stuck state that
-        // `clearFocus(force=true)` from a focus-lost event can no longer
-        // release. Calling clearFocus here, while the popup is still
-        // alive, releases the capture cleanly.
         host.notifyPopupClosing()
         host.unregisterRenderer(rendererToken)
         host.unregisterOwnerMoveListener(moveListenerToken)
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panelHandle)
         PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, null)
         innerScene.close()
-        // directContext is the host's — don't close.
         PopupNativeBridgeWindows.nativeRelease(panelHandle)
     }
 
@@ -331,24 +281,67 @@ internal class TaoPopupSceneLayerWindows(
         }
     }
 
-    override fun calculateLocalPosition(positionInWindow: IntOffset): IntOffset =
-        IntOffset(
-            positionInWindow.x - _bounds.left,
-            positionInWindow.y - _bounds.top,
-        )
+    override fun calculateLocalPosition(positionInWindow: IntOffset): IntOffset = positionInWindow
 
     private fun renderFrame() {
+        if (drawBounds == IntRect.Zero) return
         if (widthPx <= 0 || heightPx <= 0) return
         if (!PopupNativeBridgeWindows.nativeMakeCurrent(panelHandle)) return
-        // External WGL context switch — re-sync Skia's GL state cache.
         directContext.resetGLAll()
+
+        val frame = drawBounds
         renderGlFrame(
             widthPx = widthPx,
             heightPx = heightPx,
             directContext = directContext,
-            scene = innerScene,
             clearColorArgb = 0x00000000,
             present = { PopupNativeBridgeWindows.nativeSwapBuffers(panelHandle) },
+        ) { canvas, nanoTime ->
+            canvas.save()
+            try {
+                canvas.translate(-frame.left.toFloat(), -frame.top.toFloat())
+                innerScene.render(canvas.asComposeCanvas(), nanoTime)
+            } finally {
+                canvas.restore()
+            }
+        }
+    }
+
+    private fun scenePosition(
+        x: Float,
+        y: Float,
+    ): Offset = Offset(x + drawBounds.left, y + drawBounds.top)
+
+    private fun updateDrawBoundsFromBounds(): Boolean {
+        if (_bounds == IntRect.Zero) return false
+        val nextDrawBounds =
+            IntRect(
+                left = _bounds.left,
+                top = _bounds.top,
+                right = _bounds.right,
+                bottom = _bounds.bottom,
+            )
+        val changed = nextDrawBounds != drawBounds
+        drawBounds = nextDrawBounds
+        widthPx = drawBounds.width.coerceAtLeast(1)
+        heightPx = drawBounds.height.coerceAtLeast(1)
+        updateNativeFrame()
+        return changed
+    }
+
+    private fun updateNativeFrame() {
+        if (drawBounds == IntRect.Zero || _bounds == IntRect.Zero) return
+        val offset = host.coordinateOffset
+        PopupNativeBridgeWindows.nativeSetFrameInWindow(
+            panel = panelHandle,
+            xPx = drawBounds.left + offset.x,
+            yPx = drawBounds.top + offset.y,
+            widthPx = drawBounds.width.coerceAtLeast(1),
+            heightPx = drawBounds.height.coerceAtLeast(1),
+            contentXPx = _bounds.left - drawBounds.left,
+            contentYPx = _bounds.top - drawBounds.top,
+            contentWidthPx = _bounds.width.coerceAtLeast(1),
+            contentHeightPx = _bounds.height.coerceAtLeast(1),
         )
     }
 

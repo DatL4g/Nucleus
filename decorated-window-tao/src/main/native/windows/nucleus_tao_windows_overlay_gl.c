@@ -75,6 +75,9 @@ static volatile LONG sHostBridgeResolved = 0;
 #ifndef DWMWA_WINDOW_CORNER_PREFERENCE
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
 #endif
+#ifndef DWMWA_TRANSITIONS_FORCEDISABLED
+#define DWMWA_TRANSITIONS_FORCEDISABLED 3
+#endif
 #ifndef DWMWCP_DEFAULT
 #define DWMWCP_DEFAULT 0
 #endif
@@ -190,11 +193,21 @@ static void applyDwmPolish(HWND hwnd) {
     DwmExtendFrameIntoClientArea(hwnd, &margins);
 }
 
+static void applyDwmPopupSurface(HWND hwnd) {
+    DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_DONOTROUND;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &corner, sizeof(corner));
+
+    BOOL disableTransitions = TRUE;
+    DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED,
+                          &disableTransitions, sizeof(disableTransitions));
+}
+
 void nucleus_tao_overlay_gl_rearm_blur(GlSurface *gl) {
     if (gl && gl->hwnd) armBlurBehind(gl->hwnd);
 }
 
-BOOL nucleus_tao_overlay_gl_init(GlSurface *gl) {
+BOOL nucleus_tao_overlay_gl_init(GlSurface *gl, BOOL nativeWindowPolish) {
     if (!gl || !gl->hwnd) return FALSE;
     HWND hwnd = gl->hwnd;
 
@@ -261,7 +274,11 @@ BOOL nucleus_tao_overlay_gl_init(GlSurface *gl) {
     gl->hglrc = hostHglrc; /* Borrowed reference — NOT deleted on destroy. */
 
     armBlurBehind(hwnd);
-    applyDwmPolish(hwnd);
+    if (nativeWindowPolish) {
+        applyDwmPolish(hwnd);
+    } else {
+        applyDwmPopupSurface(hwnd);
+    }
     return TRUE;
 }
 

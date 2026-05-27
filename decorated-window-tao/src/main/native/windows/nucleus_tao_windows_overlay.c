@@ -499,7 +499,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeCreateO
      * DwmEnableBlurBehindWindow + DWM polish (rounded corners, dark mode,
      * extended frame for shadow) is in effect on the very first paint. */
     s->gl.hwnd = hwnd;
-    if (!nucleus_tao_overlay_gl_init(&s->gl)) {
+    if (!nucleus_tao_overlay_gl_init(&s->gl, TRUE)) {
         /* Init failed — tear down everything we created and return 0. */
         unregisterOverlayFromOwner(s);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);

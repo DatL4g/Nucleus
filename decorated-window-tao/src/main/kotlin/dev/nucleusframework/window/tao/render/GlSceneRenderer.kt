@@ -32,6 +32,26 @@ internal inline fun renderGlFrame(
     clearColorArgb: Int,
     crossinline present: () -> Unit,
 ) {
+    renderGlFrame(
+        widthPx = widthPx,
+        heightPx = heightPx,
+        directContext = directContext,
+        clearColorArgb = clearColorArgb,
+        present = present,
+    ) { canvas, nanoTime ->
+        scene.render(canvas.asComposeCanvas(), nanoTime)
+    }
+}
+
+@OptIn(InternalComposeUiApi::class)
+internal inline fun renderGlFrame(
+    widthPx: Int,
+    heightPx: Int,
+    directContext: DirectContext,
+    clearColorArgb: Int,
+    crossinline present: () -> Unit,
+    crossinline render: (org.jetbrains.skia.Canvas, Long) -> Unit,
+) {
     if (widthPx <= 0 || heightPx <= 0) return
     val rt =
         BackendRenderTarget.makeGL(
@@ -55,7 +75,7 @@ internal inline fun renderGlFrame(
         }
     try {
         surface.canvas.clear(clearColorArgb)
-        scene.render(surface.canvas.asComposeCanvas(), System.nanoTime())
+        render(surface.canvas, System.nanoTime())
         surface.flushAndSubmit(syncCpu = false)
         present()
     } finally {

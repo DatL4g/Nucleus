@@ -21,16 +21,14 @@ typedef struct {
 
 /**
  * Resolves the host's pixel format + HGLRC from nucleus_tao_gl.dll,
- * applies them to the [hwnd] HDC, creates a new HGLRC via
- * `wglCreateContextAttribsARB(.., hostHGLRC, ..)` (joined to host's
- * share group), arms `DwmEnableBlurBehindWindow` with the empty-region
- * trick, applies DWM polish (rounded corners, dark mode, extended
- * frame for shadow), and sets `wglSwapIntervalEXT(0)` on the new
- * context. On success [gl] holds the resolved hdc + hglrc.
+ * applies them to the [hwnd] HDC, arms `DwmEnableBlurBehindWindow`
+ * with the empty-region trick, and optionally applies DWM native-window
+ * polish for persistent overlays. Popups pass FALSE so shadows/elevation
+ * come from Compose draw bounds, matching AWT WindowComposeSceneLayer.
  *
  * Caller must have set [gl]->hwnd before calling.
  */
-BOOL nucleus_tao_overlay_gl_init(GlSurface *gl);
+BOOL nucleus_tao_overlay_gl_init(GlSurface *gl, BOOL nativeWindowPolish);
 
 /** Tears down the WGL context + HDC release. Safe on partial init. */
 void nucleus_tao_overlay_gl_destroy(GlSurface *gl);
