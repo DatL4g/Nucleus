@@ -565,3 +565,143 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeGetWindowR
     return arr;
 }
 
+static int roundToInt(double value) {
+    return (int)(value >= 0.0 ? value + 0.5 : value - 0.5);
+}
+
+static int clampInt(int value, int minValue, int maxValue) {
+    if (value < minValue) return minValue;
+    if (value > maxValue) return maxValue;
+    return value;
+}
+
+/* Win32 IsZoomed. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsMaximized(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
+    return IsZoomed(hwnd) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Atomic unmaximize + reposition under the finger when a touch drag starts
+ * on a maximized window. The horizontal anchor preserves the finger's
+ * fractional X position within the title bar. Y is clamped to the monitor
+ * work area top + the title-bar mid-height so the bar lands on screen.
+ * Returns the restored outer rect as [x, y, w, h] in physical pixels. */
+JNIEXPORT jlongArray JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativePrepareTitleBarTouchDrag(
+    JNIEnv *env, jclass clazz, jlong hwndLong,
+    jint currentScreenX, jint currentScreenY,
+    jint startScreenX, jint startScreenY)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return NULL;
+
+    RECT currentRect;
+    if (!GetWindowRect(hwnd, &currentRect)) return NULL;
+    jlongArray currentArr = NULL;
+    if (!IsZoomed(hwnd)) {
+        currentArr = (*env)->NewLongArray(env, 4);
+        if (currentArr) {
+            jlong values[4] = {
+                (jlong)currentRect.left,
+                (jlong)currentRect.top,
+                (jlong)(currentRect.right - currentRect.left),
+                (jlong)(currentRect.bottom - currentRect.top),
+            };
+            (*env)->SetLongArrayRegion(env, currentArr, 0, 4, values);
+        }
+        return currentArr;
+    }
+
+    WINDOWPLACEMENT wp;
+    wp.length = sizeof(WINDOWPLACEMENT);
+    if (!GetWindowPlacement(hwnd, &wp)) return NULL;
+
+    int normalWidth = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+    int normalHeight = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+    if (normalWidth <= 0 || normalHeight <= 0) return NULL;
+
+    int maximizedWidth = currentRect.right - currentRect.left;
+    double xFraction = 0.5;
+    if (maximizedWidth > 0) {
+        xFraction = ((double)startScreenX - (double)currentRect.left) / (double)maximizedWidth;
+        if (xFraction < 0.0) xFraction = 0.0;
+        if (xFraction > 1.0) xFraction = 1.0;
+    }
+
+    int titleAnchorY = startScreenY - currentRect.top;
+    DecoState *state = getState(hwnd);
+    int maxTitleAnchorY = state
+        ? state->titleBarHeightPx / 2
+        : getSystemMetrics(SM_CYCAPTION, getDpi(hwnd)) / 2;
+    if (maxTitleAnchorY < 1) maxTitleAnchorY = 1;
+    titleAnchorY = clampInt(titleAnchorY, 0, maxTitleAnchorY);
+
+    int targetLeft = roundToInt((double)currentScreenX - xFraction * (double)normalWidth);
+    int targetTop = (int)currentScreenY - titleAnchorY;
+
+    POINT monitorPoint; monitorPoint.x = currentScreenX; monitorPoint.y = currentScreenY;
+    HMONITOR hMon = MonitorFromPoint(monitorPoint, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi; mi.cbSize = sizeof(mi);
+    if (GetMonitorInfoW(hMon, &mi) && targetTop < mi.rcWork.top) {
+        targetTop = mi.rcWork.top;
+    }
+
+    wp.flags &= ~(UINT)WPF_RESTORETOMAXIMIZED;
+    wp.showCmd = SW_SHOWNORMAL;
+    wp.rcNormalPosition.left = targetLeft;
+    wp.rcNormalPosition.top = targetTop;
+    wp.rcNormalPosition.right = targetLeft + normalWidth;
+    wp.rcNormalPosition.bottom = targetTop + normalHeight;
+
+    BOOL disableTransitions = TRUE;
+    DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */,
+        &disableTransitions, sizeof(disableTransitions));
+    SetWindowPlacement(hwnd, &wp);
+    SetWindowPos(hwnd, NULL, targetLeft, targetTop, normalWidth, normalHeight,
+        SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    BOOL enableTransitions = FALSE;
+    DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */,
+        &enableTransitions, sizeof(enableTransitions));
+
+    RECT restoredRect;
+    if (!GetWindowRect(hwnd, &restoredRect)) {
+        restoredRect.left = targetLeft;
+        restoredRect.top = targetTop;
+        restoredRect.right = targetLeft + normalWidth;
+        restoredRect.bottom = targetTop + normalHeight;
+    }
+    jlongArray arr = (*env)->NewLongArray(env, 4);
+    if (!arr) return NULL;
+    jlong values[4] = {
+        (jlong)restoredRect.left,
+        (jlong)restoredRect.top,
+        (jlong)(restoredRect.right - restoredRect.left),
+        (jlong)(restoredRect.bottom - restoredRect.top),
+    };
+    (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+    return arr;
+}
+
+/* Synchronous outer-position move via `SetWindowPos(SWP_NOSIZE)`. Used by the
+ * Windows touch title-bar drag path because Tao's `setOuterPosition` is
+ * asynchronous (posts a user event to the Tao loop); under a touch stream
+ * of 60-100 events/s that backlog produces visible lag. Calling
+ * `SetWindowPos` directly from the touch-event handler keeps the window
+ * pinned to the finger. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetWindowOuterPositionPx(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint xPx, jint yPx)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return;
+    SetWindowPos(hwnd, NULL, (int)xPx, (int)yPx, 0, 0,
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+

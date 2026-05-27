@@ -304,6 +304,7 @@ internal class TaoComposeSceneHostWindows(
         val sc = scene ?: return
         val xPx = xFixed / TOUCH_POSITION_SCALE
         val yPx = yFixed / TOUCH_POSITION_SCALE
+        window.updateWindowsTitleBarTouchDrag(phase, id, xPx, yPx)
         val pressure =
             if (forceFixed == TaoTouchEvent.FORCE_UNKNOWN) {
                 // No digitizer pressure data — Compose expects a non-zero value

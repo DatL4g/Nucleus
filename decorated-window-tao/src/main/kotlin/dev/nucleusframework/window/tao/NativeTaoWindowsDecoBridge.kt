@@ -105,4 +105,37 @@ internal object NativeTaoWindowsDecoBridge {
         xClientPx: Int,
         yClientPx: Int,
     ): IntArray?
+
+    /**
+     * Synchronous `SetWindowPos(SWP_NOSIZE)`. Used by the Windows touch
+     * title-bar drag path — Tao's [TaoWindow.setOuterPosition] posts a user
+     * event onto the Tao loop, which lags under a touch stream of
+     * 60-100 events/s. Calling `SetWindowPos` directly from the touch-move
+     * handler keeps the window pinned to the finger.
+     */
+    @JvmStatic
+    external fun nativeSetWindowOuterPositionPx(
+        hwnd: Long,
+        xPx: Int,
+        yPx: Int,
+    )
+
+    /** Win32 `IsZoomed(hwnd)`. */
+    @JvmStatic
+    external fun nativeIsMaximized(hwnd: Long): Boolean
+
+    /**
+     * Atomic unmaximize + reposition under the finger when a touch drag
+     * starts on a maximized window. Returns the restored outer rect as
+     * `[x, y, w, h]` in physical pixels, or `null` on failure.
+     */
+    @JvmStatic
+    external fun nativePrepareTitleBarTouchDrag(
+        hwnd: Long,
+        currentScreenX: Int,
+        currentScreenY: Int,
+        startScreenX: Int,
+        startScreenY: Int,
+    ): LongArray?
+
 }

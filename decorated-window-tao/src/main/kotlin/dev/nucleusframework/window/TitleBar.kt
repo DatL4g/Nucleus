@@ -279,16 +279,6 @@ fun DecoratedWindowScope.BasicTitleBar(
                 // the title bar would unexpectedly leave fullscreen — and with
                 // `[setMovable:NO]` AppKit no longer handles that itself.
                 if (currentState.isFullscreen) return@onPointerEvent
-                // Skip touch presses: double-tap on touchscreens is not a
-                // window-zoom gesture on Windows (Explorer does nothing on
-                // double-tap of a title bar). Now that the touch path
-                // reports `button = Primary` to make `clickable` work, this
-                // handler would otherwise toggle maximize on a rapid
-                // two-finger-tap sequence.
-                if (this.currentEvent.changes.any {
-                        it.type == androidx.compose.ui.input.pointer.PointerType.Touch
-                    }
-                ) return@onPointerEvent
                 if (
                     this.currentEvent.button == PointerButton.Primary &&
                     this.currentEvent.changes.any { !it.isConsumed }
@@ -298,6 +288,11 @@ fun DecoratedWindowScope.BasicTitleBar(
                         viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
                     ) {
                         taoWindow.setMaximized(!taoWindow.isMaximized)
+                        // Cancel any in-flight touch drag — the second press
+                        // armed one with the pre-toggle maximize state, and
+                        // a tiny finger jitter would otherwise run
+                        // `SetWindowPos` on the now-toggled window.
+                        taoWindow.cancelWindowsTitleBarTouchDrag()
                     }
                     lastPress = now
                 }
@@ -475,25 +470,14 @@ private fun macTrafficLightInset(height: Dp): Dp {
 internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
     pointerInput(window) {
         val ctx = currentCoroutineContext()
-        // Capture density from the outer PointerInputScope — it implements
-        // Density, but AwaitPointerEventScope below does not.
-        val density = this.density
         awaitPointerEventScope {
             var inUserControl = false
             var pendingDrag = false
-            // ── Touch drag state ──────────────────────────────────────────
-            // With `RegisterTouchWindow` active on Tao 0.35+, Windows does
-            // not synthesise mouse messages from touch contacts, so
-            // `window.dragWindow()` (which posts `WM_NCLBUTTONDOWN HTCAPTION`)
-            // can't drive `DefWindowProc`'s modal drag loop — the loop sits
-            // waiting for `WM_MOUSEMOVE` / `WM_LBUTTONUP` messages that
-            // never arrive. We instead track the finger's screen position
-            // ourselves and apply `setOuterPosition` on every Move.
-            var touchDragHwnd = 0L
-            var touchDragStartScreenX = 0
-            var touchDragStartScreenY = 0
-            var touchDragStartOuterDpX = 0.0
-            var touchDragStartOuterDpY = 0.0
+            // Windows touch drag state lives in [TaoWindow] and is driven by
+            // raw Tao touch events (see `TaoComposeSceneHostWindows.onTouchInput`
+            // → `window.updateWindowsTitleBarTouchDrag(…)`), so the drag keeps
+            // running even if Compose's pointer pipeline routing is disrupted
+            // by the layout-size change of a `maximized → floating` restore.
             while (ctx.isActive) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
                 event.changes.forEach {
@@ -501,10 +485,19 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                     if (!it.isConsumed && !inUserControl) {
                         when (event.type) {
                             PointerEventType.Press -> {
-                                pendingDrag = true
-                                if (isTouch && Platform.Current == Platform.Windows &&
-                                    dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge.isLoaded
-                                ) {
+                                val touchOnWindows =
+                                    isTouch && Platform.Current == Platform.Windows &&
+                                        dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge.isLoaded
+                                pendingDrag = !touchOnWindows
+                                if (touchOnWindows) {
+                                    // Arm the per-window touch drag state. Subsequent samples
+                                    // run via `TaoComposeSceneHostWindows.onTouchInput` →
+                                    // `window.updateWindowsTitleBarTouchDrag(...)`, which calls
+                                    // synchronous `SetWindowPos` from raw Tao events instead
+                                    // of going through Compose's `pointerInput` Move pass.
+                                    // That keeps the drag fluid and prevents the layout-size
+                                    // change for `maximized → floating` from breaking the
+                                    // Compose pointer pipeline.
                                     val hwnd =
                                         dev.nucleusframework.window.tao.NativeTaoBridge
                                             .nativeHwndHandle(window.handle)
@@ -529,41 +522,28 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                                     if (rect != null && rect.size == 4 &&
                                         screen != null && screen.size == 2
                                     ) {
-                                        touchDragHwnd = hwnd
-                                        touchDragStartScreenX = screen[0]
-                                        touchDragStartScreenY = screen[1]
-                                        touchDragStartOuterDpX = rect[0] / density.toDouble()
-                                        touchDragStartOuterDpY = rect[1] / density.toDouble()
+                                        window.beginWindowsTitleBarTouchDrag(
+                                            touchId = it.id.value,
+                                            hwnd = hwnd,
+                                            startScreenX = screen[0],
+                                            startScreenY = screen[1],
+                                            startOuterX = rect[0],
+                                            startOuterY = rect[1],
+                                            maximized =
+                                                dev.nucleusframework.window.tao
+                                                    .NativeTaoWindowsDecoBridge
+                                                    .nativeIsMaximized(hwnd),
+                                        )
                                     }
                                 }
                             }
                             PointerEventType.Move ->
                                 if (pendingDrag) {
-                                    if (isTouch && touchDragHwnd != 0L) {
-                                        val screen =
-                                            dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
-                                                .nativeClientToScreen(
-                                                    touchDragHwnd,
-                                                    it.position.x.toInt(),
-                                                    it.position.y.toInt(),
-                                                )
-                                        if (screen != null && screen.size == 2) {
-                                            val deltaPxX = screen[0] - touchDragStartScreenX
-                                            val deltaPxY = screen[1] - touchDragStartScreenY
-                                            val targetDpX =
-                                                touchDragStartOuterDpX + deltaPxX / density.toDouble()
-                                            val targetDpY =
-                                                touchDragStartOuterDpY + deltaPxY / density.toDouble()
-                                            window.setOuterPosition(targetDpX, targetDpY)
-                                        }
-                                    } else {
-                                        window.dragWindow()
-                                        pendingDrag = false
-                                    }
+                                    window.dragWindow()
+                                    pendingDrag = false
                                 }
                             PointerEventType.Release -> {
                                 pendingDrag = false
-                                touchDragHwnd = 0L
                             }
                         }
                     } else {
@@ -573,7 +553,6 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                         }
                         if (event.type == PointerEventType.Release) {
                             inUserControl = false
-                            touchDragHwnd = 0L
                         }
                     }
                 }

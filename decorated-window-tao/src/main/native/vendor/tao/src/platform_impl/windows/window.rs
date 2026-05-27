@@ -1277,13 +1277,10 @@ unsafe fn init<T: 'static>(
     WindowWrapper(handle)
   };
 
-  // Register for touch events if applicable
-  {
-    let digitizer = GetSystemMetrics(SM_DIGITIZER) as u32;
-    if digitizer & NID_READY != 0 {
-      RegisterTouchWindow(real_window.0, TWF_WANTPALM)?;
-    }
-  }
+  // PATCH(nucleus): do not call RegisterTouchWindow. Tao's WM_POINTER path
+  // already delivers touchscreen input on Windows 8+. Opting into legacy
+  // WM_TOUCH via RegisterTouchWindow suppresses the WM_MOUSE* synthesis
+  // DefWindowProc's caption modal drag loop needs to track primary touch.
 
   let dpi = hwnd_dpi(real_window.0);
   let scale_factor = dpi_to_scale_factor(dpi);

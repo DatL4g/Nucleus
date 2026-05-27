@@ -152,6 +152,129 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeDragWindow(handle)
     }
 
+    // ── Windows touch title-bar drag (driven from raw Tao touch events) ────
+    // The Compose-side `pointerInput` modifier captures the press, then
+    // [beginWindowsTitleBarTouchDrag] arms a per-window drag state. Subsequent
+    // touch samples are routed here from [TaoComposeSceneHostWindows.onTouchInput]
+    // BEFORE Compose's pointer dispatch, so the window-move pipeline keeps
+    // running even if Compose pointer routing breaks (e.g. after the layout
+    // size changes mid-drag-from-maximized).
+
+    @Volatile
+    private var windowsTitleBarTouchDrag: WindowsTitleBarTouchDrag? = null
+
+    internal fun beginWindowsTitleBarTouchDrag(
+        touchId: Long,
+        hwnd: Long,
+        startScreenX: Int,
+        startScreenY: Int,
+        startOuterX: Long,
+        startOuterY: Long,
+        maximized: Boolean,
+    ) {
+        if (Platform.Current != Platform.Windows ||
+            !NativeTaoWindowsDecoBridge.isLoaded ||
+            hwnd == 0L
+        ) {
+            return
+        }
+        windowsTitleBarTouchDrag =
+            WindowsTitleBarTouchDrag(
+                touchId = touchId,
+                hwnd = hwnd,
+                startScreenX = startScreenX,
+                startScreenY = startScreenY,
+                startOuterX = startOuterX,
+                startOuterY = startOuterY,
+                wasMaximized = maximized,
+                prepared = !maximized,
+                lastScreenX = startScreenX,
+                lastScreenY = startScreenY,
+            )
+    }
+
+    /**
+     * Aborts any in-flight Windows touch title-bar drag. Called by the
+     * Compose double-tap handler after it toggles maximize, so a small
+     * finger jitter between the second press and its release doesn't run
+     * `nativeSetWindowOuterPositionPx` against the now-maximized HWND.
+     */
+    internal fun cancelWindowsTitleBarTouchDrag() {
+        windowsTitleBarTouchDrag = null
+    }
+
+    internal fun updateWindowsTitleBarTouchDrag(
+        phase: Int,
+        touchId: Long,
+        xClientPx: Float,
+        yClientPx: Float,
+    ) {
+        val drag = windowsTitleBarTouchDrag ?: return
+        if (drag.touchId != touchId) return
+
+        if (phase == TaoTouchEvent.CANCEL) {
+            windowsTitleBarTouchDrag = null
+            return
+        }
+        val screen =
+            NativeTaoWindowsDecoBridge.nativeClientToScreen(
+                drag.hwnd,
+                xClientPx.toInt(),
+                yClientPx.toInt(),
+            )
+        if (screen == null || screen.size != 2) {
+            if (phase == TaoTouchEvent.RELEASE) windowsTitleBarTouchDrag = null
+            return
+        }
+        drag.lastScreenX = screen[0]
+        drag.lastScreenY = screen[1]
+
+        if (phase == TaoTouchEvent.RELEASE) {
+            windowsTitleBarTouchDrag = null
+            return
+        }
+        if (phase != TaoTouchEvent.MOVE) return
+
+        if (drag.wasMaximized && !drag.prepared) {
+            val dx = screen[0] - drag.startScreenX
+            val dy = screen[1] - drag.startScreenY
+            if (kotlin.math.abs(dx) < WINDOWS_TOUCH_DRAG_THRESHOLD_PX &&
+                kotlin.math.abs(dy) < WINDOWS_TOUCH_DRAG_THRESHOLD_PX
+            ) {
+                return
+            }
+            val rect =
+                NativeTaoWindowsDecoBridge.nativePrepareTitleBarTouchDrag(
+                    drag.hwnd,
+                    screen[0],
+                    screen[1],
+                    drag.startScreenX,
+                    drag.startScreenY,
+                )
+            if (rect == null || rect.size != 4) {
+                windowsTitleBarTouchDrag = null
+                return
+            }
+            drag.startOuterX = rect[0]
+            drag.startOuterY = rect[1]
+            drag.startScreenX = screen[0]
+            drag.startScreenY = screen[1]
+            drag.wasMaximized = false
+            drag.prepared = true
+            requestRedraw()
+            return
+        }
+
+        val targetX = drag.startOuterX + (screen[0] - drag.startScreenX)
+        val targetY = drag.startOuterY + (screen[1] - drag.startScreenY)
+        NativeTaoWindowsDecoBridge.nativeSetWindowOuterPositionPx(
+            drag.hwnd,
+            targetX.toInt(),
+            targetY.toInt(),
+        )
+        requestRedraw()
+    }
+
     /**
      * Returns the underlying native window handle for the current platform:
      *  - Windows: HWND as a `Long` (0 if unavailable).
@@ -434,5 +557,19 @@ class TaoWindow internal constructor(
         const val SCROLL_FIXED_SCALE: Float = 100f
         const val AWT_SCROLL_AMOUNT_DEFAULT: Float = 3f
         const val AWT_PIXEL_TO_ROTATION: Float = 10f
+        const val WINDOWS_TOUCH_DRAG_THRESHOLD_PX: Int = 16
     }
 }
+
+private data class WindowsTitleBarTouchDrag(
+    val touchId: Long,
+    val hwnd: Long,
+    var startScreenX: Int,
+    var startScreenY: Int,
+    var startOuterX: Long,
+    var startOuterY: Long,
+    var wasMaximized: Boolean,
+    var prepared: Boolean,
+    var lastScreenX: Int,
+    var lastScreenY: Int,
+)
