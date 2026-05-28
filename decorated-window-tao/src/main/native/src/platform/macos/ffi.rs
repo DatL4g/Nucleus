@@ -21,8 +21,7 @@ extern "C" {
         w_px: f64,
         h_px: f64,
     );
-    pub(crate) fn nucleus_tao_attach_text_overlay(ns_view_handle: i64);
-    pub(crate) fn nucleus_tao_focus_text_overlay(focused: i32);
+    pub(crate) fn nucleus_tao_set_cursor_icon(code: i32);
     pub(crate) fn nucleus_tao_a11y_attach(ns_view_handle: i64);
     pub(crate) fn nucleus_tao_a11y_detach(ns_view_handle: i64);
     pub(crate) fn nucleus_tao_a11y_apply_snapshot(

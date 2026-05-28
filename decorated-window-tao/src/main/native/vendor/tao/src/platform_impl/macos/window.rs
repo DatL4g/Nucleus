@@ -892,31 +892,11 @@ impl UnownedWindow {
 
   pub fn set_cursor_icon(&self, cursor: CursorIcon) {
     let cursor = util::Cursor::from(cursor);
-    // Load the NSCursor (or null for Default) BEFORE we move `cursor` into
-    // the lock — we need it again below to force an immediate refresh.
-    let ns_cursor: id = unsafe { cursor.load() };
     if let Some(cursor_access) = self.cursor_state.upgrade() {
       cursor_access.lock().unwrap().cursor = cursor;
     }
     unsafe {
       self.ns_window.invalidateCursorRectsForView(&self.ns_view);
-      // `invalidateCursorRectsForView` only marks the rects as dirty. AppKit
-      // re-pushes the cursor when the pointer crosses a cursor-rect boundary,
-      // but Compose's `setPointerIcon` typically changes the icon while the
-      // pointer is hovering inside the existing static rect (e.g. moving from
-      // a `BasicTextField` back onto neutral content within the same window).
-      // Without a fresh `[cursor set]` the on-screen cursor stays as whatever
-      // was last pushed — manifests as the I-beam getting "stuck" forever on
-      // macOS only. Force-push the new cursor here so the change is visible
-      // immediately.
-      if !ns_cursor.is_null() {
-        let _: () = msg_send![ns_cursor, set];
-      } else {
-        let arrow: id = msg_send![class!(NSCursor), arrowCursor];
-        if !arrow.is_null() {
-          let _: () = msg_send![arrow, set];
-        }
-      }
     }
   }
 

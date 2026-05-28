@@ -1298,9 +1298,8 @@ private class TaoPlatformContext(
 
     /**
      * Compose calls this when a `BasicTextField` gains focus. We use it to
-     * keep Tao's IME spot in sync with the caret rectangle so the macOS
-     * press-and-hold accent picker (and any future IME candidate window)
-     * appears at the caret instead of the window's top-left corner.
+     * keep Tao's IME spot in sync with the caret rectangle so macOS candidate
+     * windows appear at the caret instead of the window's top-left corner.
      *
      * Mirrors `DesktopTextInputService2.startInput` in compose-multiplatform-core
      * but feeds the position through Tao's `Window::set_ime_position` rather
@@ -1310,44 +1309,29 @@ private class TaoPlatformContext(
     override suspend fun startInputMethod(
         request: androidx.compose.ui.platform.PlatformTextInputMethodRequest,
     ): Nothing {
-        // AppKit's press-and-hold logic in `_NSKeyBindingManager` engages
-        // only when the firstResponder's class lineage includes NSTextView.
-        // We installed a transparent NSTextView overlay at attach time; here
-        // we make it the firstResponder so AppKit dispatches keys through it
-        // (engaging the marked-text phase + accent picker) while every
-        // NSTextInputClient call is forwarded back to TaoView's existing
-        // pipeline. Activate the inputContext too — required so AppKit
-        // routes through this context's NSKeyBindingManager instance.
+        // Keep TaoView as firstResponder, matching Compose AWT's single
+        // component model. Making a hidden NSTextView firstResponder causes
+        // AppKit to push an I-beam cursor for the whole window before the
+        // first pointer interaction on macOS.
         NativeTaoBridge.nativeActivateInputContext(windowHandle)
-        NativeTaoBridge.nativeFocusTextOverlay(true)
-        try {
-            coroutineScope {
-                launch {
-                    androidx.compose.runtime
-                        .snapshotFlow {
-                            request.focusedRectInRoot()
-                        }.collect { rect ->
-                            if (rect != null) {
-                                // `focusedRectInRoot` is in root-pixel space; pass
-                                // it as a real-sized rect — AppKit's press-and-hold
-                                // logic gates on `firstRectForCharacterRange:`
-                                // returning non-zero size.
-                                NativeTaoBridge.nativeSetImeRect(
-                                    windowHandle,
-                                    rect.left.toInt(),
-                                    rect.top.toInt(),
-                                    rect.width.toInt().coerceAtLeast(1),
-                                    rect.height.toInt().coerceAtLeast(1),
-                                )
-                            }
+        coroutineScope {
+            launch {
+                androidx.compose.runtime
+                    .snapshotFlow {
+                        request.focusedRectInRoot()
+                    }.collect { rect ->
+                        if (rect != null) {
+                            NativeTaoBridge.nativeSetImeRect(
+                                windowHandle,
+                                rect.left.toInt(),
+                                rect.top.toInt(),
+                                rect.width.toInt().coerceAtLeast(1),
+                                rect.height.toInt().coerceAtLeast(1),
+                            )
                         }
-                }
-                awaitCancellation()
+                    }
             }
-        } finally {
-            // Compose cancelled the input session (TextField lost focus). Hand
-            // firstResponder back to TaoView so non-text key events resume.
-            NativeTaoBridge.nativeFocusTextOverlay(false)
+            awaitCancellation()
         }
     }
 

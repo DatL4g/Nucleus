@@ -191,10 +191,6 @@ internal fun ApplicationScope.openDecoratedWindow(
 
     window.onWindowReady { w, h ->
         host.attach()
-        // Add the NSTextView overlay subview that AppKit will use as the
-        // firstResponder during Compose TextField focus — required to engage
-        // press-and-hold (long-press 'e' → accent picker).
-        NativeTaoBridge.nativeAttachTextOverlay(window.handle)
         // Install a11y projection (TaoView swizzles + per-view registry +
         // NSWindow focus forwarder). Must follow attach() so the NSView
         // exists and the window is reachable.

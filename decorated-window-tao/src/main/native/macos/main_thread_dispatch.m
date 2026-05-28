@@ -174,129 +174,62 @@ void nucleus_tao_activate_input_context(long ns_view_handle) {
     }
 }
 
-// ── NSTextView overlay (NucleusTextOverlay) ────────────────────────────────
-//
-// AppKit's `_NSKeyBindingManager` checks the firstResponder's class hierarchy
-// before engaging press-and-hold (long-press 'e' → accent picker). Plain NSView
-// subclasses — even with full NSTextInputClient conformance — short-circuit to
-// `insertText:` immediately. NSTextView (and subclasses) trigger the marked-
-// text phase that drives the picker.
-//
-// We add a transparent NSTextView subclass as a zero-frame subview of TaoView.
-// When a Compose BasicTextField gains focus we make this overlay the
-// firstResponder; AppKit then dispatches key events through it and sees the
-// NSTextView lineage. The overlay forwards every NSTextInputClient call to
-// TaoView's existing handlers (which emit `WindowEvent::ReceivedImeText` and
-// `setMarkedText` events Tao already manages), so our existing JVM-side IME
-// pipeline keeps working without changes.
+static NSCursor *nucleus_tao_cursor_from_selector(NSString *selectorName) {
+    SEL selector = NSSelectorFromString(selectorName);
+    if (![NSCursor respondsToSelector:selector]) return nil;
 
-@interface NucleusTextOverlay : NSTextView
-@property(nonatomic, weak) NSView *taoView;
-@end
-
-@implementation NucleusTextOverlay
-// Mouse events fall through to TaoView (the overlay is zero-frame anyway).
-- (NSView *)hitTest:(NSPoint)point { (void)point; return nil; }
-
-// Always accept first responder so the press-and-hold path can engage.
-- (BOOL)acceptsFirstResponder { return YES; }
-- (BOOL)becomeFirstResponder { return [super becomeFirstResponder]; }
-
-// Forward NSTextInputClient calls to TaoView, which already implements them
-// and routes through Tao's Rust-side WindowEvent pipeline.
-- (BOOL)hasMarkedText {
-    return self.taoView ? [(id<NSTextInputClient>)self.taoView hasMarkedText] : NO;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+    return [NSCursor performSelector:selector];
+#pragma clang diagnostic pop
 }
-- (NSRange)markedRange {
-    return self.taoView
-        ? [(id<NSTextInputClient>)self.taoView markedRange]
-        : NSMakeRange(NSNotFound, 0);
-}
-- (NSRange)selectedRange {
-    return self.taoView
-        ? [(id<NSTextInputClient>)self.taoView selectedRange]
-        : NSMakeRange(0, 0);
-}
-- (void)setMarkedText:(id)string
-        selectedRange:(NSRange)selectedRange
-     replacementRange:(NSRange)replacementRange {
-    if (self.taoView) {
-        [(id<NSTextInputClient>)self.taoView setMarkedText:string
-                                            selectedRange:selectedRange
-                                         replacementRange:replacementRange];
+
+static NSCursor *nucleus_tao_cursor_for_code(int code) {
+    switch (code) {
+        case 1:  return [NSCursor IBeamCursor];
+        case 2:  return [NSCursor pointingHandCursor];
+        case 3:  return [NSCursor crosshairCursor];
+        case 4:
+        case 8: {
+            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"busyButClickableCursor");
+            return cursor ?: [NSCursor arrowCursor];
+        }
+        case 5: {
+            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"_moveCursor");
+            return cursor ?: [NSCursor openHandCursor];
+        }
+        case 6:  return [NSCursor operationNotAllowedCursor];
+        case 7: {
+            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"_helpCursor");
+            return cursor ?: [NSCursor arrowCursor];
+        }
+        case 9:  return [NSCursor resizeLeftRightCursor];
+        case 10: return [NSCursor resizeUpDownCursor];
+        case 11: {
+            NSCursor *cursor = nucleus_tao_cursor_from_selector(
+                @"_windowResizeNorthEastSouthWestCursor");
+            return cursor ?: [NSCursor arrowCursor];
+        }
+        case 12: {
+            NSCursor *cursor = nucleus_tao_cursor_from_selector(
+                @"_windowResizeNorthWestSouthEastCursor");
+            return cursor ?: [NSCursor arrowCursor];
+        }
+        default: return [NSCursor arrowCursor];
     }
 }
-- (void)unmarkText {
-    if (self.taoView) [(id<NSTextInputClient>)self.taoView unmarkText];
-}
-- (NSArray<NSAttributedStringKey> *)validAttributesForMarkedText {
-    return @[];
-}
-- (NSAttributedString *)attributedSubstringForProposedRange:(NSRange)range
-                                                actualRange:(NSRangePointer)actualRange {
-    if (actualRange) *actualRange = NSMakeRange(NSNotFound, 0);
-    return nil;
-}
-- (void)insertText:(id)string replacementRange:(NSRange)replacementRange {
-    if (self.taoView) {
-        [(id<NSTextInputClient>)self.taoView insertText:string
-                                       replacementRange:replacementRange];
+
+void nucleus_tao_set_cursor_icon(int code) {
+    void (^apply)(void) = ^{
+        NSCursor *cursor = nucleus_tao_cursor_for_code(code);
+        if (cursor) [cursor set];
+    };
+
+    if ([NSThread isMainThread]) {
+        apply();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), apply);
     }
-}
-- (NSUInteger)characterIndexForPoint:(NSPoint)point {
-    (void)point;
-    return 0;
-}
-- (NSRect)firstRectForCharacterRange:(NSRange)range
-                         actualRange:(NSRangePointer)actualRange {
-    if (actualRange) *actualRange = range;
-    return NSMakeRect(g_ime_screen_x, g_ime_screen_y, g_ime_w, g_ime_h);
-}
-- (void)doCommandBySelector:(SEL)selector {
-    // Forward editing commands (arrow keys, delete, enter, etc.) to TaoView so
-    // its existing keyDown handler still emits the WindowEvent::KeyboardInput.
-    // We have to re-dispatch the *current* NSEvent because doCommandBySelector
-    // doesn't carry it.
-    NSEvent *current = NSApp.currentEvent;
-    if (self.taoView && current && current.type == NSEventTypeKeyDown) {
-        [self.taoView keyDown:current];
-    }
-}
-@end
-
-static NucleusTextOverlay *g_text_overlay = nil;
-static NSView *g_tao_view_ref = nil;
-
-/// Adds a transparent NSTextView overlay to TaoView. Called once per window;
-/// idempotent.
-void nucleus_tao_attach_text_overlay(long ns_view_handle) {
-    NSView *view = (__bridge NSView *)(void *)ns_view_handle;
-    g_tao_view_ref = view;
-    if (g_text_overlay && g_text_overlay.superview == view) return;
-
-    NucleusTextOverlay *overlay = [[NucleusTextOverlay alloc]
-        initWithFrame:NSMakeRect(0, 0, 0, 0)];
-    overlay.taoView = view;
-    overlay.editable = YES;
-    overlay.selectable = YES;
-    overlay.drawsBackground = NO;
-    overlay.fieldEditor = NO;
-    overlay.richText = NO;
-    overlay.allowsUndo = NO;
-    [view addSubview:overlay];
-    g_text_overlay = overlay;
-}
-
-/// When `focused` is true, makes the overlay firstResponder so AppKit routes
-/// key events through it (engaging press-and-hold). When false, restores
-/// TaoView as firstResponder.
-void nucleus_tao_focus_text_overlay(int focused) {
-    if (!g_text_overlay || !g_tao_view_ref) return;
-    NSWindow *window = g_text_overlay.window ?: g_tao_view_ref.window;
-    if (!window) return;
-    NSResponder *target = focused ? (NSResponder *)g_text_overlay
-                                   : (NSResponder *)g_tao_view_ref;
-    [window makeFirstResponder:target];
 }
 
 /// Converts a caret rectangle expressed in NSView-local logical points

@@ -1,5 +1,4 @@
-// IME input-context activation and caret-rect plumbing for AppKit's
-// press-and-hold accent picker.
+// IME input-context activation and caret-rect plumbing.
 
 use jni::objects::JClass;
 use jni::sys::{jint, jlong};
@@ -34,9 +33,8 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
 /// `NSView.convertRect:toView:` + `NSWindow.convertRectToScreen:`, then stores
 /// the rect for our swizzled `firstRectForCharacterRange:` to return.
 ///
-/// AppKit's press-and-hold accent picker is gated on
-/// `firstRectForCharacterRange:` returning a rect with non-zero size — Tao's
-/// stock impl returns size 0×0, which short-circuits the picker.
+/// Tao's stock `firstRectForCharacterRange:` returns size 0×0, which prevents
+/// native candidate windows from following the caret.
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeSetImeRect(
     _env: JNIEnv,

@@ -360,10 +360,9 @@ internal object NativeTaoBridge {
     )
 
     /**
-     * Anchors macOS IME UI (accent picker, dead-key feedback, candidate windows)
-     * at the given window-local rect in *physical pixels* (top-left origin).
-     * AppKit's press-and-hold logic requires this rect to have non-zero size —
-     * Tao's stock `firstRectForCharacterRange:` returns 0×0, which we override.
+     * Anchors macOS IME UI at the given window-local rect in *physical pixels*
+     * (top-left origin). Tao's stock `firstRectForCharacterRange:` returns
+     * 0×0; we override it so candidate windows can follow the caret.
      */
     @JvmStatic
     external fun nativeSetImeRect(
@@ -374,30 +373,9 @@ internal object NativeTaoBridge {
         height: Int,
     )
 
-    /**
-     * Calls `[view.inputContext activate]`. Required to trigger AppKit's
-     * press-and-hold accent picker: without it, the inputContext is not the
-     * "current" one and `_NSKeyBindingManager` skips the marked-text phase.
-     */
+    /** Calls `[view.inputContext activate]` for TaoView's NSTextInputClient. */
     @JvmStatic
     external fun nativeActivateInputContext(handle: Long)
-
-    /**
-     * Adds a transparent `NSTextView` overlay as a subview of the TaoView.
-     * AppKit's press-and-hold logic only engages for views whose lineage
-     * includes `NSTextView`; the overlay satisfies that check while forwarding
-     * every NSTextInputClient call to the underlying TaoView. Idempotent.
-     */
-    @JvmStatic
-    external fun nativeAttachTextOverlay(handle: Long)
-
-    /**
-     * Routes key events through the NSTextView overlay (`focused = true`) so
-     * `_NSKeyBindingManager` engages press-and-hold, or back to TaoView
-     * (`focused = false`) once a Compose TextField loses focus.
-     */
-    @JvmStatic
-    external fun nativeFocusTextOverlay(focused: Boolean)
 
     // ── Accessibility (macOS) ──────────────────────────────────────────────
     //

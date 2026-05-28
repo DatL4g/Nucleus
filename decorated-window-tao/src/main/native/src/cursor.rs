@@ -17,9 +17,13 @@ use crate::state::WINDOWS;
 /// Mirrors `TaoCursorIcon` on the JVM side. Numeric codes only, so the JNI
 /// signature stays `(JI)V`. Subset chosen to cover what Compose Desktop's
 /// `PointerIcon` constants surface — additional shapes can be added later.
+/// On macOS, code 0 is an explicit arrow cursor rather than Tao's null
+/// `Default`, matching Compose AWT's concrete `Cursor.DEFAULT_CURSOR`.
 #[cfg(not(target_os = "linux"))]
 fn cursor_from_code(code: jint) -> CursorIcon {
     match code {
+        #[cfg(target_os = "macos")]
+        0 => CursorIcon::Arrow,
         1 => CursorIcon::Text,
         2 => CursorIcon::Hand,
         3 => CursorIcon::Crosshair,
@@ -32,6 +36,9 @@ fn cursor_from_code(code: jint) -> CursorIcon {
         10 => CursorIcon::NsResize,
         11 => CursorIcon::NeswResize,
         12 => CursorIcon::NwseResize,
+        #[cfg(target_os = "macos")]
+        _ => CursorIcon::Arrow,
+        #[cfg(not(target_os = "macos"))]
         _ => CursorIcon::Default,
     }
 }
@@ -56,6 +63,10 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
         let Some(map) = guard.as_ref() else { return };
         if let Some(window) = map.get(&(handle as u64)) {
             window.set_cursor_icon(cursor_from_code(code));
+            #[cfg(target_os = "macos")]
+            unsafe {
+                crate::platform::macos::ffi::nucleus_tao_set_cursor_icon(code);
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.scene.CanvasLayersComposeScene
@@ -24,6 +25,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.NativeMetalBridge
 import dev.nucleusframework.window.tao.PopupNativeBridge
+import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.toTaoCursorIconCode
 import org.jetbrains.skia.DirectContext
 
 /**
@@ -163,6 +166,10 @@ internal class TaoPopupSceneLayer(
                 object : PlatformContext.Empty() {
                     override val windowInfo: androidx.compose.ui.platform.WindowInfo
                         get() = popupWindowInfo
+
+                    override fun setPointerIcon(pointerIcon: PointerIcon) {
+                        host.setCursor(pointerIcon.toTaoCursorIconCode())
+                    }
                 },
             invalidate = { host.requestRedraw() },
         )
@@ -346,6 +353,7 @@ internal class TaoPopupSceneLayer(
         // AppKit event doesn't deref a half-disposed scene.
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panelHandle)
         PopupNativeBridge.nativeSetEventCallback(panelHandle, null)
+        host.setCursor(TaoCursorIcon.DEFAULT)
         innerScene.close()
         directContext.close()
         // Zero out before freeing the C struct so any pending render
