@@ -674,6 +674,9 @@ object TaoEventCode {
 
     /** `a`/`b` carry `x`/`y` in physical pixels. */
     const val MOVED: Int = 21
+
+    /** `a` carries the current [TaoModifierMask] bitset. */
+    const val MODIFIERS_CHANGED: Int = 22
 }
 
 /** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */

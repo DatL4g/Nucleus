@@ -78,6 +78,10 @@ class TaoWindow internal constructor(
     @Volatile
     private var keyListener: KeyEventListener? = null
 
+    @Volatile
+    internal var modifierState: Int = 0
+        private set
+
     /**
      * macOS-only trackpad gesture listener. Receives raw magnify / rotate /
      * smart-magnify deltas already reshaped by the Rust bridge — see
@@ -537,6 +541,7 @@ class TaoWindow internal constructor(
             TaoEventCode.CURSOR_LEFT -> pointerExitedListener?.invoke()
             TaoEventCode.MOUSE_DOWN -> pointerButtonListener?.invoke(a, true)
             TaoEventCode.MOUSE_UP -> pointerButtonListener?.invoke(a, false)
+            TaoEventCode.MODIFIERS_CHANGED -> modifierState = a
             TaoEventCode.SCROLL_LINE -> {
                 // 1 NSEvent line = 1 mouse-wheel notch ≈ AWT preciseWheelRotation 1.0.
                 // Negate to match AWT's "negative = away from user" convention.

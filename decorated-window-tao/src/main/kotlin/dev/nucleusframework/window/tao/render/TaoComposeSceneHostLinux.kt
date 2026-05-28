@@ -15,6 +15,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
@@ -97,6 +98,7 @@ internal class TaoComposeSceneHostLinux(
     var semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null
 
     private val windowInfo = LinuxTaoWindowInfo()
+    private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var directContext: DirectContext? = null
     private var scene: ComposeScene? = null
@@ -586,7 +588,11 @@ internal class TaoComposeSceneHostLinux(
                     TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> PointerEventType.Release
                     else -> return
                 }
-            sc.sendPointerEvent(eventType = composeType, pointers = pointers)
+            sc.sendPointerEvent(
+                eventType = composeType,
+                pointers = pointers,
+                keyboardModifiers = currentKeyboardModifiers,
+            )
             if (eventType == TaoTouchEvent.CANCEL) {
                 sc.cancelPointerInput()
             }
@@ -701,7 +707,11 @@ internal class TaoComposeSceneHostLinux(
                     type = PointerType.Touch,
                 ),
             )
-        sc.sendPointerEvent(eventType = eventType, pointers = pointers)
+        sc.sendPointerEvent(
+            eventType = eventType,
+            pointers = pointers,
+            keyboardModifiers = currentKeyboardModifiers,
+        )
     }
 
     private fun endGesture(cancelled: Boolean) {
@@ -970,6 +980,8 @@ internal class TaoComposeSceneHostLinux(
         val yPx = bFixed / 1024f
         lastPointerX = xPx
         lastPointerY = yPx
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
 
         // JBR-style peer hook: hit-test the resize edge band BEFORE forwarding
         // the move to Compose. When the pointer is inside the band we set the
@@ -982,6 +994,7 @@ internal class TaoComposeSceneHostLinux(
             eventType = PointerEventType.Move,
             position = Offset(xPx, yPx),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
@@ -1015,10 +1028,13 @@ internal class TaoComposeSceneHostLinux(
             if (resizeDecoration.onLeftPress(direction)) return
         }
 
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
             button = mapButton(buttonCode),
         )
     }
@@ -1048,11 +1064,14 @@ internal class TaoComposeSceneHostLinux(
         dxAwt: Float,
         dyAwt: Float,
     ) {
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Scroll,
             position = Offset(lastPointerX, lastPointerY),
             scrollDelta = Offset(dxAwt, dyAwt),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
@@ -1064,6 +1083,8 @@ internal class TaoComposeSceneHostLinux(
         codePoint: Int,
     ): Boolean {
         val sc = scene ?: return false
+        currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         val isCtrl = (modifiers and TaoModifierMask.CONTROL) != 0
         val isMeta = (modifiers and TaoModifierMask.META) != 0
         val isAlt = (modifiers and TaoModifierMask.ALT) != 0
@@ -1495,6 +1516,8 @@ internal class TaoComposeSceneHostLinux(
 
 internal class LinuxTaoWindowInfo : androidx.compose.ui.platform.WindowInfo {
     override var isWindowFocused: Boolean by androidx.compose.runtime.mutableStateOf(true)
+    override var keyboardModifiers: PointerKeyboardModifiers
+        by androidx.compose.runtime.mutableStateOf(PointerKeyboardModifiers())
     override var containerSize: IntSize by androidx.compose.runtime.mutableStateOf(IntSize.Zero)
     override var containerDpSize: DpSize by androidx.compose.runtime.mutableStateOf(DpSize.Zero)
 }

@@ -17,6 +17,7 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
@@ -77,6 +78,7 @@ internal class TaoComposeSceneHostWindows(
     var semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null
 
     private val windowInfo = WindowsTaoWindowInfo()
+    private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
     private var directContext: DirectContext? = null
@@ -374,6 +376,7 @@ internal class TaoComposeSceneHostWindows(
             eventType = composeType,
             pointers = pointers,
             buttons = touchButtons,
+            keyboardModifiers = currentKeyboardModifiers,
             button = touchButton,
         )
 
@@ -759,10 +762,13 @@ internal class TaoComposeSceneHostWindows(
         val yPx = bFixed / 1024f
         lastPointerX = xPx
         lastPointerY = yPx
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(xPx, yPx),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
@@ -774,10 +780,13 @@ internal class TaoComposeSceneHostWindows(
         ) {
             return
         }
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Exit,
             position = Offset(lastPointerX, lastPointerY),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
@@ -785,10 +794,13 @@ internal class TaoComposeSceneHostWindows(
         buttonCode: Int,
         pressed: Boolean,
     ) {
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
             button = mapButton(buttonCode),
         )
     }
@@ -797,11 +809,14 @@ internal class TaoComposeSceneHostWindows(
         dxAwt: Float,
         dyAwt: Float,
     ) {
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Scroll,
             position = Offset(lastPointerX, lastPointerY),
             scrollDelta = Offset(dxAwt, dyAwt),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
@@ -813,6 +828,8 @@ internal class TaoComposeSceneHostWindows(
         codePoint: Int,
     ): Boolean {
         val sc = scene ?: return false
+        currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         val isCtrl = (modifiers and TaoModifierMask.CONTROL) != 0
         val isMeta = (modifiers and TaoModifierMask.META) != 0
         val isAlt = (modifiers and TaoModifierMask.ALT) != 0
@@ -1143,6 +1160,8 @@ internal class TaoComposeSceneHostWindows(
 
 internal class WindowsTaoWindowInfo : androidx.compose.ui.platform.WindowInfo {
     override var isWindowFocused: Boolean by androidx.compose.runtime.mutableStateOf(true)
+    override var keyboardModifiers: PointerKeyboardModifiers
+        by androidx.compose.runtime.mutableStateOf(PointerKeyboardModifiers())
     override var containerSize: IntSize by androidx.compose.runtime.mutableStateOf(IntSize.Zero)
     override var containerDpSize: DpSize by androidx.compose.runtime.mutableStateOf(DpSize.Zero)
 }

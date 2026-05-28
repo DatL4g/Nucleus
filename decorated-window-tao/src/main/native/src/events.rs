@@ -22,12 +22,17 @@ pub(crate) fn pack_modifiers(state: ModifiersState) -> i32 {
     if state.shift_key() { m |= MOD_MASK_SHIFT; }
     if state.control_key() { m |= MOD_MASK_CONTROL; }
     if state.alt_key() { m |= MOD_MASK_ALT; }
-    // DIAGNOSTIC (Linux/Wayland): super_key() returns true permanently on some
-    // compositors after the first ModifiersChanged tick, contaminating every
-    // subsequent key event (Tab gets Meta, Backspace gets Meta → TextField
-    // mapping fails). Temporarily disabled while we verify the workaround
-    // approach. Re-enable once a per-key SuperLeft/SuperRight tracker is in.
-    let _ = state.super_key();
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if state.super_key() { m |= MOD_MASK_META; }
+    #[cfg(target_os = "linux")]
+    {
+        // DIAGNOSTIC (Linux/Wayland): super_key() returns true permanently on
+        // some compositors after the first ModifiersChanged tick, contaminating
+        // every subsequent key event (Tab gets Meta, Backspace gets Meta →
+        // TextField mapping fails). Keep it disabled on Linux until a per-key
+        // SuperLeft/SuperRight tracker is in.
+        let _ = state.super_key();
+    }
     m
 }
 
@@ -78,6 +83,7 @@ pub(crate) const EVENT_WINDOW_READY: jint = 16; // a = width, b = height (logica
 // We split the event code so the JVM side can apply the right factor.
 pub(crate) const EVENT_SCROLL_LINE: jint = 17; // a = dx * SCROLL_FIXED_SCALE, b = dy * SCROLL_FIXED_SCALE
 pub(crate) const EVENT_SCROLL_PIXEL: jint = 18;
+pub(crate) const EVENT_MODIFIERS_CHANGED: jint = 22;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;

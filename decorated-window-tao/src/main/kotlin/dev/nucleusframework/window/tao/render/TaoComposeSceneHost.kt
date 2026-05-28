@@ -14,6 +14,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.scene.CanvasLayersComposeScene
@@ -119,6 +120,7 @@ internal class TaoComposeSceneHost(
     // collapses the available area to zero and consistently places itself
     // above the click → the "inverted" feel reported by users.
     private val windowInfo = TaoWindowInfo()
+    private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var nsViewHandle: Long = 0
     private var directContext: DirectContext? = null
@@ -814,18 +816,24 @@ internal class TaoComposeSceneHost(
         lastPointerX = xPx
         lastPointerY = yPx
         hasReceivedCursorMove = true
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(xPx, yPx),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
     fun onPointerExited() {
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Exit,
             position = Offset(lastPointerX, lastPointerY),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
@@ -840,6 +848,8 @@ internal class TaoComposeSceneHost(
             return
         }
         val composeButton = mapButton(buttonCode)
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         if (pressed && isPressed) {
             // Stale "still-down" state — close it out before opening a new
             // interaction so Compose hit-tests this Press fresh. See the
@@ -848,6 +858,7 @@ internal class TaoComposeSceneHost(
                 eventType = PointerEventType.Release,
                 position = Offset(lastPointerX, lastPointerY),
                 type = PointerType.Mouse,
+                keyboardModifiers = currentKeyboardModifiers,
                 button = composeButton,
             )
         } else if (!pressed && !isPressed) {
@@ -859,6 +870,7 @@ internal class TaoComposeSceneHost(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
             button = composeButton,
         )
     }
@@ -872,11 +884,14 @@ internal class TaoComposeSceneHost(
         dxAwt: Float,
         dyAwt: Float,
     ) {
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Scroll,
             position = Offset(lastPointerX, lastPointerY),
             scrollDelta = Offset(dxAwt, dyAwt),
             type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
@@ -1018,7 +1033,11 @@ internal class TaoComposeSceneHost(
                     type = PointerType.Touch,
                 ),
             )
-        sc.sendPointerEvent(eventType = eventType, pointers = pointers)
+        sc.sendPointerEvent(
+            eventType = eventType,
+            pointers = pointers,
+            keyboardModifiers = currentKeyboardModifiers,
+        )
     }
 
     private fun endGesture(cancelled: Boolean) {
@@ -1049,6 +1068,8 @@ internal class TaoComposeSceneHost(
         codePoint: Int,
     ): Boolean {
         val sc = scene ?: return false
+        currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
         val isCtrl = (modifiers and TaoModifierMask.CONTROL) != 0
         val isMeta = (modifiers and TaoModifierMask.META) != 0
         val isAlt = (modifiers and TaoModifierMask.ALT) != 0
@@ -1236,6 +1257,8 @@ internal class TaoComposeSceneHost(
  */
 internal class TaoWindowInfo : androidx.compose.ui.platform.WindowInfo {
     override var isWindowFocused: Boolean by androidx.compose.runtime.mutableStateOf(true)
+    override var keyboardModifiers: PointerKeyboardModifiers
+        by androidx.compose.runtime.mutableStateOf(PointerKeyboardModifiers())
     override var containerSize: androidx.compose.ui.unit.IntSize
         by androidx.compose.runtime.mutableStateOf(androidx.compose.ui.unit.IntSize.Zero)
     override var containerDpSize: androidx.compose.ui.unit.DpSize

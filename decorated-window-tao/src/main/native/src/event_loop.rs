@@ -14,11 +14,11 @@ use crate::events::{
     current_modifier_bits, dispatch, dispatch_key, dispatch_touch_input, handle_for,
     mouse_button_code, pack_modifiers, UserEvent, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED,
     EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED, EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN,
-    EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED, EVENT_MOUSE_DOWN,
-    EVENT_MOUSE_UP, EVENT_MOVED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED,
-    EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY,
-    SCROLL_FIXED_SCALE, TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS,
-    TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
+    EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED,
+    EVENT_MODIFIERS_CHANGED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP, EVENT_MOVED, EVENT_REDRAW_REQUESTED,
+    EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL,
+    EVENT_UNFOCUSED, EVENT_WINDOW_READY, SCROLL_FIXED_SCALE, TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE,
+    TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
 };
 use crate::keymap;
 use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
@@ -400,9 +400,11 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                     WindowEvent::ModifiersChanged(state) => {
+                        let modifiers = pack_modifiers(state);
                         if let Ok(mut g) = CURRENT_MODIFIERS.lock() {
-                            *g = pack_modifiers(state);
+                            *g = modifiers;
                         }
+                        dispatch(handle, EVENT_MODIFIERS_CHANGED, modifiers, 0);
                     }
                     WindowEvent::KeyboardInput { event: ke, .. } => {
                         let type_code = match ke.state {
