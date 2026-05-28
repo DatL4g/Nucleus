@@ -67,7 +67,7 @@ class TaoWindow internal constructor(
     private var pointerButtonListener: ((Int, Boolean) -> Unit)? = null
 
     @Volatile
-    private var pointerScrollListener: ((dxAwt: Float, dyAwt: Float) -> Unit)? = null
+    private var pointerScrollListener: ((TaoPointerScrollEvent) -> Unit)? = null
 
     @Volatile
     private var trackpadGestureListener: TrackpadGestureListener? = null
@@ -454,12 +454,12 @@ class TaoWindow internal constructor(
     }
 
     /**
-     * Mouse-wheel / trackpad scroll. [dxAwt]/[dyAwt] are shaped like AWT's
-     * `MouseWheelEvent.preciseWheelRotation` so they can be fed directly to
-     * Compose's `MacOSCocoaConfig.calculateMouseWheelScroll` (which applies
-     * `× 10dp.toPx() × -scrollAmount` and yields the right pixel scroll).
+     * Mouse-wheel / trackpad scroll. Deltas are shaped like AWT's
+     * `MouseWheelEvent.preciseWheelRotation`; the event also carries the AWT
+     * `scrollAmount` metadata Compose Desktop reads when calculating platform
+     * scroll distance.
      */
-    fun onPointerScroll(block: (dxAwt: Float, dyAwt: Float) -> Unit) {
+    internal fun onPointerScroll(block: (TaoPointerScrollEvent) -> Unit) {
         pointerScrollListener = block
     }
 
@@ -543,13 +543,20 @@ class TaoWindow internal constructor(
             TaoEventCode.MOUSE_UP -> pointerButtonListener?.invoke(a, false)
             TaoEventCode.MODIFIERS_CHANGED -> modifierState = a
             TaoEventCode.SCROLL_LINE -> {
-                // 1 NSEvent line = 1 mouse-wheel notch ≈ AWT preciseWheelRotation 1.0.
-                // Negate to match AWT's "negative = away from user" convention.
-                // Multiply by 3 to compensate for the missing AWT scrollAmount=3
-                // (no AWT event present, so MacOSCocoaConfig defaults to 1).
-                val dx = -(a / SCROLL_FIXED_SCALE) * AWT_SCROLL_AMOUNT_DEFAULT
-                val dy = -(b / SCROLL_FIXED_SCALE) * AWT_SCROLL_AMOUNT_DEFAULT
-                pointerScrollListener?.invoke(dx, dy)
+                // AWT sends the wheel rotation as scrollDelta and leaves
+                // platform line-count policy in MouseWheelEvent.scrollAmount.
+                // Tao's Windows backend has already applied the OS line count;
+                // macOS AWT reports scrollAmount=1; Linux mirrors AWT's common
+                // three-lines-per-notch default here.
+                val dx = -(a / SCROLL_FIXED_SCALE)
+                val dy = -(b / SCROLL_FIXED_SCALE)
+                pointerScrollListener?.invoke(
+                    TaoPointerScrollEvent(
+                        dxAwt = dx,
+                        dyAwt = dy,
+                        scrollAmount = platformLineScrollAmount,
+                    ),
+                )
             }
             TaoEventCode.SCROLL_PIXEL -> {
                 // AWT's macOS NSEvent → MouseWheelEvent conversion divides
@@ -557,7 +564,13 @@ class TaoWindow internal constructor(
                 // Negate as above for the AWT sign convention.
                 val dx = -(a / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION
                 val dy = -(b / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION
-                pointerScrollListener?.invoke(dx, dy)
+                pointerScrollListener?.invoke(
+                    TaoPointerScrollEvent(
+                        dxAwt = dx,
+                        dyAwt = dy,
+                        scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
+                    ),
+                )
             }
             // KEY_DOWN / KEY_UP: routed in Phase 2b (no logical-key encoding yet)
         }
@@ -565,11 +578,25 @@ class TaoWindow internal constructor(
 
     private companion object {
         const val SCROLL_FIXED_SCALE: Float = 100f
-        const val AWT_SCROLL_AMOUNT_DEFAULT: Float = 3f
+        const val LINUX_AWT_SCROLL_AMOUNT_DEFAULT: Int = 3
+        const val MACOS_AWT_SCROLL_AMOUNT: Int = 1
         const val AWT_PIXEL_TO_ROTATION: Float = 10f
         const val WINDOWS_TOUCH_DRAG_THRESHOLD_PX: Int = 16
+
+        val platformLineScrollAmount: Int
+            get() =
+                when (Platform.Current) {
+                    Platform.Linux -> LINUX_AWT_SCROLL_AMOUNT_DEFAULT
+                    else -> MACOS_AWT_SCROLL_AMOUNT
+                }
     }
 }
+
+internal data class TaoPointerScrollEvent(
+    val dxAwt: Float,
+    val dyAwt: Float,
+    val scrollAmount: Int,
+)
 
 private data class WindowsTitleBarTouchDrag(
     val touchId: Long,

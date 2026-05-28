@@ -19,6 +19,7 @@ dependencies {
     api(project(":decorated-window-core"))
     implementation(project(":core-runtime"))
     implementation(libs.compose.desktop.common)
+    testImplementation(kotlin("test"))
 }
 
 java {

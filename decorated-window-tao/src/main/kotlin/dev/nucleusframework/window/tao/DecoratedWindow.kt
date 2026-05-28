@@ -276,7 +276,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
-    window.onPointerScroll { dx, dy -> if (enabled) host.onPointerScroll(dx, dy) }
+    window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }
@@ -478,7 +478,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
-    window.onPointerScroll { dx, dy -> if (enabled) host.onPointerScroll(dx, dy) }
+    window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }
@@ -753,7 +753,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
-    window.onPointerScroll { dx, dy -> if (enabled) host.onPointerScroll(dx, dy) }
+    window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }

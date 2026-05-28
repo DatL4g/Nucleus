@@ -32,6 +32,7 @@ import dev.nucleusframework.window.tao.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
+import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
 import kotlinx.coroutines.CoroutineDispatcher
@@ -805,18 +806,22 @@ internal class TaoComposeSceneHostWindows(
         )
     }
 
-    fun onPointerScroll(
-        dxAwt: Float,
-        dyAwt: Float,
-    ) {
+    fun onPointerScroll(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Scroll,
             position = Offset(lastPointerX, lastPointerY),
-            scrollDelta = Offset(dxAwt, dyAwt),
+            scrollDelta = Offset(event.dxAwt, event.dyAwt),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
+            nativeEvent =
+                TaoSyntheticMouseWheelEvent.create(
+                    event = event,
+                    x = lastPointerX,
+                    y = lastPointerY,
+                    keyboardModifiers = currentKeyboardModifiers,
+                ),
         )
     }
 

@@ -34,6 +34,7 @@ import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoMainDispatcher
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoNativeViewHost
+import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
@@ -876,22 +877,26 @@ internal class TaoComposeSceneHost(
     }
 
     /**
-     * [dxAwt]/[dyAwt] are pre-shaped to match AWT `MouseWheelEvent.preciseWheelRotation`
-     * (see [TaoWindow.onPointerScroll]). Compose's `MacOSCocoaConfig` will then
-     * apply `× 10dp.toPx() × -scrollAmount` to convert into pixel scroll.
+     * [event] is pre-shaped to match AWT `MouseWheelEvent.preciseWheelRotation`
+     * and carries a synthetic native event so Compose's desktop scroll config
+     * can read `scrollAmount` and precise-wheel metadata like the AWT backend.
      */
-    fun onPointerScroll(
-        dxAwt: Float,
-        dyAwt: Float,
-    ) {
+    fun onPointerScroll(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Scroll,
             position = Offset(lastPointerX, lastPointerY),
-            scrollDelta = Offset(dxAwt, dyAwt),
+            scrollDelta = Offset(event.dxAwt, event.dyAwt),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
+            nativeEvent =
+                TaoSyntheticMouseWheelEvent.create(
+                    event = event,
+                    x = lastPointerX,
+                    y = lastPointerY,
+                    keyboardModifiers = currentKeyboardModifiers,
+                ),
         )
     }
 
