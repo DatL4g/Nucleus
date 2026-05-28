@@ -37,6 +37,7 @@ import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.initialMacOsScaleFactor
 import dev.nucleusframework.window.tao.shouldApplyLargeCornerRadius
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
@@ -230,7 +231,7 @@ internal class TaoComposeSceneHost(
         val queuePtr = NativeMetalBridge.nativeQueuePtr(handle)
         directContext = DirectContext.makeMetal(devicePtr, queuePtr)
 
-        scale = NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f
+        scale = initialMacOsScaleFactor(window)
 
         // CRITICAL: provide our own MonotonicFrameClock (BroadcastFrameClock)
         // in the scene's coroutineContext. Without one, Compose's recomposer

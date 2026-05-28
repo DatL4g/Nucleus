@@ -20,6 +20,7 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
+import kotlin.math.roundToInt
 
 /**
  * Composable variant of [openDecoratedWindow]. API mirrors
@@ -66,6 +67,7 @@ fun ApplicationScope.DecoratedWindow(
     val latestState by rememberUpdatedState(state)
 
     state.inflateToMinimumSize(minimumSize)
+    state.applyMacOsInitialMaximizedSize()
 
     // Mirrors Compose Desktop's `appliedState` pattern: tracks the last value
     // we wrote to the window so the native→state listeners can ignore echoes.
@@ -280,6 +282,33 @@ fun ApplicationScope.DecoratedWindow(
             icon.toRgbaIcon()?.let { (w, h, px) -> window.setIcon(w, h, px) }
         } else {
             window.setIcon(0, 0, ByteArray(0))
+        }
+    }
+}
+
+/**
+ * Mirrors the AWT backend's first-frame maximized fix on macOS.
+ *
+ * The native work area is reported in physical pixels, but [WindowState.size]
+ * is public Compose API and must stay in dp / macOS points.
+ */
+@Composable
+private fun WindowState.applyMacOsInitialMaximizedSize() {
+    remember(this) {
+        if (
+            Platform.Current == Platform.MacOS &&
+            placement == WindowPlacement.Maximized &&
+            NativeTaoMacOsDecoBridge.isLoaded
+        ) {
+            val workArea = NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorWorkArea()
+            val scale = primaryMacOsScaleFactor().toDouble()
+            if (workArea != null && workArea.size == 4 && scale > 0.0) {
+                val width = (workArea[2] / scale).roundToInt()
+                val height = (workArea[3] / scale).roundToInt()
+                if (width > 0 && height > 0) {
+                    size = DpSize(width.dp, height.dp)
+                }
+            }
         }
     }
 }

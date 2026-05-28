@@ -29,6 +29,7 @@ import dev.nucleusframework.window.tao.render.LocalTaoPopupHost
 import dev.nucleusframework.window.tao.render.TaoComposeSceneHost
 import dev.nucleusframework.window.tao.render.TaoComposeSceneHostLinux
 import dev.nucleusframework.window.tao.render.TaoComposeSceneHostWindows
+import kotlin.math.roundToInt
 
 /**
  * Holds the title-bar height (in dp / macOS points) currently requested by the
@@ -230,14 +231,11 @@ internal fun ApplicationScope.openDecoratedWindow(
                 }
             }
         }
-        // For an initially-maximized window, EVENT_WINDOW_READY carries the
-        // requested *logical* size (e.g. 800x600). Tao's macOS backend now
-        // applies the zoom synchronously during `build()` (so the NSWindow's
-        // frame already matches `visibleFrame` by the time we get here), but
-        // the dispatched size still reflects the original request. Swap it for
-        // the primary screen's `visibleFrame` so Compose lays out at the
-        // maximized size on the very first frame — mirrors the Windows path.
-        val (initialW, initialH) = initialMacOsSize(w, h, maximized)
+        // EVENT_WINDOW_READY carries the requested logical size (e.g. 800x600),
+        // while the Metal host expects physical pixels paired with Density(scale).
+        // For maximized windows, use the screen visibleFrame because Tao applies
+        // the zoom synchronously during build(); otherwise scale the fallback.
+        val (initialW, initialH) = initialMacOsSize(window, w, h, maximized)
         host.onResized(initialW, initialH)
         host.onRedrawRequested()
         if (visible) window.show()
@@ -535,16 +533,34 @@ private fun pushA11yBoundsLinux(
 }
 
 private fun initialMacOsSize(
+    window: TaoWindow,
     fallbackW: Int,
     fallbackH: Int,
     maximized: Boolean,
 ): Pair<Int, Int> {
-    if (!maximized || !NativeTaoMacOsDecoBridge.isLoaded) return fallbackW to fallbackH
-    val workArea = NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return fallbackW to fallbackH
-    if (workArea.size != 4) return fallbackW to fallbackH
+    fun fallbackPhysicalSize(): Pair<Int, Int> {
+        val scale = initialMacOsScaleFactor(window).toDouble()
+        return (fallbackW * scale).roundToInt() to (fallbackH * scale).roundToInt()
+    }
+
+    if (!maximized || !NativeTaoMacOsDecoBridge.isLoaded) return fallbackPhysicalSize()
+    val workArea = NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return fallbackPhysicalSize()
+    if (workArea.size != 4) return fallbackPhysicalSize()
     val width = workArea[2].toInt()
     val height = workArea[3].toInt()
-    return if (width > 0 && height > 0) width to height else fallbackW to fallbackH
+    return if (width > 0 && height > 0) width to height else fallbackPhysicalSize()
+}
+
+internal fun initialMacOsScaleFactor(window: TaoWindow): Float {
+    val windowScale = NativeTaoBridge.nativeScaleFactor(window.handle).coerceAtLeast(1000) / 1000f
+    return maxOf(windowScale, primaryMacOsScaleFactor())
+}
+
+internal fun primaryMacOsScaleFactor(): Float {
+    if (!NativeTaoMacOsDecoBridge.isLoaded) return 1f
+    return NativeTaoMacOsDecoBridge
+        .nativeGetPrimaryMonitorScaleMilli()
+        .coerceAtLeast(1000) / 1000f
 }
 
 private fun initialLinuxSize(

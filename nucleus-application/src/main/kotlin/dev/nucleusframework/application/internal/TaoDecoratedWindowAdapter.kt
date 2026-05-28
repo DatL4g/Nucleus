@@ -7,6 +7,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
 import dev.nucleusframework.application.LocalNucleusBackend
@@ -80,8 +81,18 @@ internal object TaoDecoratedWindowAdapter {
                         TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
                     }
                 ObserveSingleInstanceRestore(nucleusWindow)
+                // outerLocals were captured in the OUTER application composition
+                // (NoOpApplier with GlobalDensity = Density(1f)). Blindly applying
+                // them inside the scene would override LocalDensity with the
+                // platform-incorrect 1.0 (the scene's own owner.density mirrors
+                // the screen's backing scale and is what Compose layout expects).
+                // Snapshot the scene's density BEFORE applying outerLocals so we
+                // can re-provide it inside. LocalLayoutDirection is intentionally
+                // left to outerLocals so an app-level RTL override propagates here.
+                val sceneDensity = LocalDensity.current
                 CompositionLocalProvider(outerLocals) {
                     CompositionLocalProvider(
+                        LocalDensity provides sceneDensity,
                         LocalNucleusBackend provides NucleusBackend.Tao,
                         LocalNucleusWindow provides nucleusWindow,
                     ) {
