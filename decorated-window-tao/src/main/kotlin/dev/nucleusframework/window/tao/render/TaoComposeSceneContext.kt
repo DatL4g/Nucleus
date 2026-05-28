@@ -9,16 +9,12 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 
 /**
- * `ComposeSceneContext` plugged into `PlatformLayersComposeScene` so that
- * every Compose `Popup` / `DropdownMenu` / `Tooltip` / text-field context
- * menu in the host scene materialises as a [TaoPopupSceneLayer] — a
- * borderless transparent `NSPanel` attached as a child window of the host
- * `NSWindow`. That gives us, on macOS, exactly the architecture Compose
- * iOS uses for `Popup`s with sibling `UIView` overlay layers, modulo the
- * fact that AppKit's `NSPanel` is a strictly cheaper and more powerful
- * primitive than `UIWindow`.
+ * `ComposeSceneContext` used by macOS overlay scenes that must lift
+ * Compose `Popup` / `DropdownMenu` / `Tooltip` content above embedded
+ * AppKit views. The main window scene stays fully Compose-rendered via
+ * `CanvasLayersComposeScene`, matching Windows and Linux.
  *
- * Threading: `createLayer` is invoked from the host scene's composition,
+ * Threading: `createLayer` is invoked from the overlay scene's composition,
  * which runs on the macOS main thread.
  */
 @OptIn(InternalComposeUiApi::class)

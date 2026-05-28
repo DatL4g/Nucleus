@@ -27,12 +27,11 @@ import dev.nucleusframework.window.tao.PopupNativeBridge
 import org.jetbrains.skia.DirectContext
 
 /**
- * Phase 3 — `ComposeSceneLayer` implementation that backs each Compose
- * `Popup` / `DropdownMenu` / `Tooltip` with its own borderless transparent
- * `NSPanel` (child of the host `NSWindow`). Plugged into the rendering
- * pipeline via [TaoComposeSceneContext]'s `createLayer`, which is what
- * `PlatformLayersComposeScene` consults whenever the popup framework
- * mounts a new layer.
+ * `ComposeSceneLayer` implementation used by macOS overlay scenes to back
+ * Compose `Popup` / `DropdownMenu` / `Tooltip` content with a borderless
+ * transparent `NSPanel` child of the host `NSWindow`. The main window scene
+ * intentionally does not use this path; its popups are rendered in the same
+ * Compose target as the rest of the UI.
  *
  * **Three failure modes from the post-mortem are explicitly avoided:**
  *  1. *Render-driving model*: the layer registers a per-frame callback

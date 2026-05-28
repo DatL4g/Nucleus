@@ -16,10 +16,9 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
-import androidx.compose.ui.scene.ComposeSceneContext
 import androidx.compose.ui.scene.ComposeScenePointer
-import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -249,11 +248,6 @@ internal class TaoComposeSceneHost(
                 outboundLauncher = ::launchMacOsOutboundDrag,
             )
 
-        // Use `PlatformLayersComposeScene` so Compose's Popup framework
-        // routes layer creation through `TaoComposeSceneContext`: each
-        // Popup/DropdownMenu becomes a `TaoPopupSceneLayer` backed by its
-        // own NSPanel, which is what makes popups appear above any AppKit
-        // subview embedded in the host window (e.g. a `WKWebView`).
         val taoPlatformContext =
             TaoPlatformContext(
                 windowHandle = window.handle,
@@ -276,27 +270,19 @@ internal class TaoComposeSceneHost(
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
             )
-        val popupHostInstance = popupHost()
-        val composeSceneContext =
-            if (popupHostInstance != null) {
-                TaoComposeSceneContext(
-                    platformContext = taoPlatformContext,
-                    popupHost = popupHostInstance,
-                )
-            } else {
-                // Fallback if attach() hasn't resolved the NSView handle yet.
-                object : ComposeSceneContext {
-                    override val platformContext: PlatformContext = taoPlatformContext
-                }
-            }
 
         scene =
-            PlatformLayersComposeScene(
+            // Match Windows and Linux for the main host scene: Compose
+            // Popup / DropdownMenu / Tooltip content stays in the same
+            // Metal render target instead of becoming a native NSPanel.
+            // NativeView overlay scenes still opt into TaoComposeSceneContext
+            // when their popups must float above an embedded AppKit view.
+            CanvasLayersComposeScene(
                 density = Density(scale),
                 layoutDirection = GlobalLayoutDirection,
                 size = IntSize(widthPx, heightPx),
                 coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                composeSceneContext = composeSceneContext,
+                platformContext = taoPlatformContext,
                 invalidate = {
                     window.requestRedraw()
                 },
