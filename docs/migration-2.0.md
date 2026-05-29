@@ -130,6 +130,22 @@ Examples:
 
 There are no class renames at this step — only the package prefix changes.
 
+### Don't forget your ProGuard / R8 keep rules
+
+The find & replace must also reach your `proguard-rules.pro`. This is easy to miss because the build still compiles and a non-minified `run` works — the stale rules only bite a **release (ProGuard) build**, and they fail silently: a keep that points at a class that no longer exists is a no-op, not an error.
+
+```diff
+-# Nucleus decorated-window JNI
+-keep class io.github.kdroidfilter.nucleus.window.utils.macos.NativeMacBridge {
++-keep class dev.nucleusframework.window.utils.macos.NativeMacBridge {
+     native <methods>;
+ }
+--keep class io.github.kdroidfilter.nucleus.window.** { *; }
++-keep class dev.nucleusframework.window.** { *; }
+```
+
+This matters most if your app **overrides** the plugin's default ProGuard config via `proguard { configurationFiles.from(...) }` — then you own the Nucleus JNI keeps yourself, and the plugin won't inject its own as a fallback. The native bridges resolve their Java callbacks *by name* through JNI (`FindClass` + `GetMethodID`), so once a keep stops matching, ProGuard obfuscates the callback and the lookup blows up at runtime. See the [`NoSuchMethodError` entry under Troubleshooting](#troubleshooting) for the symptom.
+
 ---
 
 ## Step 3 — Switch to `nucleusApplication`
@@ -450,6 +466,23 @@ No ordered init list. No `SingleInstanceManager` plumbing. No restore counter an
 
 **My imports won't resolve after the rename.**
 Search the project for `io.github.kdroidfilter.nucleus` — anything left over is a stale import. The replacement is always `dev.nucleusframework`.
+
+**A release build crashes with `NoSuchMethodError` (or `UnsatisfiedLinkError`) from a native bridge.**
+Symptom — the debug `run` works, GraalVM/native-image builds work, but the ProGuard release path dies on startup:
+
+```
+Exception in thread "main" java.lang.NoSuchMethodError: onEvent
+    at dev.nucleusframework.window.tao.NativeTaoBridge.nativeRunBlocking(Native Method)
+    at dev.nucleusframework.window.tao.TaoApplication.run(TaoApplication.kt:50)
+```
+
+Your ProGuard keep rules still reference the old `io.github.kdroidfilter.nucleus.*` package, so they no longer match the renamed 2.0 classes. The Nucleus native libraries call back into Kotlin *by name* through JNI; once the keep stops matching, ProGuard renames the callback (`onEvent`, `onThemeChanged`, …) and the native lookup fails. ProGuard flags the dead rules as notes you can grep the build log for:
+
+```
+Note: the configuration refers to the unknown class 'io.github.kdroidfilter.nucleus.window.utils.macos.NativeMacBridge'
+```
+
+Fix: apply the namespace rename to `proguard-rules.pro` as well — see [Step 2 → keep rules](#dont-forget-your-proguard--r8-keep-rules).
 
 **`nucleusApplication` is unresolved.**
 Add `implementation("dev.nucleusframework:nucleus.nucleus-application:2.0.0")` to the module's dependencies. The runtime split moved `nucleusApplication` out of `core-runtime`.
