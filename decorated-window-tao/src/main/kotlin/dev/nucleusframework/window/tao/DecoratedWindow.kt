@@ -295,8 +295,9 @@ internal fun ApplicationScope.openDecoratedWindow(
         host.onFocusChanged(focused)
     }
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
-    // so `scope.state.isMinimized` (read by app code) reflects it. Windows-only
-    // for now (see native dispatch_minimized_if_changed TODOs for mac/linux).
+    // so `scope.state.isMinimized` (read by app code) reflects it. Wired on
+    // macOS (windowDidMiniaturize/Deminiaturize) and Windows; Linux is still a
+    // no-op (see the native event_loop.rs TODO).
     window.onMinimizedChanged { minimized ->
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
@@ -788,8 +789,9 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.onFocusChanged(focused)
     }
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
-    // so `scope.state.isMinimized` (read by app code) reflects it. Windows-only
-    // for now (see native dispatch_minimized_if_changed TODOs for mac/linux).
+    // so `scope.state.isMinimized` (read by app code) reflects it. Wired on
+    // macOS (windowDidMiniaturize/Deminiaturize) and Windows; Linux is still a
+    // no-op (see the native event_loop.rs TODO).
     window.onMinimizedChanged { minimized ->
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)

@@ -209,6 +209,15 @@ static WINDOW_DELEGATE_CLASS: Lazy<WindowDelegateClass> = Lazy::new(|| unsafe {
     sel!(windowDidResignKey:),
     window_did_resign_key as extern "C" fn(_, _, _),
   );
+  // PATCH(nucleus): deterministic minimize/restore signal (see MINIMIZED_HOOK).
+  decl.add_method(
+    sel!(windowDidMiniaturize:),
+    window_did_miniaturize as extern "C" fn(_, _, _),
+  );
+  decl.add_method(
+    sel!(windowDidDeminiaturize:),
+    window_did_deminiaturize as extern "C" fn(_, _, _),
+  );
 
   decl.add_method(
     sel!(draggingEntered:),
@@ -411,6 +420,28 @@ extern "C" fn window_did_resign_key(this: &Object, _: Sel, _: id) {
     state.emit_event(WindowEvent::Focused(false));
   });
   trace!("Completed `windowDidResignKey:`");
+}
+
+// PATCH(nucleus): minimize/restore hook. AppKit calls these on every
+// miniaturize/deminiaturize transition (yellow button, Cmd-M, Window menu,
+// Dock, Mission Control). The hook only posts a user event back to the loop —
+// see `MINIMIZED_HOOK` and `set_minimized_hook` in `platform/macos.rs`.
+fn fire_minimized_hook(state: &mut WindowDelegateState, minimized: bool) {
+  if let Some(hook) = crate::platform::macos::MINIMIZED_HOOK.get() {
+    hook(WindowId(get_window_id(&state.ns_window)), minimized);
+  }
+}
+
+extern "C" fn window_did_miniaturize(this: &Object, _: Sel, _: id) {
+  trace!("Triggered `windowDidMiniaturize:`");
+  with_state(this, |state| fire_minimized_hook(state, true));
+  trace!("Completed `windowDidMiniaturize:`");
+}
+
+extern "C" fn window_did_deminiaturize(this: &Object, _: Sel, _: id) {
+  trace!("Triggered `windowDidDeminiaturize:`");
+  with_state(this, |state| fire_minimized_hook(state, false));
+  trace!("Completed `windowDidDeminiaturize:`");
 }
 
 /// Invoked when the dragged image enters destination bounds or frame

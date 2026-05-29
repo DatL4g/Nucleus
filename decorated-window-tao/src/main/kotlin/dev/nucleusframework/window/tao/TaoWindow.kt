@@ -450,10 +450,11 @@ class TaoWindow internal constructor(
 
     /**
      * Multi-cast: fires whenever the window's minimized (iconified) state flips,
-     * including OS-driven minimize (taskbar, Win+D) and the title-bar button.
+     * including OS-driven minimize (taskbar, Win+D, Dock, Cmd-M) and the
+     * title-bar button.
      *
-     * Windows-only for now — see the TODOs in the native `event_loop.rs`
-     * (`dispatch_minimized_if_changed`) for the macOS / Linux follow-up.
+     * Wired on macOS (windowDidMiniaturize/Deminiaturize) and Windows (WM_SIZE
+     * hook). Linux is still pending — see the TODO in the native `event_loop.rs`.
      */
     fun onMinimizedChanged(block: (minimized: Boolean) -> Unit) {
         minimizedListeners += block

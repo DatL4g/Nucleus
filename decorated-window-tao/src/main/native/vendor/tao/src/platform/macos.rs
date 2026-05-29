@@ -456,3 +456,26 @@ impl<T> EventLoopWindowTargetExtMacOS for EventLoopWindowTarget<T> {
     set_badge_label(label);
   }
 }
+
+// PATCH(nucleus): event-driven minimize/restore hook (mirrors the Windows
+// hook in `platform/windows.rs`).
+//
+// Tao has no `WindowEvent::Minimized`. On macOS, NSWindow miniaturize/
+// deminiaturize never goes through a resize message, so there is nothing to
+// observe via `WindowEvent::Resized`. Rather than add an enum variant — which
+// would ripple through every exhaustive `WindowEvent` match — the window
+// delegate calls this hook from `windowDidMiniaturize:` /
+// `windowDidDeminiaturize:`. The embedder installs a fn pointer and dispatches
+// its own minimized event deterministically (`true` = minimized, `false` =
+// restored).
+pub(crate) static MINIMIZED_HOOK: std::sync::OnceLock<fn(crate::window::WindowId, bool)> =
+  std::sync::OnceLock::new();
+
+/// Install a hook invoked from the window delegate whenever a window's
+/// minimized state changes (`true` = miniaturized, `false` = deminiaturized).
+/// Idempotent: the first installed hook wins. The hook runs on the main thread
+/// inside the AppKit delegate callback, so it must not block or pump the loop —
+/// it should only post a user event back to the event loop.
+pub fn set_minimized_hook(hook: fn(crate::window::WindowId, bool)) {
+  let _ = MINIMIZED_HOOK.set(hook);
+}

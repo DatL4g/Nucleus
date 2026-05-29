@@ -180,10 +180,11 @@ pub(crate) enum UserEvent {
     RequestClose { handle: u64 },
     SetMaximized { handle: u64, maximized: bool },
     SetMinimized { handle: u64, minimized: bool },
-    /// Posted by the WM_SIZE minimize hook (Windows). Carries the tao WindowId
-    /// so the loop can resolve our handle and dispatch EVENT_MINIMIZED at a safe
-    /// point — never from inside the WndProc. See `on_tao_minimized`.
-    #[cfg(target_os = "windows")]
+    /// Posted by the platform minimize hook (Windows WM_SIZE / macOS window
+    /// delegate). Carries the tao WindowId so the loop can resolve our handle
+    /// and dispatch EVENT_MINIMIZED at a safe point — never from inside the
+    /// WndProc or the AppKit delegate callback. See `on_tao_minimized`.
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     MinimizedChanged {
         window_id: tao::window::WindowId,
         minimized: bool,
