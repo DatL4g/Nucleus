@@ -23,6 +23,10 @@ public final class TaoTransferableAccess {
      * Returns the underlying AWT {@link Transferable} that backs the given
      * Compose {@link DragAndDropTransferable}, or {@code null} if the
      * transferable was not produced by Compose's AWT-bound factory.
+     *
+     * @param transferable the Compose drag-and-drop transferable to unwrap
+     * @return the backing AWT {@link Transferable}, or {@code null} if the
+     *         transferable was not produced by Compose's AWT-bound factory
      */
     public static Transferable toAwt(DragAndDropTransferable transferable) {
         if (transferable instanceof AwtDragAndDropTransferable) {

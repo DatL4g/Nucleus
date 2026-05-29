@@ -145,6 +145,17 @@ pub(crate) fn run_event_loop_blocking() {
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             w.set_visible(visible);
+                            // Force a fresh frame into the now-composited surface.
+                            // The first frame is rendered (SwapBuffers) while the
+                            // HWND is still hidden, but WGL/DWM does not reliably
+                            // retain that pre-show swap once ShowWindow composites
+                            // the window — it can reveal an undefined/black front
+                            // buffer until the next redraw. Re-presenting here
+                            // guarantees the content paints the instant the window
+                            // appears.
+                            if visible {
+                                w.request_redraw();
+                            }
                         }
                     }
                 }
