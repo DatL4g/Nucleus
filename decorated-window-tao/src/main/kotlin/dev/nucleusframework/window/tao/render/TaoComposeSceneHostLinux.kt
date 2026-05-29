@@ -206,8 +206,9 @@ internal class TaoComposeSceneHostLinux(
     // `RoundRectangle2D.Float(0, 0, w, h, gnomeCornerArc, gnomeCornerArc)` —
     // RoundRectangle2D's `arcw`/`arch` arguments are the full arc *width*
     // (= 2 × radius), not the radius itself. So `gnomeCornerArc = 24f` paints
-    // a 12 px radius, and `kdeCornerArc = 10f` paints a 5 px radius. Values
-    // are physical pixels regardless of scale, matching the AWT path.
+    // a 12 px radius, and `kdeCornerArc = 10f` paints a 5 px radius. These are
+    // *logical* pixels: the carve path multiplies by `scale` before drawing
+    // (the canvas works in physical pixels with no scale transform).
     private val cornerRadiusPx: Int =
         when (LinuxDesktopEnvironment.Current) {
             LinuxDesktopEnvironment.Gnome -> 12
@@ -961,7 +962,12 @@ internal class TaoComposeSceneHostLinux(
         surface.canvas.clear(0x00000000)
         sc.render(surface.canvas.asComposeCanvas(), now)
         if (cornerRadiusPx > 0 && !window.isMaximized && !window.isFullscreen) {
-            carveRoundedCorners(surface.canvas, widthPx, heightPx, cornerRadiusPx)
+            // widthPx/heightPx are physical pixels and the canvas has no scale
+            // transform, so the logical radius must be scaled up to physical to
+            // keep the corner curvature constant in logical terms across DPI
+            // (the AWT path gets this for free via Graphics2D's scale transform).
+            val radiusPhysical = (cornerRadiusPx * scale).roundToInt().coerceAtLeast(1)
+            carveRoundedCorners(surface.canvas, widthPx, heightPx, radiusPhysical)
         }
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
