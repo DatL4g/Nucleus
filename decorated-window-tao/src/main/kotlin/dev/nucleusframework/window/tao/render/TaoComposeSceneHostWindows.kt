@@ -14,7 +14,6 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerButton
-import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -86,6 +85,9 @@ internal class TaoComposeSceneHostWindows(
     private var scene: ComposeScene? = null
     private val frameClock = BroadcastFrameClock()
     private val flushingDispatcher = FlushingMainDispatcher()
+
+    /** Floating text-selection bar shown on touch selection. */
+    private val textToolbar = TaoTextToolbar()
 
     private var widthPx: Int = 0
     private var heightPx: Int = 0
@@ -209,6 +211,7 @@ internal class TaoComposeSceneHostWindows(
                 windowInfo = windowInfo,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
+                textToolbar = textToolbar,
             )
         scene =
             CanvasLayersComposeScene(
@@ -347,38 +350,18 @@ internal class TaoComposeSceneHostWindows(
                     position = Offset(t.xPx, t.yPx),
                     pressed = t.pressed,
                     type = PointerType.Touch,
+                    pressure = t.pressure,
                 )
             }
-        // Compose Desktop's `clickable`, `detectTapGestures` and other higher-
-        // level pointer modifiers gate "primary click" on either
-        // `PointerEvent.button == Primary` (the event-level button) or
-        // `PointerEvent.buttons.isPrimaryPressed` (the snapshot mask). For
-        // touch, neither is set by default. AWT's touchscreen path on JVM
-        // (java.awt.event.MouseEvent.BUTTON1) and Compose's iOS / Android
-        // backends both synthesise BUTTON1 / primary so taps reach
-        // `clickable`. We mirror that here: report `Primary` on Press,
-        // Move-with-contact, and clear on Release.
-        val anyPressed = pointers.any { it.pressed }
-        val touchButton =
-            when (composeType) {
-                PointerEventType.Press -> PointerButton.Primary
-                PointerEventType.Release -> PointerButton.Primary
-                else -> null
-            }
-        val touchButtons =
-            if (anyPressed) {
-                PointerButtons(
-                    isPrimaryPressed = true,
-                )
-            } else {
-                PointerButtons()
-            }
+        // Match Compose iOS (`ComposeSceneMediator.uikit.kt`): direct
+        // touchscreen contacts are PointerType.Touch events with no
+        // event-level button and an empty button mask. Skiko's primary
+        // matcher treats Touch itself as primary; synthesising BUTTON1 here
+        // prevents touch long-press/onClick matchers from recognizing it.
         sc.sendPointerEvent(
             eventType = composeType,
             pointers = pointers,
-            buttons = touchButtons,
             keyboardModifiers = currentKeyboardModifiers,
-            button = touchButton,
         )
 
         // Purge after the dispatch so the JVM saw the released finger one
@@ -608,7 +591,9 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        scene?.setContent {
+            TaoTextToolbarHost(textToolbar, content)
+        }
     }
 
     fun onResized(
@@ -1080,6 +1065,7 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun detach() {
+        textToolbar.hide()
         scene?.close()
         scene = null
         if (directContext != null) {
@@ -1178,6 +1164,7 @@ private class WindowsTaoPlatformContext(
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
+    override val textToolbar: androidx.compose.ui.platform.TextToolbar,
 ) : androidx.compose.ui.platform.PlatformContext.Empty() {
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =
         object : androidx.compose.ui.platform.PlatformWindowInsets {

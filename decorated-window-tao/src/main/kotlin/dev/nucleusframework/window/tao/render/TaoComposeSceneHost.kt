@@ -135,6 +135,9 @@ internal class TaoComposeSceneHost(
     // layout".
     private val flushingDispatcher = FlushingMainDispatcher()
 
+    /** Floating text-selection bar shown on touch selection. */
+    private val textToolbar = TaoTextToolbar()
+
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
@@ -272,6 +275,7 @@ internal class TaoComposeSceneHost(
                 windowInfo = windowInfo,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
+                textToolbar = textToolbar,
             )
 
         scene =
@@ -512,7 +516,9 @@ internal class TaoComposeSceneHost(
     }
 
     fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        scene?.setContent {
+            TaoTextToolbarHost(textToolbar, content)
+        }
     }
 
     fun onResized(
@@ -1172,6 +1178,7 @@ internal class TaoComposeSceneHost(
     }
 
     fun detach() {
+        textToolbar.hide()
         scene?.close()
         scene = null
         directContext?.close()
@@ -1277,6 +1284,7 @@ private class TaoPlatformContext(
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
     override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
+    override val textToolbar: androidx.compose.ui.platform.TextToolbar,
 ) : PlatformContext.Empty() {
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic

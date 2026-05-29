@@ -106,6 +106,9 @@ internal class TaoComposeSceneHostLinux(
     private val frameClock = BroadcastFrameClock()
     private val flushingDispatcher = FlushingMainDispatcher()
 
+    /** Floating text-selection bar shown on touch selection. */
+    private val textToolbar = TaoTextToolbar()
+
     /**
      * Coalesces `window.requestRedraw()` to one outstanding redraw per frame.
      * Multiple Compose call sites trigger redraws (the scene's `invalidate`
@@ -318,6 +321,7 @@ internal class TaoComposeSceneHostLinux(
                         windowInfo = windowInfo,
                         semanticsOwnerListener = semanticsOwnerListener,
                         dragAndDropManager = dndManager,
+                        textToolbar = textToolbar,
                     ),
                 invalidate = {
                     requestRedrawCoalesced()
@@ -761,7 +765,7 @@ internal class TaoComposeSceneHostLinux(
             androidx.compose.runtime.SideEffect {
                 capturedFocusManager = fm
             }
-            content()
+            TaoTextToolbarHost(textToolbar, content)
         }
     }
 
@@ -1295,6 +1299,7 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun detach() {
+        textToolbar.hide()
         if (dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.isLoaded &&
             window.handle != 0L
         ) {
@@ -1534,6 +1539,7 @@ private class LinuxTaoPlatformContext(
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener?,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
+    override val textToolbar: androidx.compose.ui.platform.TextToolbar,
 ) : androidx.compose.ui.platform.PlatformContext.Empty() {
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =
         object : androidx.compose.ui.platform.PlatformWindowInsets {
