@@ -17,6 +17,7 @@ import dev.nucleusframework.desktop.application.tasks.AbstractGenerateAotCacheTa
 import dev.nucleusframework.desktop.application.tasks.AbstractGenerateAppPropertiesTask
 import dev.nucleusframework.desktop.application.tasks.AbstractJLinkTask
 import dev.nucleusframework.desktop.application.tasks.AbstractJPackageTask
+import dev.nucleusframework.desktop.application.tasks.AbstractMergeUpdateYmlTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNotarizationTask
 import dev.nucleusframework.desktop.application.tasks.AbstractPatchCaCertificatesTask
 import dev.nucleusframework.desktop.application.tasks.AbstractPatchMacJvmTask
@@ -513,6 +514,13 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val packageFormats = nonStorePackageFormats + storePackageFormats
     val allNotarizeTasks = nonStoreNotarizeTasks + storeNotarizeTasks
 
+    // When several formats of the current OS publish to S3, electron-builder would have each
+    // per-format run upload its own single-artifact `<channel><osSuffix>.yml` to the same key,
+    // clobbering the others. Suppress those uploads (publishAutoUpdate: false) and publish one
+    // merged manifest instead.
+    val mergeUpdateYml: TaskProvider<AbstractMergeUpdateYmlTask>? =
+        registerUpdateYmlMergeIfNeeded(nonStoreFormats, nonStorePackageFormats)
+
     val notarizeForCurrentOS =
         if (allNotarizeTasks.isNotEmpty()) {
             tasks.register<DefaultTask>(
@@ -532,6 +540,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         ) {
             dependsOn(packageFormats)
             notarizeForCurrentOS?.let { dependsOn(it) }
+            mergeUpdateYml?.let { dependsOn(it) }
         }
 
     if (buildType === app.buildTypes.default) {
@@ -622,6 +631,50 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         tasks.register<JavaExec>(taskNameAction = "run") {
             configureRunTask(this, commonTasks.prepareAppResources, runProguard, patchMacJvmTask)
         }
+}
+
+/**
+ * Registers a task that merges the per-format auto-update manifests of the current OS and uploads
+ * the union to S3. electron-builder is always told `publishAutoUpdate: false` for S3 (in the
+ * config generator), so the plugin owns the single `<channel><osSuffix>.yml` key that every format
+ * (and arch) shares — for one format it publishes that manifest verbatim, for several their union.
+ *
+ * Returns null when S3 is not enabled, or when no auto-updatable format
+ * (see [TargetFormat.producesUpdateManifest]) is compatible with the current OS — in which case
+ * there is no manifest to publish.
+ */
+private fun JvmApplicationContext.registerUpdateYmlMergeIfNeeded(
+    nonStoreFormats: List<TargetFormat>,
+    nonStorePackageFormats: List<TaskProvider<AbstractElectronBuilderPackageTask>>,
+): TaskProvider<AbstractMergeUpdateYmlTask>? {
+    val s3 = app.nativeDistributions.publish.s3
+    if (!s3.enabled) return null
+
+    val updatableTasks =
+        nonStoreFormats.zip(nonStorePackageFormats)
+            .filter { (format, _) -> format.isCompatibleWithCurrentOS && format.producesUpdateManifest }
+            .map { (_, task) -> task }
+    if (updatableTasks.isEmpty()) return null
+
+    return tasks.register<AbstractMergeUpdateYmlTask>(
+        taskNameAction = "merge",
+        taskNameObject = "updateYml",
+    ) {
+        dependsOn(updatableTasks)
+        perFormatOutputDirs.from(updatableTasks.map { provider -> provider.flatMap { it.destinationDir } })
+        s3Enabled.set(true)
+        // S3 settings are plain DSL `var`s; read them in this (deferred) configure block, where they
+        // are final, and only set the optional properties when present.
+        s3.bucket?.let { s3Bucket.set(it) }
+        s3.region?.let { s3Region.set(it) }
+        s3.path?.let { s3Path.set(it) }
+        s3.acl?.let { s3Acl.set(it) }
+        publishMode.set(NucleusProperties.electronBuilderPublishMode(project.providers))
+        dslPublishMode.set(app.nativeDistributions.publish.publishMode.id)
+        destinationDir.set(
+            app.nativeDistributions.outputBaseDir.map { it.dir("$appDirName/merged-update-yml") },
+        )
+    }
 }
 
 private fun JvmApplicationContext.configureProguardTask(
