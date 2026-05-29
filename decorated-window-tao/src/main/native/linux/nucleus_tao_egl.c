@@ -67,7 +67,7 @@
 #include <string.h>
 #include <dlfcn.h>
 
-#define NUCLEUS_TAO_EGL_DEBUG 1
+#define NUCLEUS_TAO_EGL_DEBUG 0
 #if NUCLEUS_TAO_EGL_DEBUG
 #define DBG(...) fprintf(stderr, "[nucleus_tao_egl] " __VA_ARGS__)
 #else
@@ -531,19 +531,17 @@ static void log_egl_diagnostics_once(EGLDisplay edpy, int is_wayland) {
     if (!p_eglQueryString) return;
     const char *vendor  = p_eglQueryString(edpy, EGL_VENDOR);
     const char *version = p_eglQueryString(edpy, EGL_VERSION);
-    fprintf(stderr,
-            "[nucleus_tao_egl] EGL %s, vendor: %s, platform: %s\n",
-            version ? version : "?",
-            vendor  ? vendor  : "?",
-            is_wayland ? "Wayland" : "X11");
+    DBG("EGL %s, vendor: %s, platform: %s\n",
+        version ? version : "?",
+        vendor  ? vendor  : "?",
+        is_wayland ? "Wayland" : "X11");
     if (is_wayland && vendor && strstr(vendor, "NVIDIA")) {
-        fprintf(stderr,
-                "[nucleus_tao_egl] NOTE: NVIDIA Wayland — if drag-resize "
-                "stutters or hangs, ensure your distro ships the\n"
-                "[nucleus_tao_egl]       `egl-wayland2` package alongside "
-                "`egl-wayland` (driver 560+ uses the new dma-buf backend that\n"
-                "[nucleus_tao_egl]       supports proper EGLSurface resize; "
-                "the legacy egl-wayland cannot resize EGLSurfaces).\n");
+        DBG("NOTE: NVIDIA Wayland — if drag-resize "
+            "stutters or hangs, ensure your distro ships the\n"
+            "[nucleus_tao_egl]       `egl-wayland2` package alongside "
+            "`egl-wayland` (driver 560+ uses the new dma-buf backend that\n"
+            "[nucleus_tao_egl]       supports proper EGLSurface resize; "
+            "the legacy egl-wayland cannot resize EGLSurfaces).\n");
     }
 }
 
@@ -1490,13 +1488,13 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeSetInputRegion(
     JNIEnv *env, jclass clazz, jlong handle, jfloatArray rectsPx, jint count)
 {
     (void) clazz;
-    fprintf(stderr, "[nucleus_tao_egl] nativeSetInputRegion handle=0x%lx count=%d\n",
-            (unsigned long) handle, (int) count);
+    DBG("nativeSetInputRegion handle=0x%lx count=%d\n",
+        (unsigned long) handle, (int) count);
     if (handle == 0) return;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
-    fprintf(stderr, "[nucleus_tao_egl]   wl_child_surface=%p wl_compositor=%p child_xid=0x%lx\n",
-            (void *) att->wl_child_surface, (void *) att->wl_compositor,
-            (unsigned long) att->child_xid);
+    DBG("  wl_child_surface=%p wl_compositor=%p child_xid=0x%lx\n",
+        (void *) att->wl_child_surface, (void *) att->wl_compositor,
+        (unsigned long) att->child_xid);
 
     if (count < 0) count = 0;
     int safe_count = 0;
@@ -1509,8 +1507,8 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeSetInputRegion(
         jfloat *raw = (*env)->GetFloatArrayElements(env, rectsPx, NULL);
         if (raw != NULL) {
             for (int i = 0; i < safe_count; i++) {
-                fprintf(stderr, "[nucleus_tao_egl]   rect[%d] = (%g, %g, %g, %g)\n",
-                        i, raw[i*4+0], raw[i*4+1], raw[i*4+2], raw[i*4+3]);
+                DBG("  rect[%d] = (%g, %g, %g, %g)\n",
+                    i, raw[i*4+0], raw[i*4+1], raw[i*4+2], raw[i*4+3]);
             }
             (*env)->ReleaseFloatArrayElements(env, rectsPx, raw, JNI_ABORT);
         }
