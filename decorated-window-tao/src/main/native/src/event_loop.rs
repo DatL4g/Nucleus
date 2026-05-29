@@ -108,6 +108,9 @@ pub(crate) fn run_event_loop_blocking() {
     // event loop exits. run() calls process::exit() directly, which bypasses
     // JVM shutdown hooks (e.g. JDK 25 AOT cache writer, user shutdown hooks).
     use tao::platform::run_return::EventLoopExtRunReturn;
+    // Needed for the Wayland-only minimize hack below (`target.is_wayland()`).
+    #[cfg(target_os = "linux")]
+    use tao::platform::unix::EventLoopWindowTargetExtUnix;
     // Last reported minimized state per window handle — dedups the hook. On
     // Windows it fires on every non-minimized WM_SIZE (plain resizes included);
     // on macOS the delegate and on Linux the gated GTK signal fire only on real
@@ -231,11 +234,32 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                 }
                 UserEvent::SetMinimized { handle, minimized } => {
-                    let guard = WINDOWS.lock().unwrap();
-                    if let Some(map) = guard.as_ref() {
-                        if let Some(w) = map.get(&handle) {
-                            w.set_minimized(minimized);
+                    {
+                        let guard = WINDOWS.lock().unwrap();
+                        if let Some(map) = guard.as_ref() {
+                            if let Some(w) = map.get(&handle) {
+                                w.set_minimized(minimized);
+                            }
                         }
+                    }
+                    // WAYLAND-ONLY HACK. Wayland's xdg-shell never reports the
+                    // minimized state back (no such event exists — see
+                    // platform/linux.rs), so the GTK window-state-event hook
+                    // never fires and EVENT_MINIMIZED would never reach the JVM.
+                    // But *we* own the title-bar minimize button and this
+                    // app-driven path, so synthesize the notification ourselves
+                    // right after iconify/deiconify. On X11 the real
+                    // window-state-event already covers this, so gate on
+                    // is_wayland() (false under a forced XWayland renderer too)
+                    // to avoid a double dispatch. External minimize is still
+                    // unobservable on Wayland; external restore is best-effort
+                    // recovered from the focus-gained event below.
+                    #[cfg(target_os = "linux")]
+                    if target.is_wayland()
+                        && last_minimized.get(&handle).copied() != Some(minimized)
+                    {
+                        last_minimized.insert(handle, minimized);
+                        dispatch(handle, crate::events::EVENT_MINIMIZED, minimized as jint, 0);
                     }
                 }
                 // Posted from the platform minimize hook (safe point — no native
@@ -404,6 +428,22 @@ pub(crate) fn run_event_loop_blocking() {
                         );
                     }
                     WindowEvent::Focused(focused) => {
+                        // WAYLAND-ONLY HACK (restore half of the one above).
+                        // External restore (GNOME overview, KDE taskbar) emits
+                        // no un-minimize event on Wayland. A window cannot hold
+                        // keyboard focus while iconified, so a focus-gain while
+                        // we still believe we're minimized means it was
+                        // restored — clear the stale flag so state.isMinimized
+                        // recovers. X11 gets the real window-state-event, hence
+                        // the is_wayland() gate.
+                        #[cfg(target_os = "linux")]
+                        if focused
+                            && target.is_wayland()
+                            && last_minimized.get(&handle).copied() == Some(true)
+                        {
+                            last_minimized.insert(handle, false);
+                            dispatch(handle, crate::events::EVENT_MINIMIZED, 0, 0);
+                        }
                         let code = if focused {
                             EVENT_FOCUSED
                         } else {

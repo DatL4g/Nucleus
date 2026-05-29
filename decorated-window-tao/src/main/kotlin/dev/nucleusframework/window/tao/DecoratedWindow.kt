@@ -297,8 +297,10 @@ internal fun ApplicationScope.openDecoratedWindow(
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
     // so `scope.state.isMinimized` (read by app code) reflects it. Wired on all
     // three platforms: macOS (windowDidMiniaturize/Deminiaturize), Windows
-    // (WM_SIZE hook), and Linux (GTK window-state-event, X11 only — Wayland
-    // never reports an iconified state).
+    // (WM_SIZE hook), and Linux — X11 via the GTK window-state-event, Wayland
+    // via an app-driven synthesis hack (our minimize button / programmatic
+    // only; the protocol reports no iconified state, so external minimize from
+    // a taskbar isn't observable).
     window.onMinimizedChanged { minimized ->
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
@@ -500,8 +502,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     }
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
     // so `scope.state.isMinimized` (read by app code) reflects it. On Linux this
-    // flows from the GTK window-state-event ICONIFIED transition (X11 only —
-    // Wayland never reports an iconified state).
+    // flows from the GTK window-state-event ICONIFIED transition on X11; on
+    // Wayland it is synthesized from our own minimize action (the protocol
+    // reports no iconified state — external minimize isn't observable).
     window.onMinimizedChanged { minimized ->
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
@@ -793,8 +796,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
     // so `scope.state.isMinimized` (read by app code) reflects it. Wired on all
     // three platforms: macOS (windowDidMiniaturize/Deminiaturize), Windows
-    // (WM_SIZE hook), and Linux (GTK window-state-event, X11 only — Wayland
-    // never reports an iconified state).
+    // (WM_SIZE hook), and Linux — X11 via the GTK window-state-event, Wayland
+    // via an app-driven synthesis hack (our minimize button / programmatic
+    // only; the protocol reports no iconified state, so external minimize from
+    // a taskbar isn't observable).
     window.onMinimizedChanged { minimized ->
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)

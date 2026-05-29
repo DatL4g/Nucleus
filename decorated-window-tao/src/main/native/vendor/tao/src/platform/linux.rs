@@ -16,9 +16,13 @@
 // The embedder installs a fn pointer and dispatches its own minimized event
 // deterministically (`true` = minimized/iconified, `false` = restored).
 //
-// Caveat: this is effectively X11-only. Wayland's xdg-shell has a `set_minimized`
-// request but no event reporting the minimized state back, so GTK never raises
-// `GDK_WINDOW_STATE_ICONIFIED` on a Wayland session — the hook simply never fires.
+// Caveat: this hook is effectively X11-only. Wayland's xdg-shell has a
+// `set_minimized` request but no event reporting the minimized state back, so
+// GTK never raises `GDK_WINDOW_STATE_ICONIFIED` on a Wayland session — the hook
+// simply never fires. Wayland minimize is instead handled with an app-driven
+// synthesis hack in the embedder's event loop (see the WAYLAND-ONLY HACK in
+// `src/event_loop.rs`): we emit EVENT_MINIMIZED ourselves around our own
+// iconify/deiconify calls. External (taskbar) minimize stays unobservable.
 pub(crate) static MINIMIZED_HOOK: std::sync::OnceLock<fn(crate::window::WindowId, bool)> =
   std::sync::OnceLock::new();
 

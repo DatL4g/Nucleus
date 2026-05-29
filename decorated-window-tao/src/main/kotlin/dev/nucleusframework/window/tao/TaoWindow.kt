@@ -454,8 +454,9 @@ class TaoWindow internal constructor(
      * title-bar button.
      *
      * Wired on all three platforms: macOS (windowDidMiniaturize/Deminiaturize),
-     * Windows (WM_SIZE hook), and Linux (GTK window-state-event, X11 only —
-     * Wayland never reports an iconified state).
+     * Windows (WM_SIZE hook), and Linux — X11 via the GTK window-state-event,
+     * Wayland via an app-driven synthesis hack (our minimize button /
+     * programmatic only; the protocol reports no iconified state).
      */
     fun onMinimizedChanged(block: (minimized: Boolean) -> Unit) {
         minimizedListeners += block
