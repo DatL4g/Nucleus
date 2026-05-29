@@ -59,6 +59,7 @@ import kotlin.concurrent.withLock
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
@@ -251,13 +252,20 @@ internal class TaoComposeSceneHostLinux(
                     h
                 }
                 2 -> {
-                    // Wayland: physical pixels (logical × scale). Native Wayland
-                    // attach via a wl_subsurface child of GTK's surface — see
-                    // nucleus_tao_egl.c. tao reports integer scale only;
-                    // wp_fractional_scale_v1 binding is a future commit.
-                    val physW = (initialW * scale).toInt().coerceAtLeast(1)
-                    val physH = (initialH * scale).toInt().coerceAtLeast(1)
-                    val h = NativeTaoEglBridge.nativeAttachWayland(display, nativeWin, physW, physH)
+                    // Wayland: render into a wl_subsurface child of GTK's surface
+                    // (see nucleus_tao_egl.c). initialW/initialH are already
+                    // physical pixels (logical × scale), so they ARE the buffer
+                    // size — do NOT multiply by scale again. We pass the integer
+                    // surface scale so the child sets `buffer_scale` to match
+                    // GTK's parent: a `logical × scale` px buffer is then read as
+                    // `logical` surface units, fixing the oversize and input
+                    // miscalibration. GTK3 reports integer scale only; true
+                    // fractional (wp_viewporter + wp_fractional_scale_v1) is a
+                    // future, toplevel-owning effort.
+                    val physW = initialW.coerceAtLeast(1)
+                    val physH = initialH.coerceAtLeast(1)
+                    val bufferScale = scale.roundToInt().coerceAtLeast(1)
+                    val h = NativeTaoEglBridge.nativeAttachWayland(display, nativeWin, physW, physH, bufferScale)
                     require(h != 0L) {
                         "Failed to create EGL context for wl_surface=$nativeWin — libwayland-egl missing?"
                     }
@@ -773,6 +781,18 @@ internal class TaoComposeSceneHostLinux(
         widthPxNew: Int,
         heightPxNew: Int,
     ) {
+        // Live DPI changes don't reach us through ScaleFactorChanged on the GTK
+        // backend: tao's `connect_scale_factor_notify` only stores the new
+        // factor, it never emits the event (unlike Windows/macOS). An integer
+        // scale crossing (e.g. 100%→125%, which flips GDK scale 1→2) does fire a
+        // GTK configure → a Resized with the new *physical* size, so we re-read
+        // the live scale here and apply it before sizing the scene. Without this
+        // the new physical size lands with a stale density / buffer_scale and the
+        // window renders ~scale× oversized until the app is restarted.
+        val liveScale = NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f
+        if (liveScale > 0f && liveScale != scale) {
+            onScaleFactorChanged(liveScale)
+        }
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
@@ -832,9 +852,15 @@ internal class TaoComposeSceneHostLinux(
         }
         NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         // Drop the cached Skia surface so the next render rebuilds it at the
-        // new size. Closing here (rather than lazily in `onRedrawRequested`)
-        // keeps the lifetime tied to the GL context being current.
-        if (widthPx != lastAppliedWidthPx || heightPx != lastAppliedHeightPx) {
+        // new size/scale. Closing here (rather than lazily in `onRedrawRequested`)
+        // keeps the lifetime tied to the GL context being current. A scale
+        // change with an unchanged pixel size (rare on Wayland, but possible)
+        // must also rebuild — otherwise we'd serve a surface bound to the old
+        // buffer scale.
+        if (widthPx != lastAppliedWidthPx ||
+            heightPx != lastAppliedHeightPx ||
+            scale != lastAppliedScale
+        ) {
             cachedSurface?.close()
             cachedSurface = null
             cachedRt?.close()
@@ -1045,24 +1071,29 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * Hit-test the resize band at the given logical-pixel position. Returns
-     * `null` (no resize) when the window is non-resizable, maximized, or
-     * fullscreen — same gating as JBR's `peer.isInteractivelyResizable()`.
+     * Hit-test the resize band at the given **physical**-pixel pointer
+     * position. Returns `null` (no resize) when the window is non-resizable,
+     * maximized, or fullscreen — same gating as JBR's
+     * `peer.isInteractivelyResizable()`.
      *
-     * [widthPx] / [heightPx] are physical pixels; we divide by [scale] to
-     * compare against pointer coords (which the JNI bridge ships in logical
-     * pixels, see [onPointerMove]).
+     * [onPointerMove] ships physical pixels (`aFixed / 1024`), but
+     * [ResizeFrameDecoration.hitTest] works in logical pixels (its `edge` band
+     * is 5 logical px). So we divide BOTH the pointer and the frame size by
+     * [scale] — comparing physical coords against a logical frame would treat
+     * the entire right/bottom half of a HiDPI window as the resize edge and
+     * swallow every event there (input dead outside the top-left quadrant).
      */
     private fun currentResizeDirection(
-        xLogical: Float,
-        yLogical: Float,
+        xPx: Float,
+        yPx: Float,
     ): ResizeFrameDecoration.Direction? {
         if (!window.isResizable) return null
         if (window.isFullscreen) return null
         if (window.isMaximized) return null
-        val widthLogical = (widthPx / scale).toInt()
-        val heightLogical = (heightPx / scale).toInt()
-        return resizeDecoration.hitTest(xLogical, yLogical, widthLogical, heightLogical)
+        val s = if (scale > 0f) scale else 1f
+        val widthLogical = (widthPx / s).toInt()
+        val heightLogical = (heightPx / s).toInt()
+        return resizeDecoration.hitTest(xPx / s, yPx / s, widthLogical, heightLogical)
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {

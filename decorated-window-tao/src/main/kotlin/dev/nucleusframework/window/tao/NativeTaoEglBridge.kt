@@ -48,6 +48,11 @@ internal object NativeTaoEglBridge {
      *
      * [widthPx] / [heightPx] are the **physical** pixel dimensions (logical
      * × scale) — the compositor expects buffer dimensions, not logical ones.
+     * [bufferScale] is GTK's integer surface scale, applied to the child
+     * surface via `wl_surface.set_buffer_scale` so a `logical × scale` px
+     * buffer is read as `logical` surface units (matching GTK's parent).
+     * Without it the subsurface renders ~scale× oversized and input is
+     * miscalibrated.
      *
      * Returns 0 if libwayland-egl isn't available on the system; the caller
      * should fall back to the X11 path or surface a clear error.
@@ -58,6 +63,7 @@ internal object NativeTaoEglBridge {
         wlSurfacePtr: Long,
         widthPx: Int,
         heightPx: Int,
+        bufferScale: Int,
     ): Long
 
     @JvmStatic

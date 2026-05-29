@@ -290,6 +290,7 @@ typedef void            (*PFN_wl_event_queue_destroy)(wl_event_queue *);
 #define WL_SURFACE_FRAME                   3
 #define WL_SURFACE_SET_INPUT_REGION        5
 #define WL_SURFACE_COMMIT                  6
+#define WL_SURFACE_SET_BUFFER_SCALE        8
 
 /* ── Xlib function pointer types ────────────────────────────────────────── */
 
@@ -945,6 +946,29 @@ static void (*const wl_registry_listener[])(void) = {
     (void (*)(void)) wl_registry_global_remove,
 };
 
+/**
+ * Sets the child subsurface's `buffer_scale` so the compositor reads our
+ * `logical × scale` px buffer as `logical` surface units — matching GTK's
+ * parent surface. Without it `buffer_scale` defaults to 1 and the subsurface
+ * renders ~`scale`× oversized (and input lands in the wrong place because the
+ * visible content no longer matches the scene's pixel geometry).
+ *
+ * GTK3 only ever reports an integer scale, so we mirror that integer here
+ * (true fractional sharpness would need wp_viewporter + wp_fractional_scale_v1,
+ * which is only clean once the renderer owns the toplevel — see file header).
+ *
+ * This only queues double-buffered surface state; it's applied atomically with
+ * the new buffer at the next `eglSwapBuffers` commit, so no explicit
+ * `wl_surface.commit` is issued here.
+ */
+static void wl_set_buffer_scale(EglAttachment *att, int scale) {
+    if (!att || !att->wl_child_surface || !p_wl_proxy_marshal_flags) return;
+    if (scale < 1) scale = 1;
+    p_wl_proxy_marshal_flags(
+        att->wl_child_surface, WL_SURFACE_SET_BUFFER_SCALE, NULL,
+        p_wl_proxy_get_version(att->wl_child_surface), 0, scale);
+}
+
 
 /**
  * Wayland-native attach.
@@ -964,7 +988,7 @@ JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeAttachWayland(
     JNIEnv *env, jclass clazz,
     jlong wlDisplayPtr, jlong wlSurfacePtr,
-    jint widthPx, jint heightPx)
+    jint widthPx, jint heightPx, jint bufferScale)
 {
     (void) env; (void) clazz;
     if (!wlDisplayPtr || !wlSurfacePtr) return 0;
@@ -1265,9 +1289,13 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeAttachWayland(
     att->wl_window        = wlwin;
     att->widthPx          = phys_w;
     att->heightPx         = phys_h;
-    att->scale            = 1.0f;
-    DBG("attached (Wayland subsurface): edpy=%p ctx=%p surf=%p child_surf=%p subsurf=%p\n",
-        edpy, (void*)ctx, (void*)surf, (void*)child_surface, (void*)subsurface);
+    att->scale            = (float) (bufferScale > 0 ? bufferScale : 1);
+    /* Match GTK's integer surface scale so the `logical × scale` px buffer is
+     * read as `logical` surface units (no oversize, input stays calibrated). */
+    wl_set_buffer_scale(att, bufferScale);
+    DBG("attached (Wayland subsurface): edpy=%p ctx=%p surf=%p child_surf=%p subsurf=%p scale=%d\n",
+        edpy, (void*)ctx, (void*)surf, (void*)child_surface, (void*)subsurface,
+        bufferScale);
     return (jlong) (uintptr_t) att;
 
 fail_after_subsurface:
@@ -1381,6 +1409,10 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeResize(
     if (att->wl_window && p_wl_egl_window_resize) {
         p_wl_egl_window_resize(att->wl_window,
                                att->widthPx, att->heightPx, 0, 0);
+        /* Track DPI changes: re-assert the integer buffer scale so the new
+         * buffer is still read as `logical` surface units. Queued state, lands
+         * with the next eglSwapBuffers commit. */
+        wl_set_buffer_scale(att, (int) (scale + 0.5f));
     }
     /* If we render straight into the GTK X window, the EGL surface follows
      * automatically (GTK already issues XResizeWindow on the parent). */
