@@ -294,6 +294,14 @@ internal fun ApplicationScope.openDecoratedWindow(
         stateHolder.value = stateHolder.value.copy(active = effective)
         host.onFocusChanged(focused)
     }
+    // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
+    // so `scope.state.isMinimized` (read by app code) reflects it. Windows-only
+    // for now (see native dispatch_minimized_if_changed TODOs for mac/linux).
+    window.onMinimizedChanged { minimized ->
+        if (stateHolder.value.isMinimized != minimized) {
+            stateHolder.value = stateHolder.value.copy(minimized = minimized)
+        }
+    }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)
     if (!focusable) window.setFocusable(false)
@@ -486,6 +494,14 @@ private fun ApplicationScope.openDecoratedWindowLinux(
             // Forward focus state to AccessKit so AT-SPI's STATE_ACTIVE flag
             // on the toplevel matches the actual X focus.
             NativeTaoBridge.nativeA11ySetWindowFocus(a11yController.nativeViewHandle, focused)
+        }
+    }
+    // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
+    // so `scope.state.isMinimized` (read by app code) reflects it. No-op until
+    // the Linux native minimize event lands (see dispatch_minimized_if_changed).
+    window.onMinimizedChanged { minimized ->
+        if (stateHolder.value.isMinimized != minimized) {
+            stateHolder.value = stateHolder.value.copy(minimized = minimized)
         }
     }
 
@@ -770,6 +786,14 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 )
         stateHolder.value = stateHolder.value.copy(active = effective)
         host.onFocusChanged(focused)
+    }
+    // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
+    // so `scope.state.isMinimized` (read by app code) reflects it. Windows-only
+    // for now (see native dispatch_minimized_if_changed TODOs for mac/linux).
+    window.onMinimizedChanged { minimized ->
+        if (stateHolder.value.isMinimized != minimized) {
+            stateHolder.value = stateHolder.value.copy(minimized = minimized)
+        }
     }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)

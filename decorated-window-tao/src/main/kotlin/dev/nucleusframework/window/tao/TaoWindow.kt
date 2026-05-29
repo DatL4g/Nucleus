@@ -32,6 +32,11 @@ class TaoWindow internal constructor(
     // for state-sync. They must coexist.
     private val resizedListeners = CopyOnWriteArrayList<(Int, Int) -> Unit>()
     private val movedListeners = CopyOnWriteArrayList<(Int, Int) -> Unit>()
+    private val minimizedListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    @Volatile
+    var isMinimized: Boolean = false
+        private set
 
     @Volatile
     private var scaleFactorListener: ((Float) -> Unit)? = null
@@ -443,6 +448,17 @@ class TaoWindow internal constructor(
         focusListeners += block
     }
 
+    /**
+     * Multi-cast: fires whenever the window's minimized (iconified) state flips,
+     * including OS-driven minimize (taskbar, Win+D) and the title-bar button.
+     *
+     * Windows-only for now — see the TODOs in the native `event_loop.rs`
+     * (`dispatch_minimized_if_changed`) for the macOS / Linux follow-up.
+     */
+    fun onMinimizedChanged(block: (minimized: Boolean) -> Unit) {
+        minimizedListeners += block
+    }
+
     fun onPointerMoved(block: (xFixed: Int, yFixed: Int) -> Unit) {
         pointerMoveListener = block
     }
@@ -539,6 +555,11 @@ class TaoWindow internal constructor(
             }
             TaoEventCode.FOCUSED -> focusListeners.forEach { it.invoke(true) }
             TaoEventCode.UNFOCUSED -> focusListeners.forEach { it.invoke(false) }
+            TaoEventCode.MINIMIZED -> {
+                val minimized = a != 0
+                isMinimized = minimized
+                minimizedListeners.forEach { it.invoke(minimized) }
+            }
             TaoEventCode.CURSOR_MOVED -> pointerMoveListener?.invoke(a, b)
             TaoEventCode.CURSOR_LEFT -> pointerExitedListener?.invoke()
             TaoEventCode.MOUSE_DOWN -> pointerButtonListener?.invoke(a, true)

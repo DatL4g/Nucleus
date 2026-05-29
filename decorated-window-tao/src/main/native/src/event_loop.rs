@@ -23,6 +23,27 @@ use crate::events::{
 use crate::keymap;
 use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
 
+// Tao has no dedicated "minimized" event, and our vendored WM_SIZE patch
+// swallows the SIZE_MINIMIZED `Resized(0,0)` (it would collapse Compose's
+// scene). Instead the patch calls `MINIMIZED_HOOK` on the SIZE_MINIMIZED /
+// SIZE_RESTORED transition — a deterministic, event-driven signal (no polling).
+//
+// CRITICAL: the hook runs INSIDE the WM_SIZE WndProc, which is frequently
+// triggered *synchronously* by Win32 calls (set_inner_size / set_minimized /
+// set_maximized) made from UserEvent handlers that already hold the `WINDOWS`
+// lock and may have `dispatch`/EVENT_CALLBACK on the stack. So the hook must do
+// NOTHING re-entrant here: it only posts a `UserEvent` back to the loop. The
+// resolve-handle + dedup + JVM dispatch all happen later, in the closure, at a
+// safe point where no native lock is held.
+//
+// TODO(macos): NSWindow miniaturize doesn't go through WM_SIZE; hook
+//   windowDidMiniaturize/windowDidDeminiaturize in the macOS layer.
+// TODO(linux): GTK iconify state needs a window-state-event handler.
+#[cfg(target_os = "windows")]
+fn on_tao_minimized(window_id: tao::window::WindowId, minimized: bool) {
+    crate::state::send_user_event(crate::events::UserEvent::MinimizedChanged { window_id, minimized });
+}
+
 pub(crate) fn run_event_loop_blocking() {
     // GTK backend selection. Default: let GDK auto-pick (= native Wayland on
     // a Wayland session, X11 elsewhere). The Wayland-native path goes through
@@ -62,6 +83,10 @@ pub(crate) fn run_event_loop_blocking() {
     let mut event_loop = builder.build();
     set_event_loop_proxy(event_loop.create_proxy());
 
+    // Event-driven minimize/restore detection (see on_tao_minimized).
+    #[cfg(target_os = "windows")]
+    tao::platform::windows::set_minimized_hook(on_tao_minimized);
+
     // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
     // local monitors must be added there). Press-and-hold accent picker and
     // the drag-event latch live alongside it.
@@ -80,6 +105,10 @@ pub(crate) fn run_event_loop_blocking() {
     // event loop exits. run() calls process::exit() directly, which bypasses
     // JVM shutdown hooks (e.g. JDK 25 AOT cache writer, user shutdown hooks).
     use tao::platform::run_return::EventLoopExtRunReturn;
+    // Last reported minimized state per window handle — dedups the hook, which
+    // fires on every non-minimized WM_SIZE (plain resizes included).
+    #[cfg(target_os = "windows")]
+    let mut last_minimized: HashMap<u64, bool> = HashMap::new();
     event_loop.run_return(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
 
@@ -200,6 +229,20 @@ pub(crate) fn run_event_loop_blocking() {
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             w.set_minimized(minimized);
+                        }
+                    }
+                }
+                // Posted from the WM_SIZE hook (safe point — no native lock held
+                // and not nested in the WndProc). Resolve, dedup, dispatch.
+                #[cfg(target_os = "windows")]
+                UserEvent::MinimizedChanged {
+                    window_id,
+                    minimized,
+                } => {
+                    if let Some(handle) = handle_for(window_id) {
+                        if last_minimized.get(&handle).copied() != Some(minimized) {
+                            last_minimized.insert(handle, minimized);
+                            dispatch(handle, crate::events::EVENT_MINIMIZED, minimized as jint, 0);
                         }
                     }
                 }
@@ -330,6 +373,8 @@ pub(crate) fn run_event_loop_blocking() {
                                 map.remove(&handle);
                             }
                         }
+                        #[cfg(target_os = "windows")]
+                        last_minimized.remove(&handle);
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }
                     WindowEvent::Resized(size) => {

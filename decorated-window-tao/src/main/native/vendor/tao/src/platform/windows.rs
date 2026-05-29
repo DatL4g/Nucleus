@@ -447,3 +447,23 @@ impl IconExtWindows for Icon {
     Ok(Icon { inner: win_icon })
   }
 }
+
+// PATCH(nucleus): event-driven minimize/restore hook.
+//
+// Tao has no `WindowEvent::Minimized` (and our WM_SIZE patch deliberately
+// swallows the SIZE_MINIMIZED `Resized(0,0)` to avoid collapsing the embedder's
+// scene). Rather than add an enum variant — which would ripple through every
+// exhaustive `WindowEvent` match — the WM_SIZE handler calls this hook on the
+// SIZE_MINIMIZED / SIZE_RESTORED transition. The embedder installs a fn pointer
+// and dispatches its own minimized event deterministically, with no polling and
+// no dependency on focus-message ordering.
+pub(crate) static MINIMIZED_HOOK: std::sync::OnceLock<fn(crate::window::WindowId, bool)> =
+  std::sync::OnceLock::new();
+
+/// Install a hook invoked from the WM_SIZE handler whenever a window's minimized
+/// state changes (`true` = minimized, `false` = restored/maximized). Idempotent:
+/// the first installed hook wins. The hook runs on the event-loop thread inside
+/// the window procedure, so it must not block or pump messages.
+pub fn set_minimized_hook(hook: fn(crate::window::WindowId, bool)) {
+  let _ = MINIMIZED_HOOK.set(hook);
+}

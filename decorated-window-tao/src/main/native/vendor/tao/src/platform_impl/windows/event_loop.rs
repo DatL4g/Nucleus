@@ -1239,6 +1239,11 @@ unsafe fn public_window_callback_inner<T: 'static>(
       if wparam.0 == SIZE_MINIMIZED as _ {
         let mut w = subclass_input.window_state.lock();
         w.set_window_flags_in_place(|f| f.set(WindowFlags::MINIMIZED, true));
+        drop(w);
+        // PATCH(nucleus): deterministic minimize signal (see MINIMIZED_HOOK).
+        if let Some(hook) = crate::platform::windows::MINIMIZED_HOOK.get() {
+          hook(RootWindowId(WindowId(window.0 as _)), true);
+        }
         result = ProcResult::Value(LRESULT(0));
         return;
       }
@@ -1272,6 +1277,15 @@ unsafe fn public_window_callback_inner<T: 'static>(
           // doing exit-then-enter placement work on the flag change.
           let maximized = unsafe { IsZoomed(window).as_bool() };
           w.set_window_flags_in_place(|f| f.set(WindowFlags::MAXIMIZED, maximized));
+        }
+      }
+
+      // PATCH(nucleus): a non-minimized WM_SIZE (restore, maximize, normal
+      // resize) means the window is not iconic. The embedder hook dedups, so
+      // firing on every such message is safe and catches restore-from-minimize.
+      if wparam.0 == SIZE_RESTORED as _ || wparam.0 == SIZE_MAXIMIZED as _ {
+        if let Some(hook) = crate::platform::windows::MINIMIZED_HOOK.get() {
+          hook(RootWindowId(WindowId(window.0 as _)), false);
         }
       }
 

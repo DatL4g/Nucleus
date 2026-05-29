@@ -35,10 +35,14 @@ internal class TaoNucleusWindow(
             _maximized.value = taoWindow.isMaximized
             _fullscreen.value = taoWindow.isFullscreen
         }
+        // OS-driven minimize/restore (taskbar, Win+D, title-bar button) only
+        // surfaces through the native MINIMIZED event — decoratedState alone
+        // never reflects it.
+        taoWindow.onMinimizedChanged { _minimized.value = it }
     }
 
     override val isFocused: Boolean get() = decoratedState.value.isActive
-    override val isMinimized: Boolean get() = decoratedState.value.isMinimized
+    override val isMinimized: Boolean get() = _minimized.value
     override val isMaximized: Boolean get() = taoWindow.isMaximized
     override val isFullscreen: Boolean get() = taoWindow.isFullscreen
 

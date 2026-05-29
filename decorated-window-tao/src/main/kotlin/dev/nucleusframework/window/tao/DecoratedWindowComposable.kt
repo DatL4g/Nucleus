@@ -168,6 +168,15 @@ fun ApplicationScope.DecoratedWindow(
                     latestState.position = newPos
                 }
             }
+            // OS-driven minimize/restore. Set `applied` before `state` so the
+            // state→window LaunchedEffect treats this as an echo and skips
+            // re-issuing setMinimized().
+            w.onMinimizedChanged { minimized ->
+                if (minimized != applied.isMinimized) {
+                    applied.isMinimized = minimized
+                    latestState.isMinimized = minimized
+                }
+            }
             w
         }
 

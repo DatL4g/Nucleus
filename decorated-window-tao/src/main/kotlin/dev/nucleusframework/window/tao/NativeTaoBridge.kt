@@ -632,6 +632,9 @@ object TaoEventCode {
     const val UNFOCUSED: Int = 7
     const val SCALE_FACTOR_CHANGED: Int = 8
 
+    /** `a` = 1 when the window became minimized (iconified), 0 when restored. */
+    const val MINIMIZED: Int = 9
+
     const val CURSOR_MOVED: Int = 10
     const val CURSOR_LEFT: Int = 11
     const val MOUSE_DOWN: Int = 12

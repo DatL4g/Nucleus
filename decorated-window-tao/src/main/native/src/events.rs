@@ -55,6 +55,7 @@ pub(crate) const EVENT_REDRAW_REQUESTED: jint = 5;
 pub(crate) const EVENT_FOCUSED: jint = 6;
 pub(crate) const EVENT_UNFOCUSED: jint = 7;
 pub(crate) const EVENT_SCALE_FACTOR_CHANGED: jint = 8; // scale * 1000 packed in `a`
+pub(crate) const EVENT_MINIMIZED: jint = 9; // a = 1 when minimized (iconified), 0 when restored
 pub(crate) const EVENT_CURSOR_MOVED: jint = 10; // a = x * 1024, b = y * 1024 (physical)
 pub(crate) const EVENT_CURSOR_LEFT: jint = 11;
 pub(crate) const EVENT_MOUSE_DOWN: jint = 12; // a = button code
@@ -179,6 +180,14 @@ pub(crate) enum UserEvent {
     RequestClose { handle: u64 },
     SetMaximized { handle: u64, maximized: bool },
     SetMinimized { handle: u64, minimized: bool },
+    /// Posted by the WM_SIZE minimize hook (Windows). Carries the tao WindowId
+    /// so the loop can resolve our handle and dispatch EVENT_MINIMIZED at a safe
+    /// point — never from inside the WndProc. See `on_tao_minimized`.
+    #[cfg(target_os = "windows")]
+    MinimizedChanged {
+        window_id: tao::window::WindowId,
+        minimized: bool,
+    },
     SetAlwaysOnTop { handle: u64, always_on_top: bool },
     SetFocusable { handle: u64, focusable: bool },
     Focus { handle: u64 },
