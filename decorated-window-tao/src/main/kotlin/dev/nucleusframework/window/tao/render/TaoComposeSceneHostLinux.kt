@@ -1035,6 +1035,32 @@ internal class TaoComposeSceneHostLinux(
         )
     }
 
+    /**
+     * Called when a native compositor-driven window move begins (title-bar
+     * drag → [dev.nucleusframework.window.tao.TaoWindow.dragWindow]). The
+     * compositor takes a pointer grab and swallows the button release, so
+     * Compose never sees it: its gesture detectors stay stuck "pressed" and the
+     * window ignores hover/clicks until a fresh click completes the sequence.
+     * Reset the scene's pointer state to recover — same mechanism the touch
+     * CANCEL path uses. Deferred onto the main dispatcher because this fires
+     * reentrantly from inside the very Move dispatch that started the drag.
+     */
+    fun onNativeWindowDragStarted() {
+        // The compositor's interactive-move grab swallows the button release, so
+        // neither the Compose scene nor the title-bar drag gesture ever see it:
+        // the pointer stays "pressed" and the window ignores hover/clicks until a
+        // fresh click. Synthesize the missing LEFT release to complete the
+        // press/release pair (a Cancel isn't enough — the title-bar gesture only
+        // resets its flags on a real Release). Deferred onto the main dispatcher
+        // because this fires reentrantly from inside the Move dispatch that
+        // started the drag.
+        flushingDispatcher.enqueue(
+            Runnable {
+                onPointerButton(dev.nucleusframework.window.tao.TaoMouseButton.LEFT, pressed = false)
+            },
+        )
+    }
+
     fun onPointerExited() {
         // ⚠️ Don't dispatch PointerEventType.Exit here on Linux.
         //

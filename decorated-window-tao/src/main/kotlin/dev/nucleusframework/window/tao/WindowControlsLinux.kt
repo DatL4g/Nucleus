@@ -162,13 +162,15 @@ private fun TitleBarScope.LinuxControlButton(
         var hovered by remember { mutableStateOf(false) }
         var pressed by remember { mutableStateOf(false) }
 
-        // Mirrors core/WindowControlArea: KDE keeps hover/pressed icons even
-        // when the window is inactive (its inactive theme has the same shape),
-        // GNOME only when active.
+        // Show hover/pressed feedback regardless of window focus — native
+        // GNOME and KDE both highlight title-bar controls on hover even when
+        // the window is inactive. The focused/unfocused icon *variant* is
+        // already chosen at the call site (e.g. closeHover vs
+        // closeHoverFocused), so the correct artwork is used either way.
         val currentIcon =
             when {
-                pressed && (state.isActive || isKde) -> iconPressed
-                hovered && (state.isActive || isKde) -> iconHover
+                pressed -> iconPressed
+                hovered -> iconHover
                 else -> icon
             }
 

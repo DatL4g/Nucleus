@@ -487,6 +487,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
+    window.onDragWindow { host.onNativeWindowDragStarted() }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }

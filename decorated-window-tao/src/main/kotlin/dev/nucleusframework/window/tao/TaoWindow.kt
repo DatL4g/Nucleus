@@ -50,6 +50,8 @@ class TaoWindow internal constructor(
     @Volatile
     private var redrawListener: (() -> Unit)? = null
 
+    private var dragWindowListener: (() -> Unit)? = null
+
     // Coalesces concurrent `requestRedraw` calls into one pending native request:
     // tao on Linux only drains one entry from its `draws` channel per event-loop
     // iteration, but Compose readily produces multiple invalidations per frame
@@ -158,7 +160,16 @@ class TaoWindow internal constructor(
 
     /** Starts a native window drag — call synchronously during a mouse press. */
     fun dragWindow() {
+        // Notify listeners BEFORE the grab: the compositor swallows the button
+        // release once the interactive move starts, so the host needs to reset
+        // its Compose pointer state to avoid getting stuck "pressed".
+        dragWindowListener?.invoke()
         NativeTaoBridge.nativeDragWindow(handle)
+    }
+
+    /** Fires synchronously when [dragWindow] is invoked (compositor move grab). */
+    fun onDragWindow(block: () -> Unit) {
+        dragWindowListener = block
     }
 
     // ── Windows touch title-bar drag (driven from raw Tao touch events) ────
