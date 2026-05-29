@@ -77,6 +77,10 @@ typedef struct {
     LONG    savedStyle;
     LONG    savedExStyle;
     WINDOWPLACEMENT savedPlacement;
+    /* Set while a title-bar touch interaction is being routed to DefWindowProc
+     * (instead of Tao's consuming subclass) so the OS synthesises legacy mouse
+     * messages for an OS-driven title-bar drag with Aero Snap. See decoWndProc. */
+    BOOL    titleBarDragArmed;
 } DecoState;
 
 static DecoState *getState(HWND hwnd) {
@@ -119,6 +123,45 @@ static LRESULT CALLBACK decoWndProc(
 {
     DecoState *state = getState(hwnd);
     if (!state) return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    /* Touch title-bar drag → Aero Snap.
+     *
+     * Tao routes touch through WM_POINTER and consumes it, so Windows never
+     * promotes touch to the legacy mouse messages that the OS modal move loop
+     * (and thus Aero Snap) needs. To restore that, we capture a title-bar touch
+     * from its very first WM_POINTERDOWN and hand the whole pointer interaction
+     * (down → update → up) to DefWindowProc, consuming it so it never reaches
+     * Tao. DefWindowProc's pointer handling then synthesises the legacy
+     * WM_MOUSE* messages: Compose sees a mouse press on the title bar and runs
+     * its normal mouse drag (`dragWindow()` → WM_NCLBUTTONDOWN/HTCAPTION), which
+     * enters the OS move loop with full Aero Snap and native
+     * restore-from-maximized.
+     *
+     * A native hit-test gates the capture to the title-bar band. Because the
+     * interaction is consumed, Compose never receives a touch press for that
+     * contact (no stuck pointer); title-bar content/buttons still work via the
+     * synthesised mouse click. */
+    if (!state->titleBarDragArmed && msg == WM_POINTERDOWN) {
+        POINT pt; pt.x = (int)(short)LOWORD(lParam); pt.y = (int)(short)HIWORD(lParam);
+        ScreenToClient(hwnd, &pt);
+        if (pt.y >= 0 && pt.y < state->titleBarHeightPx) {
+            state->titleBarDragArmed = TRUE;
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+    }
+    if (state->titleBarDragArmed) {
+        switch (msg) {
+        case WM_POINTERUPDATE:
+        case WM_POINTERLEAVE:
+        case WM_POINTERCAPTURECHANGED:
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        case WM_POINTERUP:
+            state->titleBarDragArmed = FALSE;
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        default:
+            break;
+        }
+    }
 
     switch (msg) {
 

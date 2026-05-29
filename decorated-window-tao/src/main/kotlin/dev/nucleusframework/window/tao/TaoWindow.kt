@@ -227,7 +227,9 @@ class TaoWindow internal constructor(
                 yClientPx.toInt(),
             )
         if (screen == null || screen.size != 2) {
-            if (phase == TaoTouchEvent.RELEASE) windowsTitleBarTouchDrag = null
+            if (phase == TaoTouchEvent.RELEASE) {
+                windowsTitleBarTouchDrag = null
+            }
             return
         }
         drag.lastScreenX = screen[0]

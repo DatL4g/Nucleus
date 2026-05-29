@@ -493,14 +493,14 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                                         dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge.isLoaded
                                 pendingDrag = !touchOnWindows
                                 if (touchOnWindows) {
-                                    // Arm the per-window touch drag state. Subsequent samples
-                                    // run via `TaoComposeSceneHostWindows.onTouchInput` →
-                                    // `window.updateWindowsTitleBarTouchDrag(...)`, which calls
-                                    // synchronous `SetWindowPos` from raw Tao events instead
-                                    // of going through Compose's `pointerInput` Move pass.
-                                    // That keeps the drag fluid and prevents the layout-size
-                                    // change for `maximized → floating` from breaking the
-                                    // Compose pointer pipeline.
+                                    // Fallback touch drag (no Aero Snap): only reached if the
+                                    // native WndProc did NOT capture this title-bar touch (it
+                                    // normally consumes the whole interaction from WM_POINTERDOWN
+                                    // and hands it to the OS move loop). Subsequent samples run
+                                    // via `TaoComposeSceneHostWindows.onTouchInput` →
+                                    // `window.updateWindowsTitleBarTouchDrag(...)`, applying
+                                    // `SetWindowPos` directly so the window still follows the
+                                    // finger even when the OS-driven path is unavailable.
                                     val hwnd =
                                         dev.nucleusframework.window.tao.NativeTaoBridge
                                             .nativeHwndHandle(window.handle)

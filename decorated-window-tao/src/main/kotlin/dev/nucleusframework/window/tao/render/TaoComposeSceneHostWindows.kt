@@ -178,7 +178,7 @@ internal class TaoComposeSceneHostWindows(
         directContext = DirectContext.makeGL()
         attachedHostCount.incrementAndGet()
 
-        @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+        @OptIn(ExperimentalComposeUiApi::class)
         val dndManager =
             dev.nucleusframework.window.tao.TaoDragAndDropManager(
                 getRootNode = { scene!!.rootDragAndDropNode },
@@ -374,7 +374,7 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
     private fun launchWindowsOutboundDrag(
         request: dev.nucleusframework.window.tao.TaoDragAndDropManager.OutboundRequest,
     ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
@@ -425,7 +425,7 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
     private fun registerInboundDnD() {
         if (!dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.isLoaded) {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
@@ -446,7 +446,7 @@ internal class TaoComposeSceneHostWindows(
      * can register it explicitly. Anonymous classes inheriting JNI-accessible
      * interface methods aren't picked up by `GetMethodID` under native-image.
      */
-    @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback :
         dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.Callback {
         private fun rootNode() = scene?.rootDragAndDropNode
