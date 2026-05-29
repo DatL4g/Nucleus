@@ -295,9 +295,10 @@ internal fun ApplicationScope.openDecoratedWindow(
         host.onFocusChanged(focused)
     }
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
-    // so `scope.state.isMinimized` (read by app code) reflects it. Wired on
-    // macOS (windowDidMiniaturize/Deminiaturize) and Windows; Linux is still a
-    // no-op (see the native event_loop.rs TODO).
+    // so `scope.state.isMinimized` (read by app code) reflects it. Wired on all
+    // three platforms: macOS (windowDidMiniaturize/Deminiaturize), Windows
+    // (WM_SIZE hook), and Linux (GTK window-state-event, X11 only — Wayland
+    // never reports an iconified state).
     window.onMinimizedChanged { minimized ->
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
@@ -498,8 +499,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         }
     }
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
-    // so `scope.state.isMinimized` (read by app code) reflects it. No-op until
-    // the Linux native minimize event lands (see dispatch_minimized_if_changed).
+    // so `scope.state.isMinimized` (read by app code) reflects it. On Linux this
+    // flows from the GTK window-state-event ICONIFIED transition (X11 only —
+    // Wayland never reports an iconified state).
     window.onMinimizedChanged { minimized ->
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
@@ -789,9 +791,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.onFocusChanged(focused)
     }
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
-    // so `scope.state.isMinimized` (read by app code) reflects it. Wired on
-    // macOS (windowDidMiniaturize/Deminiaturize) and Windows; Linux is still a
-    // no-op (see the native event_loop.rs TODO).
+    // so `scope.state.isMinimized` (read by app code) reflects it. Wired on all
+    // three platforms: macOS (windowDidMiniaturize/Deminiaturize), Windows
+    // (WM_SIZE hook), and Linux (GTK window-state-event, X11 only — Wayland
+    // never reports an iconified state).
     window.onMinimizedChanged { minimized ->
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)

@@ -453,8 +453,9 @@ class TaoWindow internal constructor(
      * including OS-driven minimize (taskbar, Win+D, Dock, Cmd-M) and the
      * title-bar button.
      *
-     * Wired on macOS (windowDidMiniaturize/Deminiaturize) and Windows (WM_SIZE
-     * hook). Linux is still pending — see the TODO in the native `event_loop.rs`.
+     * Wired on all three platforms: macOS (windowDidMiniaturize/Deminiaturize),
+     * Windows (WM_SIZE hook), and Linux (GTK window-state-event, X11 only —
+     * Wayland never reports an iconified state).
      */
     fun onMinimizedChanged(block: (minimized: Boolean) -> Unit) {
         minimizedListeners += block

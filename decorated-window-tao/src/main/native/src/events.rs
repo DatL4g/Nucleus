@@ -181,10 +181,11 @@ pub(crate) enum UserEvent {
     SetMaximized { handle: u64, maximized: bool },
     SetMinimized { handle: u64, minimized: bool },
     /// Posted by the platform minimize hook (Windows WM_SIZE / macOS window
-    /// delegate). Carries the tao WindowId so the loop can resolve our handle
-    /// and dispatch EVENT_MINIMIZED at a safe point — never from inside the
-    /// WndProc or the AppKit delegate callback. See `on_tao_minimized`.
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    /// delegate / Linux GTK window-state-event). Carries the tao WindowId so the
+    /// loop can resolve our handle and dispatch EVENT_MINIMIZED at a safe point —
+    /// never from inside the WndProc, the AppKit delegate, or the GTK signal
+    /// callback. See `on_tao_minimized`.
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     MinimizedChanged {
         window_id: tao::window::WindowId,
         minimized: bool,

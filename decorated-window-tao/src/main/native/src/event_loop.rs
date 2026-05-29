@@ -31,15 +31,14 @@ use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
 // CRITICAL: the hook runs INSIDE a native callback that may be re-entered
 // *synchronously* by our own calls — on Windows the WM_SIZE WndProc fired by
 // set_inner_size / set_minimized / set_maximized; on macOS the AppKit window
-// delegate fired by miniaturize / deminiaturize. Those calls originate from
-// UserEvent handlers that already hold the `WINDOWS` lock and may have
-// `dispatch`/EVENT_CALLBACK on the stack. So the hook must do NOTHING
-// re-entrant here: it only posts a `UserEvent` back to the loop. The
+// delegate fired by miniaturize / deminiaturize; on Linux the GTK
+// `window-state-event` signal fired by set_minimized / set_maximized. Those
+// calls originate from UserEvent handlers that already hold the `WINDOWS` lock
+// and may have `dispatch`/EVENT_CALLBACK on the stack. So the hook must do
+// NOTHING re-entrant here: it only posts a `UserEvent` back to the loop. The
 // resolve-handle + dedup + JVM dispatch all happen later, in the closure, at a
 // safe point where no native lock is held.
-//
-// TODO(linux): GTK iconify state needs a window-state-event handler.
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn on_tao_minimized(window_id: tao::window::WindowId, minimized: bool) {
     crate::state::send_user_event(crate::events::UserEvent::MinimizedChanged { window_id, minimized });
 }
@@ -88,6 +87,8 @@ pub(crate) fn run_event_loop_blocking() {
     tao::platform::windows::set_minimized_hook(on_tao_minimized);
     #[cfg(target_os = "macos")]
     tao::platform::macos::set_minimized_hook(on_tao_minimized);
+    #[cfg(target_os = "linux")]
+    tao::platform::linux::set_minimized_hook(on_tao_minimized);
 
     // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
     // local monitors must be added there). Press-and-hold accent picker and
@@ -109,9 +110,10 @@ pub(crate) fn run_event_loop_blocking() {
     use tao::platform::run_return::EventLoopExtRunReturn;
     // Last reported minimized state per window handle — dedups the hook. On
     // Windows it fires on every non-minimized WM_SIZE (plain resizes included);
-    // on macOS the delegate fires only on real transitions, but the dedup keeps
-    // both platforms on one code path and guards against duplicate callbacks.
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    // on macOS the delegate and on Linux the gated GTK signal fire only on real
+    // transitions, but the dedup keeps every platform on one code path and
+    // guards against duplicate callbacks.
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let mut last_minimized: HashMap<u64, bool> = HashMap::new();
     event_loop.run_return(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -237,9 +239,9 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                 }
                 // Posted from the platform minimize hook (safe point — no native
-                // lock held and not nested in the WndProc / AppKit delegate).
-                // Resolve, dedup, dispatch.
-                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                // lock held and not nested in the WndProc / AppKit delegate / GTK
+                // signal). Resolve, dedup, dispatch.
+                #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
                 UserEvent::MinimizedChanged {
                     window_id,
                     minimized,
@@ -378,7 +380,7 @@ pub(crate) fn run_event_loop_blocking() {
                                 map.remove(&handle);
                             }
                         }
-                        #[cfg(any(target_os = "windows", target_os = "macos"))]
+                        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
                         last_minimized.remove(&handle);
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }

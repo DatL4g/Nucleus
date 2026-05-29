@@ -374,11 +374,20 @@ impl Window {
     ));
     let is_always_on_top_clone = is_always_on_top.clone();
 
-    window.connect_window_state_event(move |_, event| {
+    window.connect_window_state_event(move |window, event| {
       let state = event.new_window_state();
       max_clone.store(state.contains(WindowState::MAXIMIZED), Ordering::Release);
-      minimized_clone.store(state.contains(WindowState::ICONIFIED), Ordering::Release);
+      let iconified = state.contains(WindowState::ICONIFIED);
+      minimized_clone.store(iconified, Ordering::Release);
       is_always_on_top_clone.store(state.contains(WindowState::ABOVE), Ordering::Release);
+      // PATCH(nucleus): deterministic minimize/restore signal. This signal fires
+      // for every state change (focus, maximize, …), so gate on the ICONIFIED bit
+      // actually transitioning to avoid spamming the embedder hook.
+      if event.changed_mask().contains(WindowState::ICONIFIED) {
+        if let Some(hook) = crate::platform::linux::MINIMIZED_HOOK.get() {
+          hook(crate::window::WindowId(WindowId(window.id())), iconified);
+        }
+      }
       glib::Propagation::Proceed
     });
 
