@@ -579,6 +579,25 @@ internal class TaoComposeSceneHostLinux(
         ) {
             val sc = scene ?: return
             if (count <= 0) return
+
+            // Single-finger press in the resize edge band starts a native resize
+            // drag — mirrors the mouse path in [onPointerButton]. The press is
+            // consumed (never forwarded to Compose) so the compositor owns the
+            // whole sequence, exactly like the mouse-driven resize. Positions are
+            // physical px (`/ TOUCH_POSITION_SCALE`), matching what
+            // [currentResizeDirection] expects. `begin_resize_drag` works during a
+            // touch grab the same way `begin_move_drag` does for title-bar touch
+            // drag (see the compositor pointer-grab note in [onNativeWindowDragStarted]).
+            if (eventType == TaoTouchEvent.PRESS && count == 1) {
+                val direction =
+                    currentResizeDirection(
+                        xsFixed[0] / TOUCH_POSITION_SCALE,
+                        ysFixed[0] / TOUCH_POSITION_SCALE,
+                        forTouch = true,
+                    )
+                if (resizeDecoration.onLeftPress(direction)) return
+            }
+
             val pointers = ArrayList<ComposeScenePointer>(count)
             for (i in 0 until count) {
                 val pressed = (pressedMask and (1L shl i)) != 0L
@@ -1118,6 +1137,7 @@ internal class TaoComposeSceneHostLinux(
     private fun currentResizeDirection(
         xPx: Float,
         yPx: Float,
+        forTouch: Boolean = false,
     ): ResizeFrameDecoration.Direction? {
         if (!window.isResizable) return null
         if (window.isFullscreen) return null
@@ -1125,7 +1145,7 @@ internal class TaoComposeSceneHostLinux(
         val s = if (scale > 0f) scale else 1f
         val widthLogical = (widthPx / s).toInt()
         val heightLogical = (heightPx / s).toInt()
-        return resizeDecoration.hitTest(xPx / s, yPx / s, widthLogical, heightLogical)
+        return resizeDecoration.hitTest(xPx / s, yPx / s, widthLogical, heightLogical, forTouch)
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {

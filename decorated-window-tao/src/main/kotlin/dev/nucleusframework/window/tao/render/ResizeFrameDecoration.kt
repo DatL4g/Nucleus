@@ -30,6 +30,14 @@ internal class ResizeFrameDecoration(
      * heavy on small windows; AWT's 5 px is the empirically-tuned sweet spot.
      */
     private val edgeThicknessLogical: Int = 5,
+    /**
+     * Edge band thickness for touch, in logical pixels. A 5 px mouse band is
+     * unusable with a fingertip, so touch gets a much wider grab zone — closer
+     * to the feel of native GTK client-side-decorated windows, whose resize
+     * region also extends well beyond the visible border. Kept in logical px so
+     * the physical zone scales consistently across HiDPI.
+     */
+    private val touchEdgeThicknessLogical: Int = 16,
 ) {
     /** Ordinals MUST match `NativeTaoBridge.nativeBeginResizeDrag` direction encoding. */
     enum class Direction(
@@ -61,9 +69,10 @@ internal class ResizeFrameDecoration(
         y: Float,
         widthLogical: Int,
         heightLogical: Int,
+        forTouch: Boolean = false,
     ): Direction? {
         if (widthLogical <= 0 || heightLogical <= 0) return null
-        val edge = edgeThicknessLogical
+        val edge = if (forTouch) touchEdgeThicknessLogical else edgeThicknessLogical
         val nearLeft = x < edge
         val nearRight = x >= widthLogical - edge
         val nearTop = y < edge
