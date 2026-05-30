@@ -476,17 +476,23 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     window.onResized { w, h ->
         host.onResized(w, h)
         // Tao on Linux doesn't emit a dedicated "maximized state changed"
-        // event; every maximize/restore cycle resizes the window. Re-query
-        // is_maximized so the Compose state stays in sync.
+        // event; every maximize/restore cycle resizes the window. The same is
+        // true for compositor tiling (Aero Snap) — a snap is observed only as a
+        // resize. Re-query is_maximized / is_tiled so the Compose state stays in
+        // sync (a pure snap leaves maximized/fullscreen false, so isTiled is the
+        // only signal that flips and must be part of the reactive diff).
         val maxNow = window.isMaximized
         val fsNow = window.isFullscreen
+        val tiledNow = window.isTiled
         if (stateHolder.value.isMaximized != maxNow ||
-            stateHolder.value.isFullscreen != fsNow
+            stateHolder.value.isFullscreen != fsNow ||
+            stateHolder.value.isTiled != tiledNow
         ) {
             stateHolder.value =
                 stateHolder.value.copy(
                     maximized = maxNow,
                     fullscreen = fsNow,
+                    tiled = tiledNow,
                 )
         }
         // EGL replaces the XShape rounded-clip with a Skia post-render

@@ -289,6 +289,30 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeIsTiled(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    let guard = match WINDOWS.lock() {
+        Ok(g) => g,
+        Err(_) => return JNI_FALSE,
+    };
+    let Some(map) = guard.as_ref() else {
+        return JNI_FALSE;
+    };
+    if let Some(window) = map.get(&(handle as u64)) {
+        if window.is_tiled() {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    } else {
+        JNI_FALSE
+    }
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeSetMaximized(
     _env: JNIEnv,
     _class: JClass,

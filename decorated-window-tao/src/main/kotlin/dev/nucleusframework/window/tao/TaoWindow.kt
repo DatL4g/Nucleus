@@ -319,6 +319,15 @@ class TaoWindow internal constructor(
     val isMaximized: Boolean
         get() = NativeTaoBridge.nativeIsMaximized(handle)
 
+    /**
+     * Linux/GTK only: true when the compositor has tiled/snapped the window to a
+     * screen edge (Aero Snap). Always `false` on Windows/macOS (the native lib
+     * returns `false` outside the GTK backend). Used to drop the Compose-drawn
+     * rounded corners when snapped, matching native client-side decorations.
+     */
+    val isTiled: Boolean
+        get() = NativeTaoBridge.nativeIsTiled(handle)
+
     val isFullscreen: Boolean
         get() {
             // On Windows, fullscreen is owned by the WndProc subclass so its

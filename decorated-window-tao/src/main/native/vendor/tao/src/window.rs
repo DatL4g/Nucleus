@@ -986,6 +986,36 @@ impl Window {
     self.window.is_minimized()
   }
 
+  /// Gets whether the window is tiled/snapped to a screen edge (Aero Snap).
+  ///
+  /// ## Platform-specific
+  ///
+  /// - Only meaningful on the GTK backend (Linux/BSD); returns `false`
+  ///   elsewhere. PATCH(nucleus).
+  #[inline]
+  pub fn is_tiled(&self) -> bool {
+    #[cfg(any(
+      target_os = "linux",
+      target_os = "dragonfly",
+      target_os = "freebsd",
+      target_os = "netbsd",
+      target_os = "openbsd"
+    ))]
+    {
+      self.window.is_tiled()
+    }
+    #[cfg(not(any(
+      target_os = "linux",
+      target_os = "dragonfly",
+      target_os = "freebsd",
+      target_os = "netbsd",
+      target_os = "openbsd"
+    )))]
+    {
+      false
+    }
+  }
+
   /// Gets the window's current visibility state.
   ///
   /// ## Platform-specific

@@ -93,12 +93,22 @@ value class DecoratedWindowState(
     val isMaximized: Boolean
         get() = state and Maximize != 0UL
 
+    /**
+     * True when the window is tiled/snapped to a screen edge (Aero Snap).
+     * Currently only reported by the Tao Linux backend; other backends leave it
+     * `false`.
+     */
+    val isTiled: Boolean
+        get() = state and Tiled != 0UL
+
     fun copy(
         fullscreen: Boolean = isFullscreen,
         minimized: Boolean = isMinimized,
         maximized: Boolean = isMaximized,
         active: Boolean = isActive,
-    ): DecoratedWindowState = of(fullscreen = fullscreen, minimized = minimized, maximized = maximized, active = active)
+        tiled: Boolean = isTiled,
+    ): DecoratedWindowState =
+        of(fullscreen = fullscreen, minimized = minimized, maximized = maximized, active = active, tiled = tiled)
 
     override fun toString(): String = "${javaClass.simpleName}(isFullscreen=$isFullscreen, isActive=$isActive)"
 
@@ -107,18 +117,21 @@ value class DecoratedWindowState(
         val Fullscreen: ULong = 1UL shl 1
         val Minimize: ULong = 1UL shl 2
         val Maximize: ULong = 1UL shl 3
+        val Tiled: ULong = 1UL shl 4
 
         fun of(
             fullscreen: Boolean = false,
             minimized: Boolean = false,
             maximized: Boolean = false,
             active: Boolean = true,
+            tiled: Boolean = false,
         ): DecoratedWindowState =
             DecoratedWindowState(
                 (if (fullscreen) Fullscreen else 0UL) or
                     (if (minimized) Minimize else 0UL) or
                     (if (maximized) Maximize else 0UL) or
-                    (if (active) Active else 0UL),
+                    (if (active) Active else 0UL) or
+                    (if (tiled) Tiled else 0UL),
             )
     }
 }

@@ -980,7 +980,10 @@ internal class TaoComposeSceneHostLinux(
 
         surface.canvas.clear(0x00000000)
         sc.render(surface.canvas.asComposeCanvas(), now)
-        if (cornerRadiusPx > 0 && !window.isMaximized && !window.isFullscreen) {
+        // Also drop the rounding when tiled/snapped (Aero Snap): a half/quarter
+        // screen window sits flush against the screen edge, so rounded corners
+        // there look wrong — native CSD windows square off when tiled too.
+        if (cornerRadiusPx > 0 && !window.isMaximized && !window.isFullscreen && !window.isTiled) {
             // widthPx/heightPx are physical pixels and the canvas has no scale
             // transform, so the logical radius must be scaled up to physical to
             // keep the corner curvature constant in logical terms across DPI

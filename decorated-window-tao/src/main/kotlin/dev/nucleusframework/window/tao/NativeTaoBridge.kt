@@ -277,6 +277,10 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeIsMaximized(handle: Long): Boolean
 
+    /** Linux/GTK only: true when the compositor has tiled/snapped the window. */
+    @JvmStatic
+    external fun nativeIsTiled(handle: Long): Boolean
+
     @JvmStatic
     external fun nativeSetMaximized(
         handle: Long,

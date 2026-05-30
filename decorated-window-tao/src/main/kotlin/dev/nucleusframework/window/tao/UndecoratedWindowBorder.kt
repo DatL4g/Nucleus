@@ -45,10 +45,15 @@ internal fun rememberUndecoratedWindowBorder(
     if (state.isMaximized || state.isFullscreen) return Modifier
     val style = LocalDecoratedWindowStyle.current
     val borderShape =
-        when (linuxDe) {
-            LinuxDesktopEnvironment.Gnome ->
+        when {
+            // Tiled/snapped windows sit flush against the screen edge with
+            // squared-off corners (the rounded-corner carve is also disabled
+            // when tiled). Keep a rectangular border so the visible outline
+            // matches the square corners instead of a rounded line over them.
+            state.isTiled -> RoundedCornerShape(0.dp)
+            linuxDe == LinuxDesktopEnvironment.Gnome ->
                 RoundedCornerShape((gnomeCornerArc / 2).dp)
-            LinuxDesktopEnvironment.KDE ->
+            linuxDe == LinuxDesktopEnvironment.KDE ->
                 RoundedCornerShape(
                     topStart = (kdeCornerArc / 2).dp,
                     topEnd = (kdeCornerArc / 2).dp,

@@ -59,6 +59,10 @@ pub struct Window {
   maximized: Rc<AtomicBool>,
   is_always_on_top: Rc<AtomicBool>,
   minimized: Rc<AtomicBool>,
+  // PATCH(nucleus): tracks compositor tiling (Aero Snap / half-screen). Set from
+  // the GTK window-state-event so it can be read off-thread via JNI like
+  // `maximized`. Used to drop the Compose-drawn rounded corners when snapped.
+  tiled: Rc<AtomicBool>,
   fullscreen: RefCell<Option<Fullscreen>>,
   inner_size_constraints: RefCell<WindowSizeConstraints>,
   /// Draw event Sender
@@ -267,6 +271,7 @@ impl Window {
       maximized,
       minimized,
       is_always_on_top,
+      tiled,
     ) = Self::setup_signals(&window, Some(&attributes));
 
     if let Some(icon) = attributes.window_icon {
@@ -287,6 +292,7 @@ impl Window {
       maximized,
       minimized,
       is_always_on_top,
+      tiled,
       fullscreen: RefCell::new(attributes.fullscreen),
       inner_size_constraints: RefCell::new(attributes.inner_size_constraints),
       preferred_theme: RefCell::new(preferred_theme),
@@ -316,6 +322,7 @@ impl Window {
     Rc<(AtomicI32, AtomicI32)>,
     Rc<(AtomicI32, AtomicI32)>,
     Rc<(AtomicI32, AtomicI32)>,
+    Rc<AtomicBool>,
     Rc<AtomicBool>,
     Rc<AtomicBool>,
     Rc<AtomicBool>,
@@ -373,6 +380,9 @@ impl Window {
       attributes.map(|a| a.always_on_top).unwrap_or(false),
     ));
     let is_always_on_top_clone = is_always_on_top.clone();
+    // PATCH(nucleus): tiling (Aero Snap) state, mirroring `maximized`.
+    let tiled = Rc::new(AtomicBool::new(false));
+    let tiled_clone = tiled.clone();
 
     window.connect_window_state_event(move |window, event| {
       let state = event.new_window_state();
@@ -380,6 +390,20 @@ impl Window {
       let iconified = state.contains(WindowState::ICONIFIED);
       minimized_clone.store(iconified, Ordering::Release);
       is_always_on_top_clone.store(state.contains(WindowState::ABOVE), Ordering::Release);
+      // PATCH(nucleus): a window snapped to a screen edge (GNOME/KDE Aero Snap)
+      // reports tiled state without the MAXIMIZED bit. Treat any tiled edge as
+      // tiled so the embedder can square off the rounded corners, matching
+      // native client-side decorations.
+      tiled_clone.store(
+        state.intersects(
+          WindowState::TILED
+            | WindowState::TOP_TILED
+            | WindowState::RIGHT_TILED
+            | WindowState::BOTTOM_TILED
+            | WindowState::LEFT_TILED,
+        ),
+        Ordering::Release,
+      );
       // PATCH(nucleus): deterministic minimize/restore signal. This signal fires
       // for every state change (focus, maximize, …), so gate on the ICONIFIED bit
       // actually transitioning to avoid spamming the embedder hook.
@@ -406,6 +430,7 @@ impl Window {
       maximized,
       minimized,
       is_always_on_top,
+      tiled,
     )
   }
 
@@ -431,6 +456,7 @@ impl Window {
       maximized,
       minimized,
       is_always_on_top,
+      tiled,
     ) = Self::setup_signals(&window, None);
 
     let win = Self {
@@ -447,6 +473,7 @@ impl Window {
       maximized,
       minimized,
       is_always_on_top,
+      tiled,
       fullscreen: RefCell::new(None),
       inner_size_constraints: RefCell::new(WindowSizeConstraints::default()),
       preferred_theme: RefCell::new(None),
@@ -663,6 +690,12 @@ impl Window {
 
   pub fn is_maximized(&self) -> bool {
     self.maximized.load(Ordering::Acquire)
+  }
+
+  // PATCH(nucleus): true when the compositor has tiled/snapped the window to a
+  // screen edge (Aero Snap). Read off-thread via JNI, like `is_maximized`.
+  pub fn is_tiled(&self) -> bool {
+    self.tiled.load(Ordering::Acquire)
   }
 
   pub fn is_minimized(&self) -> bool {
