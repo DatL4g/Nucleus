@@ -119,6 +119,7 @@ fun ApplicationScope.DecoratedDialog(
         enabled = enabled,
         focusable = focusable,
         alwaysOnTop = false,
+        isDialog = true,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
         content = {

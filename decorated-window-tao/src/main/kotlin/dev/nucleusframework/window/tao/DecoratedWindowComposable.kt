@@ -55,6 +55,7 @@ fun ApplicationScope.DecoratedWindow(
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
+    isDialog: Boolean = false,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
@@ -113,6 +114,7 @@ fun ApplicationScope.DecoratedWindow(
                     // not expose `with_fullscreen` in the same way (it takes a
                     // monitor handle which we don't have yet).
                     maximized = state.placement == WindowPlacement.Maximized,
+                    isDialog = isDialog,
                     onPreviewKeyEvent = { latestPreview(it) },
                     onKeyEvent = { latestKey(it) },
                     macOSStyle = macOSStyle,

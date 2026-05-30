@@ -3,6 +3,7 @@
 
 package dev.nucleusframework.window.tao
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -13,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -61,6 +63,13 @@ internal val LocalRequestedClearColor =
 val LocalTaoWindow = staticCompositionLocalOf<TaoWindow?> { null }
 
 /**
+ * Translucent black scrim painted over the parent window's content while a
+ * modal dialog is open (Linux only). Dims the parent and reinforces the
+ * dialog's elevation in the absence of a compositor-drawn drop shadow.
+ */
+private val ModalScrimColor = Color(0x66000000)
+
+/**
  * Tao-backed equivalent of `decorated-window-jni`'s `DecoratedWindow`.
  * Imperative-on-the-outside, Composable-on-the-inside: opens a single Tao
  * window, mounts the user [content] inside its dedicated `ComposeScene`, and
@@ -88,6 +97,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
     maximized: Boolean = false,
+    isDialog: Boolean = false,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
@@ -122,6 +132,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             focusable,
             alwaysOnTop,
             maximized,
+            isDialog,
             icon,
             minimumSize,
             onCloseRequest,
@@ -140,6 +151,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             focusable,
             alwaysOnTop,
             maximized,
+            isDialog,
             icon,
             minimumSize,
             onCloseRequest,
@@ -330,6 +342,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     focusable: Boolean,
     alwaysOnTop: Boolean,
     maximized: Boolean,
+    isDialog: Boolean,
     icon: Painter?,
     minimumSize: DpSize?,
     onCloseRequest: () -> Unit,
@@ -395,6 +408,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                         linuxDe = linuxDe,
                         gnomeCornerArc = 24f,
                         kdeCornerArc = 10f,
+                        isDialog = isDialog,
                     )
                 val modalCount =
                     remember {
@@ -414,10 +428,16 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                             }
                         }
                         if (modalCount.value > 0) {
+                            // Dim the whole parent window while a dialog is open.
+                            // Linux dialogs are undecorated (no compositor
+                            // shadow), so the scrim is what visually pushes the
+                            // parent back and lifts the dialog forward — on top
+                            // of swallowing pointer events.
                             Box(
                                 modifier =
                                     Modifier
                                         .fillMaxSize()
+                                        .background(ModalScrimColor)
                                         .pointerInput(Unit) {
                                             awaitPointerEventScope {
                                                 while (true) {
@@ -625,6 +645,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     focusable: Boolean,
     alwaysOnTop: Boolean,
     maximized: Boolean,
+    isDialog: Boolean,
     icon: Painter?,
     minimumSize: DpSize?,
     onCloseRequest: () -> Unit,
@@ -680,6 +701,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                         linuxDe = LinuxDesktopEnvironment.Unknown,
                         gnomeCornerArc = 24f,
                         kdeCornerArc = 10f,
+                        isDialog = isDialog,
                     )
                 val modalCount =
                     remember {
