@@ -70,7 +70,6 @@ internal fun TitleBarScope.WindowControlsLinux(
                 val closePressed = if (state.isActive) icons.closePressedFocused else icons.closePressed
                 LinuxControlButton(
                     onClick = { win.requestUserClose() },
-                    state = state,
                     icon = icons.close,
                     iconHover = closeHover,
                     iconPressed = closePressed,
@@ -83,7 +82,6 @@ internal fun TitleBarScope.WindowControlsLinux(
                 if (isFullscreen && onExitFullscreen != null) {
                     LinuxControlButton(
                         onClick = onExitFullscreen,
-                        state = state,
                         icon = icons.maximize,
                         iconHover = icons.maximizeHover,
                         iconPressed = icons.maximizePressed,
@@ -96,7 +94,6 @@ internal fun TitleBarScope.WindowControlsLinux(
                 if (state.isMaximized) {
                     LinuxControlButton(
                         onClick = { win.setMaximized(false) },
-                        state = state,
                         icon = icons.restore,
                         iconHover = icons.restoreHover,
                         iconPressed = icons.restorePressed,
@@ -106,7 +103,6 @@ internal fun TitleBarScope.WindowControlsLinux(
                 } else {
                     LinuxControlButton(
                         onClick = { win.setMaximized(true) },
-                        state = state,
                         icon = icons.maximize,
                         iconHover = icons.maximizeHover,
                         iconPressed = icons.maximizePressed,
@@ -118,7 +114,6 @@ internal fun TitleBarScope.WindowControlsLinux(
             LinuxTitleBarButton.MINIMIZE -> {
                 LinuxControlButton(
                     onClick = { win.minimize() },
-                    state = state,
                     icon = icons.minimize,
                     iconHover = icons.minimizeHover,
                     iconPressed = icons.minimizePressed,
@@ -135,7 +130,6 @@ internal fun TitleBarScope.WindowControlsLinux(
 @Composable
 private fun TitleBarScope.LinuxControlButton(
     onClick: () -> Unit,
-    state: DecoratedWindowState,
     icon: Painter,
     iconHover: Painter,
     iconPressed: Painter,

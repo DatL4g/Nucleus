@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -281,8 +282,22 @@ fun DecoratedWindowScope.BasicTitleBar(
                 // the title bar would unexpectedly leave fullscreen — and with
                 // `[setMovable:NO]` AppKit no longer handles that itself.
                 if (currentState.isFullscreen) return@onPointerEvent
+                // Touch has no PointerButton — Compose leaves `button` null for
+                // touch presses (the Linux scene host sends touch contacts via the
+                // multi-pointer `sendPointerEvent` overload with no button), so the
+                // mouse-centric Primary gate would never match a finger tap. Linux
+                // (Wayland) is the only backend that routes title-bar touch to
+                // Compose: macOS has no touchscreen, and on Windows the native
+                // WndProc captures caption touch and lets the OS handle double-tap.
+                // A single touch contact is the touch-equivalent of a primary click.
+                val isPrimaryOrTouch =
+                    this.currentEvent.button == PointerButton.Primary ||
+                        (
+                            Platform.Current == Platform.Linux &&
+                                this.currentEvent.changes.any { it.type == PointerType.Touch }
+                        )
                 if (
-                    this.currentEvent.button == PointerButton.Primary &&
+                    isPrimaryOrTouch &&
                     this.currentEvent.changes.any { !it.isConsumed }
                 ) {
                     val now = System.currentTimeMillis()

@@ -78,7 +78,7 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
  * area — same shape as the macOS path before custom-chrome was added.
  */
 @OptIn(InternalComposeUiApi::class)
-@Suppress("LargeClass")
+@Suppress("LargeClass", "TooManyFunctions")
 internal class TaoComposeSceneHostLinux(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
