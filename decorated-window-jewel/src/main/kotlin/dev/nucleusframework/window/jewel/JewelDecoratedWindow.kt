@@ -96,24 +96,24 @@ fun NucleusApplicationScope.JewelDecoratedWindow(
     val resolvedTitleBarStyle = titleBarStyle ?: jewelTitleBarStyle
     val titleBarIsDark = resolvedTitleBarStyle.colors.background.luminance() < LUMINANCE_THRESHOLD
 
-    NucleusDecoratedWindowFn(
-        onCloseRequest = onCloseRequest,
-        state = state,
-        visible = visible,
-        title = title,
-        icon = icon,
-        resizable = resizable,
-        enabled = enabled,
-        focusable = focusable,
-        alwaysOnTop = alwaysOnTop,
-        minimumSize = minimumSize,
-        onPreviewKeyEvent = onPreviewKeyEvent,
-        onKeyEvent = onKeyEvent,
+    NucleusDecoratedWindowTheme(
+        isDark = titleBarIsDark,
+        windowStyle = windowStyle,
+        titleBarStyle = resolvedTitleBarStyle,
     ) {
-        NucleusDecoratedWindowTheme(
-            isDark = titleBarIsDark,
-            windowStyle = windowStyle,
-            titleBarStyle = resolvedTitleBarStyle,
+        NucleusDecoratedWindowFn(
+            onCloseRequest = onCloseRequest,
+            state = state,
+            visible = visible,
+            title = title,
+            icon = icon,
+            resizable = resizable,
+            enabled = enabled,
+            focusable = focusable,
+            alwaysOnTop = alwaysOnTop,
+            minimumSize = minimumSize,
+            onPreviewKeyEvent = onPreviewKeyEvent,
+            onKeyEvent = onKeyEvent,
         ) {
             content()
         }

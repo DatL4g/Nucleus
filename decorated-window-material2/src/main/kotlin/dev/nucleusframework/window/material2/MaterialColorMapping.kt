@@ -24,10 +24,11 @@ private val isKde =
 internal fun rememberMaterialWindowStyle(colors: Colors): DecoratedWindowStyle {
     val borderColor = colors.onSurface.copy(alpha = BORDER_ALPHA)
     val inactiveBorderColor = colors.onSurface.copy(alpha = INACTIVE_BORDER_ALPHA)
-    return remember(borderColor, inactiveBorderColor) {
+    return remember(colors.background, borderColor, inactiveBorderColor) {
         DecoratedWindowStyle(
             colors =
                 DecoratedWindowColors(
+                    background = colors.background,
                     border = borderColor,
                     borderInactive = inactiveBorderColor,
                 ),

@@ -82,27 +82,27 @@ fun NucleusApplicationScope.MaterialDecoratedDialog(
     val titleBarStyle = rememberMaterialTitleBarStyle(outerColorScheme)
     val isDark = outerColorScheme.isDark()
 
-    NucleusDecoratedDialog(
-        onCloseRequest = onCloseRequest,
-        state = state,
-        visible = visible,
-        title = title,
-        icon = icon,
-        resizable = resizable,
-        enabled = enabled,
-        focusable = focusable,
-        onPreviewKeyEvent = onPreviewKeyEvent,
-        onKeyEvent = onKeyEvent,
+    NucleusDecoratedWindowTheme(
+        isDark = isDark,
+        windowStyle = windowStyle,
+        titleBarStyle = titleBarStyle,
     ) {
-        MaterialTheme(
-            colorScheme = outerColorScheme,
-            typography = outerTypography,
-            shapes = outerShapes,
+        NucleusDecoratedDialog(
+            onCloseRequest = onCloseRequest,
+            state = state,
+            visible = visible,
+            title = title,
+            icon = icon,
+            resizable = resizable,
+            enabled = enabled,
+            focusable = focusable,
+            onPreviewKeyEvent = onPreviewKeyEvent,
+            onKeyEvent = onKeyEvent,
         ) {
-            NucleusDecoratedWindowTheme(
-                isDark = isDark,
-                windowStyle = windowStyle,
-                titleBarStyle = titleBarStyle,
+            MaterialTheme(
+                colorScheme = outerColorScheme,
+                typography = outerTypography,
+                shapes = outerShapes,
             ) {
                 content()
             }

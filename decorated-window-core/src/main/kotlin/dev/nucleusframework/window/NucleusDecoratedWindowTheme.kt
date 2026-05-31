@@ -56,6 +56,7 @@ object DecoratedWindowDefaults {
                 DecoratedWindowColors(
                     border = Color(0x12FFFFFF),
                     borderInactive = Color(0x12FFFFFF),
+                    background = Color.White,
                 ),
             metrics = DecoratedWindowMetrics(borderWidth = 1.dp),
         )
@@ -66,6 +67,7 @@ object DecoratedWindowDefaults {
                 DecoratedWindowColors(
                     border = Color(0x12FFFFFF),
                     borderInactive = Color(0x12FFFFFF),
+                    background = Color(0xFF2B2B2B),
                 ),
             metrics = DecoratedWindowMetrics(borderWidth = 1.dp),
         )

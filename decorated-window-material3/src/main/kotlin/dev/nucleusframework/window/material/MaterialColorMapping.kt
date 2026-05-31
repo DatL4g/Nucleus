@@ -23,10 +23,11 @@ private val isKde =
 
 @Composable
 fun rememberMaterialWindowStyle(colorScheme: ColorScheme): DecoratedWindowStyle =
-    remember(colorScheme.outlineVariant) {
+    remember(colorScheme.background, colorScheme.outlineVariant) {
         DecoratedWindowStyle(
             colors =
                 DecoratedWindowColors(
+                    background = colorScheme.background,
                     border = colorScheme.outlineVariant,
                     borderInactive = colorScheme.outlineVariant.copy(alpha = INACTIVE_BORDER_ALPHA),
                 ),

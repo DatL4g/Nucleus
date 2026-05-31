@@ -24,6 +24,7 @@ private val isKde =
 @Composable
 fun rememberJewelWindowStyle(): DecoratedWindowStyle {
     val isDark = JewelTheme.isDark
+    val background = JewelTheme.globalColors.panelBackground
     val borderColor =
         if (isLinux && isDark) {
             JewelTheme.globalColors.borders.normal
@@ -31,12 +32,13 @@ fun rememberJewelWindowStyle(): DecoratedWindowStyle {
         } else {
             JewelTheme.globalColors.borders.normal
         }
-    return remember(borderColor, isDark) {
+    return remember(background, borderColor, isDark) {
         DecoratedWindowStyle(
             colors =
                 DecoratedWindowColors(
                     border = borderColor,
                     borderInactive = borderColor.copy(alpha = INACTIVE_BORDER_ALPHA),
+                    background = background,
                 ),
             metrics = DecoratedWindowMetrics(borderWidth = 1.dp),
         )

@@ -5,10 +5,12 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
@@ -20,6 +22,7 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
 import kotlin.math.roundToInt
 
 /**
@@ -66,6 +69,11 @@ fun ApplicationScope.DecoratedWindow(
     val latestKey by rememberUpdatedState(onKeyEvent)
     val latestContent by rememberUpdatedState(content)
     val latestState by rememberUpdatedState(state)
+    val latestWindowBackgroundArgb =
+        rememberUpdatedState(
+            LocalDecoratedWindowStyle.current.colors.background
+                .toArgb(),
+        )
 
     state.inflateToMinimumSize(minimumSize)
     state.applyMacOsInitialMaximizedSize()
@@ -118,7 +126,14 @@ fun ApplicationScope.DecoratedWindow(
                     onPreviewKeyEvent = { latestPreview(it) },
                     onKeyEvent = { latestKey(it) },
                     macOSStyle = macOSStyle,
-                    content = { latestContent.invoke(this) },
+                    content = {
+                        val taoWindow = window
+                        val backgroundArgb = latestWindowBackgroundArgb.value
+                        SideEffect {
+                            taoWindow.setBackgroundColor(backgroundArgb)
+                        }
+                        latestContent.invoke(this)
+                    },
                 )
 
             // Initial placement / minimised flag are applied imperatively here

@@ -62,6 +62,15 @@ class TaoWindow internal constructor(
     // displaying black. Cleared in `dispatch(REDRAW_REQUESTED)`, just before
     // the listener runs, so a redraw posted *during* render still gets through.
     private val redrawPending = AtomicBoolean(false)
+
+    // Startup white-flash workaround: the themed WM_ERASEBKGND fill is armed on
+    // show() and disabled once — on the first native redraw after show. Gating
+    // on this flag keeps the disable off the per-frame redraw path.
+    private var startupEraseActive = false
+
+    // Last background ARGB pushed to native, so the per-recomposition SideEffect
+    // only crosses the JNI boundary when the themed color actually changes.
+    private var lastBackgroundArgb: Int? = null
     private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
 
     @Volatile
@@ -418,7 +427,25 @@ class TaoWindow internal constructor(
         movedListeners += block
     }
 
+    internal fun setBackgroundColor(argb: Int) {
+        if (Platform.Current != Platform.Windows || !NativeTaoWindowsDecoBridge.isLoaded) return
+        if (argb == lastBackgroundArgb) return
+        val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+        if (hwnd != 0L) {
+            NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(hwnd, argb)
+            lastBackgroundArgb = argb
+        }
+    }
+
+    private fun setStartupBackgroundEraseEnabled(enabled: Boolean) {
+        if (Platform.Current != Platform.Windows || !NativeTaoWindowsDecoBridge.isLoaded) return
+        val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+        if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeSetStartupBackgroundEraseEnabled(hwnd, enabled)
+    }
+
     fun show() {
+        startupEraseActive = true
+        setStartupBackgroundEraseEnabled(true)
         NativeTaoBridge.nativeSetVisible(handle, true)
     }
 
@@ -575,6 +602,12 @@ class TaoWindow internal constructor(
                 // through. Setting after would drop legitimate follow-up frames.
                 redrawPending.set(false)
                 redrawListener?.invoke()
+                // First real frame is now present in the visible surface; stop
+                // the themed startup erase so it never flickers during resize.
+                if (startupEraseActive) {
+                    startupEraseActive = false
+                    setStartupBackgroundEraseEnabled(false)
+                }
             }
             TaoEventCode.FOCUSED -> focusListeners.forEach { it.invoke(true) }
             TaoEventCode.UNFOCUSED -> focusListeners.forEach { it.invoke(false) }

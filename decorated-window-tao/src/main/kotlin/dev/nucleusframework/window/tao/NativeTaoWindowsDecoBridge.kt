@@ -43,6 +43,12 @@ internal object NativeTaoWindowsDecoBridge {
     )
 
     @JvmStatic
+    external fun nativeSetStartupBackgroundEraseEnabled(
+        hwnd: Long,
+        enabled: Boolean,
+    )
+
+    @JvmStatic
     external fun nativeSetFullscreen(
         hwnd: Long,
         fullscreen: Boolean,

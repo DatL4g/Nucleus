@@ -17,6 +17,7 @@ data class DecoratedWindowStyle(
 data class DecoratedWindowColors(
     val border: Color,
     val borderInactive: Color,
+    val background: Color = Color.White,
 ) {
     @Composable
     fun borderFor(state: DecoratedWindowState): State<Color> =

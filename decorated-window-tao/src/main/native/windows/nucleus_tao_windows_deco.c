@@ -73,6 +73,7 @@ typedef struct {
     WNDPROC originalWndProc;
     int     titleBarHeightPx;
     COLORREF bgColor;
+    BOOL    startupBackgroundErase;
     BOOL    isFullscreen;
     LONG    savedStyle;
     LONG    savedExStyle;
@@ -165,12 +166,20 @@ static LRESULT CALLBACK decoWndProc(
 
     switch (msg) {
 
-    /* No-op: the GL back buffer already holds the latest frame. Filling here
-     * (even with the title-bar color) flashes between the fill and the next
-     * SwapBuffers — visible as solid-color scintillation while dragging or
-     * resizing. Returning 1 tells Windows the area was "erased" without
-     * painting anything; SwapBuffers in the next render cycle restores it. */
+    /* During ShowWindow, DWM can request an erased client surface before WGL
+     * has presented into the now-visible redirection surface. Paint the themed
+     * background only for that startup gap; after the first native redraw event
+     * this is disabled to avoid solid-color flicker while resizing or dragging. */
     case WM_ERASEBKGND:
+        if (state->startupBackgroundErase) {
+            HDC hdc = (HDC)wParam;
+            RECT rc;
+            if (hdc && GetClientRect(hwnd, &rc)) {
+                HBRUSH brush = CreateSolidBrush(state->bgColor);
+                FillRect(hdc, &rc, brush);
+                DeleteObject(brush);
+            }
+        }
         return 1;
 
 
@@ -342,6 +351,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeInstallDec
 
     state->titleBarHeightPx = (int)titleBarHeightPx;
     state->bgColor = RGB(255, 255, 255);
+    state->startupBackgroundErase = TRUE;
 
     SetPropW(hwnd, PROP_NAME, (HANDLE)state);
 
@@ -421,6 +431,18 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetBackgro
     BOOL isDark = (luminance < 128) ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */,
                           &isDark, sizeof(isDark));
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetStartupBackgroundEraseEnabled(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean enabled)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return;
+
+    DecoState *state = getState(hwnd);
+    if (state) state->startupBackgroundErase = enabled ? TRUE : FALSE;
 }
 
 JNIEXPORT void JNICALL

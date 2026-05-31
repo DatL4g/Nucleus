@@ -90,29 +90,29 @@ fun NucleusApplicationScope.MaterialDecoratedWindow(
     val resolvedTitleBarStyle = titleBarStyle ?: rememberMaterialTitleBarStyle(outerColors)
     val isDark = !outerColors.isLight
 
-    NucleusDecoratedWindow(
-        onCloseRequest = onCloseRequest,
-        state = state,
-        visible = visible,
-        title = title,
-        icon = icon,
-        resizable = resizable,
-        enabled = enabled,
-        focusable = focusable,
-        alwaysOnTop = alwaysOnTop,
-        minimumSize = minimumSize,
-        onPreviewKeyEvent = onPreviewKeyEvent,
-        onKeyEvent = onKeyEvent,
+    NucleusDecoratedWindowTheme(
+        isDark = isDark,
+        windowStyle = windowStyle,
+        titleBarStyle = resolvedTitleBarStyle,
     ) {
-        MaterialTheme(
-            colors = outerColors,
-            typography = outerTypography,
-            shapes = outerShapes,
+        NucleusDecoratedWindow(
+            onCloseRequest = onCloseRequest,
+            state = state,
+            visible = visible,
+            title = title,
+            icon = icon,
+            resizable = resizable,
+            enabled = enabled,
+            focusable = focusable,
+            alwaysOnTop = alwaysOnTop,
+            minimumSize = minimumSize,
+            onPreviewKeyEvent = onPreviewKeyEvent,
+            onKeyEvent = onKeyEvent,
         ) {
-            NucleusDecoratedWindowTheme(
-                isDark = isDark,
-                windowStyle = windowStyle,
-                titleBarStyle = resolvedTitleBarStyle,
+            MaterialTheme(
+                colors = outerColors,
+                typography = outerTypography,
+                shapes = outerShapes,
             ) {
                 content()
             }

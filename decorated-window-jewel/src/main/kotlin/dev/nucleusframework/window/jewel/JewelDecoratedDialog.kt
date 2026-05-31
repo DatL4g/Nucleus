@@ -75,22 +75,22 @@ fun NucleusApplicationScope.JewelDecoratedDialog(
     val windowStyle = rememberJewelWindowStyle()
     val titleBarStyle = rememberJewelTitleBarStyle()
 
-    NucleusDecoratedDialogFn(
-        onCloseRequest = onCloseRequest,
-        state = state,
-        visible = visible,
-        title = title,
-        icon = icon,
-        resizable = resizable,
-        enabled = enabled,
-        focusable = focusable,
-        onPreviewKeyEvent = onPreviewKeyEvent,
-        onKeyEvent = onKeyEvent,
+    NucleusDecoratedWindowTheme(
+        isDark = JewelTheme.isDark,
+        windowStyle = windowStyle,
+        titleBarStyle = titleBarStyle,
     ) {
-        NucleusDecoratedWindowTheme(
-            isDark = JewelTheme.isDark,
-            windowStyle = windowStyle,
-            titleBarStyle = titleBarStyle,
+        NucleusDecoratedDialogFn(
+            onCloseRequest = onCloseRequest,
+            state = state,
+            visible = visible,
+            title = title,
+            icon = icon,
+            resizable = resizable,
+            enabled = enabled,
+            focusable = focusable,
+            onPreviewKeyEvent = onPreviewKeyEvent,
+            onKeyEvent = onKeyEvent,
         ) {
             content()
         }
