@@ -18,6 +18,7 @@
 #import <objc/runtime.h>
 #import <stdatomic.h>
 #import <stdio.h>
+#include <stdint.h>
 #import <jni.h>
 
 #define NTLOG(fmt, ...) do { (void)0; } while (0)
@@ -70,6 +71,9 @@ static const char kTaoNsViewPtrKey = 12;
 // changes) dead on anything drawn over the title bar. Mirrors
 // `decorated-window-jni`'s NucleusDragView.
 static const char kTaoPassthroughViewKey = 13;
+// Last themed fallback background ARGB. Applied to NSWindow and CAMetalLayer so
+// AppKit fullscreen/title-bar animations never reveal the default white window.
+static const char kTaoBackgroundArgbKey = 14;
 
 // Same metrics as decorated-window-jni's applyConstraints — keeps the
 // traffic-lights at the same offsets Apple's own apps use.
@@ -173,6 +177,47 @@ typedef struct {
 } NucleusTaoMetalAttachment;
 
 #define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
+
+static NSColor *colorFromArgb(jint argb) {
+    uint32_t v = (uint32_t)argb;
+    CGFloat a = (CGFloat)((v >> 24) & 0xFF) / 255.0;
+    CGFloat r = (CGFloat)((v >> 16) & 0xFF) / 255.0;
+    CGFloat g = (CGFloat)((v >> 8)  & 0xFF) / 255.0;
+    CGFloat b = (CGFloat)(v & 0xFF) / 255.0;
+    return [NSColor colorWithSRGBRed:r green:g blue:b alpha:a];
+}
+
+static NucleusTaoMetalAttachment *attachmentForWindow(NSWindow *window) {
+    NSValue *boxed = objc_getAssociatedObject(window, &kTaoAttachmentKey);
+    return boxed != nil ? (NucleusTaoMetalAttachment *)boxed.pointerValue : NULL;
+}
+
+static void applyWindowBackgroundColor(NSWindow *window, NSView *view, jint argb) {
+    if (window == nil) return;
+    NSColor *color = colorFromArgb(argb);
+    window.backgroundColor = color;
+
+    CGColorRef cgColor = color.CGColor;
+    NSView *contentView = window.contentView;
+    if (contentView != nil && contentView.layer != nil) {
+        contentView.layer.backgroundColor = cgColor;
+    }
+    if (view != nil && view.layer != nil) {
+        view.layer.backgroundColor = cgColor;
+    }
+
+    NucleusTaoMetalAttachment *att = attachmentForWindow(window);
+    if (att != NULL && att->layer != nil) {
+        att->layer.backgroundColor = cgColor;
+    }
+}
+
+static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
+    if (window == nil) return;
+    NSNumber *stored = objc_getAssociatedObject(window, &kTaoBackgroundArgbKey);
+    jint argb = stored != nil ? stored.intValue : (jint)0xFFFFFFFF;
+    applyWindowBackgroundColor(window, view, argb);
+}
 
 // ── Replacement traffic-light buttons for fullscreen ────────────────────
 //
@@ -512,6 +557,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
     att->layer.frame = _view.bounds;
     att->layer.drawableSize = CGSizeMake(_view.bounds.size.width  * att->layer.contentsScale,
                                          _view.bounds.size.height * att->layer.contentsScale);
+    applyStoredWindowBackground(_view.window, _view);
 }
 
 - (NucleusTaoMetalAttachment *)attachment {
@@ -554,6 +600,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
         att->layer.contentsGravity = kCAGravityTopLeft;
         [CATransaction commit];
     }
+    applyStoredWindowBackground(w, _view);
 }
 - (void)willExitFS:(NSNotification *)n {
     NTLOG("FS willExit");
@@ -572,6 +619,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
         att->layer.contentsGravity = kCAGravityTopLeft;
         [CATransaction commit];
     }
+    applyStoredWindowBackground(w, _view);
     // Tear down replacement buttons + un-hide the AppKit titlebar container so
     // AppKit can drive the exit animation against its standard chrome.
     removeFullScreenButtons(w);
@@ -603,6 +651,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
     }
     NSWindow *w = _view.window;
     if (w == nil) return;
+    applyStoredWindowBackground(w, _view);
     // Install replacement traffic-light buttons inside the contentView so
     // they remain visible when AppKit auto-hides the native title bar (and
     // they don't disappear with our custom Compose title bar in fullscreen).
@@ -646,6 +695,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
     }
     NSWindow *w = _view.window;
     if (w == nil) return;
+    applyStoredWindowBackground(w, _view);
     // Re-show the standard buttons (hidden in willExitFS).
     [[w standardWindowButton:NSWindowCloseButton] setHidden:NO];
     [[w standardWindowButton:NSWindowMiniaturizeButton] setHidden:NO];
@@ -729,6 +779,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeAttach(
             objc_setAssociatedObject(win, &kTaoFSObserverKey, observer,
                                      OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
+        applyStoredWindowBackground(win, view);
     };
     if ([NSThread isMainThread]) installObserver();
     else                          dispatch_sync(dispatch_get_main_queue(), installObserver);
@@ -825,11 +876,11 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeConfigureChrome(
         // because `performWindowDragWithEvent:` requires `isMovable=YES`
         // on macOS < 26.
         [win setMovable:NO];
-        // Neutral light background shown through the CAMetalLayer until the
-        // first frame is presented. Matches the typical Compose Desktop /
-        // AWT default so apps that don't paint their own background look
-        // identical to the JNI/JBR backends.
-        win.backgroundColor = [NSColor whiteColor];
+        // Fallback background shown through the CAMetalLayer until the first
+        // frame is presented and during AppKit fullscreen/title-bar
+        // animations. Keep it synced with the Compose clear color instead of
+        // forcing white.
+        applyStoredWindowBackground(win, view);
         // Native fullscreen is allowed; the green traffic-light button
         // triggers AppKit's animated toggleFullScreen:. A NucleusTaoFSObserver
         // installed in nativeAttach below re-asserts the CAMetalLayer wiring
@@ -1158,9 +1209,27 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeApplyLargeCornerRad
         } else if (win.toolbar != nil) {
             win.toolbar = nil;
         }
+        applyStoredWindowBackground(win, view);
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetWindowBackgroundColor(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jint argb) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        objc_setAssociatedObject(win, &kTaoBackgroundArgbKey, @(argb),
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        applyWindowBackgroundColor(win, view, argb);
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_async(dispatch_get_main_queue(), apply);
 }
 
 JNIEXPORT void JNICALL

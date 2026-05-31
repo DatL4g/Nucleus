@@ -116,6 +116,16 @@ internal object NativeMetalBridge {
         enabled: Boolean,
     )
 
+    /**
+     * Updates the AppKit fallback background used behind the CAMetalLayer and
+     * during fullscreen/title-bar animations. [argb] is Compose-style ARGB.
+     */
+    @JvmStatic
+    external fun nativeSetWindowBackgroundColor(
+        nsViewPtr: Long,
+        argb: Int,
+    )
+
     @JvmStatic
     external fun nativeDetach(handle: Long)
 

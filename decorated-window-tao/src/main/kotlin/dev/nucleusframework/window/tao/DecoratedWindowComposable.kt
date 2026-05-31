@@ -129,7 +129,9 @@ fun ApplicationScope.DecoratedWindow(
                     content = {
                         val taoWindow = window
                         val backgroundArgb = latestWindowBackgroundArgb.value
+                        val clearColorState = LocalRequestedClearColor.current
                         SideEffect {
+                            clearColorState?.value = backgroundArgb
                             taoWindow.setBackgroundColor(backgroundArgb)
                         }
                         latestContent.invoke(this)

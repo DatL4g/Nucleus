@@ -83,11 +83,10 @@ internal class TaoComposeSceneHost(
         androidx.compose.runtime.mutableStateOf(0f)
 
     // ARGB clear color for the Skia surface. Defaults to opaque white to
-    // preserve the AWT/Compose-Desktop look, but the TitleBar composable
-    // updates it to the resolved title-bar background so any Compose region
-    // without an explicit background — most visibly the gap above the
-    // offsetted title bar during the macOS fullscreen menu-bar slide-in —
-    // matches the chrome color rather than flashing white.
+    // preserve the AWT/Compose-Desktop look, but the window/theme and TitleBar
+    // composables update it so any Compose region without an explicit
+    // background — most visibly animation gaps around fullscreen/title-bar
+    // transitions — matches the active chrome instead of flashing white.
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
         androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
 
@@ -741,14 +740,14 @@ internal class TaoComposeSceneHost(
         try {
             // CAMetalLayer drawables aren't auto-cleared between frames;
             // on Apple Silicon an uninitialised texture surfaces as
-            // undefined memory (often magenta). Clear to opaque white so
-            // any Compose region without an explicit background looks
-            // like a regular AWT/Compose-Desktop window.
+            // undefined memory (often magenta). Clear to the current themed
+            // fallback color, not hard-coded white, so fullscreen/title-bar
+            // animation gaps don't flash.
             renderMetalFrame(
                 attachmentHandle = attachmentHandle,
                 directContext = ctx,
                 scene = sc,
-                clearColor = 0xFFFFFFFF.toInt(),
+                clearColor = clearColorArgbState.value,
                 present = { handle, drawablePtr ->
                     if (needsTransaction) {
                         NativeMetalBridge.nativePresentWithInterop(

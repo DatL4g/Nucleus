@@ -47,10 +47,10 @@ internal val LocalRequestedTitleBarHeight =
 
 /**
  * Holds the ARGB clear color the Skia render loop applies to each frame,
- * pushed in by the `TitleBar` composable from the resolved title-bar
+ * pushed in by the themed window and by `TitleBar` from the resolved chrome
  * background. macOS-only: Linux/Windows hosts ignore it (they have native
  * window chrome with proper backgrounds). Defaults to opaque white via
- * [TaoComposeSceneHost.clearColorArgbState] when no TitleBar is mounted.
+ * [TaoComposeSceneHost.clearColorArgbState] until the first composition.
  */
 internal val LocalRequestedClearColor =
     staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
@@ -249,6 +249,14 @@ internal fun ApplicationScope.openDecoratedWindow(
                         val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
                         if (nsView != 0L && NativeMetalBridge.isLoaded) {
                             NativeMetalBridge.nativeApplyButtonLayout(nsView, height)
+                        }
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    snapshotFlow { host.clearColorArgbState.value }.collect { argb ->
+                        val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
+                        if (nsView != 0L && NativeMetalBridge.isLoaded) {
+                            NativeMetalBridge.nativeSetWindowBackgroundColor(nsView, argb)
                         }
                     }
                 }
