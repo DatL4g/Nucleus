@@ -76,6 +76,11 @@ fun DecoratedDialogScope.DialogTitleBar(
     val controlDir = controlButtonsDirection.resolve()
     val controlIsRtl = controlDir == LayoutDirection.Rtl
 
+    // Windows keeps its caption buttons on the right even for an RTL UI
+    // language; pin the placement side to the right (Ltr) there. See [TitleBar].
+    val controlsPlacementDir =
+        if (Platform.Current == Platform.Windows) LayoutDirection.Ltr else controlDir
+
     // Publish the resolved height up to DecoratedWindow so its native
     // button-centering call uses the dialog's actual title-bar height.
     val heightHolder = LocalRequestedTitleBarHeight.current
@@ -98,6 +103,7 @@ fun DecoratedDialogScope.DialogTitleBar(
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlDir,
+        controlButtonsPlacementDirection = controlsPlacementDir,
         applyTitleBar = { measuredHeight, titleBarState ->
             heightHolder.value = measuredHeight.value
             // Identical reservation logic to [TitleBar]: macOS traffic-lights

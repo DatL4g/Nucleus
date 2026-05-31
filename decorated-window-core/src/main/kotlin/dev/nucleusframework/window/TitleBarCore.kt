@@ -61,6 +61,7 @@ fun GenericTitleBarImpl(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
+    controlButtonsPlacementDirection: LayoutDirection = controlButtonsDirection,
     layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     onPlace: (() -> Unit)? = null,
@@ -114,6 +115,8 @@ fun GenericTitleBarImpl(
             content = {
                 CompositionLocalProvider(
                     LocalContentColor provides style.colors.content,
+                    // [controlButtonsDirection] drives the *order* of the control
+                    // buttons (close/minimize/maximize) within their group.
                     LocalControlButtonsDirection provides controlButtonsDirection,
                 ) {
                     val scope = TitleBarScopeImpl(titleBarInfo.title, titleBarInfo.icon)
@@ -125,7 +128,10 @@ fun GenericTitleBarImpl(
                 rememberTitleBarMeasurePolicy(
                     state = state,
                     applyTitleBar = applyTitleBar,
-                    controlButtonsDirection = controlButtonsDirection,
+                    // [controlButtonsPlacementDirection] drives the *side* the
+                    // control-button group is placed on, independently of its
+                    // internal order. Defaults to [controlButtonsDirection].
+                    controlButtonsDirection = controlButtonsPlacementDirection,
                     layoutPolicy = layoutPolicy,
                 ),
         )

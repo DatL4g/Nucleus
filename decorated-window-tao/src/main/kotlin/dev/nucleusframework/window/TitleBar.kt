@@ -250,6 +250,13 @@ fun DecoratedWindowScope.BasicTitleBar(
     val controlDir = controlButtonsDirection.resolve()
     val controlIsRtl = controlDir == LayoutDirection.Rtl
 
+    // Windows never mirrors its caption buttons to the left for an RTL UI
+    // language: the minimize/maximize/close group stays on the right. Keep the
+    // button *order* following [controlDir] (so it can still mirror), but pin
+    // the placement *side* to the right (Ltr) on Windows.
+    val controlsPlacementDir =
+        if (Platform.Current == Platform.Windows) LayoutDirection.Ltr else controlDir
+
     // macOS: flip the AppKit traffic-lights to the right edge when RTL is
     // active. Mirrors `decorated-window-jni`'s `nativeSetRTL` call path.
     if (Platform.Current == Platform.MacOS) {
@@ -329,6 +336,7 @@ fun DecoratedWindowScope.BasicTitleBar(
             gradientStartColor = gradientStartColor,
             style = style,
             controlButtonsDirection = controlDir,
+            controlButtonsPlacementDirection = controlsPlacementDir,
             layoutPolicy = layoutPolicy,
             applyTitleBar = { measuredHeight, titleBarState ->
                 // In overlay mode the bar lives outside the user content tree;
