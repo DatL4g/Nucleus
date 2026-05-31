@@ -214,15 +214,37 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                 }
                 UserEvent::RequestClose { handle } => {
-                    let removed = {
-                        let mut guard = WINDOWS.lock().unwrap();
+                    // Check the window still exists WITHOUT removing it yet.
+                    let present = {
+                        let guard = WINDOWS.lock().unwrap();
                         guard
-                            .as_mut()
-                            .map(|map| map.remove(&handle).is_some())
+                            .as_ref()
+                            .map(|map| map.contains_key(&handle))
                             .unwrap_or(false)
                     };
-                    if removed {
+                    if present {
+                        // Tear down the JVM-side GL/Skia resources FIRST, while
+                        // the native window — and the WGL HDC captured at attach
+                        // time — is still alive. `dispatch` invokes the Kotlin
+                        // callback synchronously on this thread, so `host.detach()`
+                        // (which makes the window's own WGL context current and
+                        // closes its Skia DirectContext) completes before we drop
+                        // the Window below.
+                        //
+                        // Dropping the Window first would call DestroyWindow,
+                        // invalidating that HDC: `wglMakeCurrent` in detach() would
+                        // then fail and Skia would free its GPU objects against
+                        // whatever context happens to be current — a sibling
+                        // window's (e.g. the main window opened during the
+                        // onboarding -> app handoff) — faulting inside the GL
+                        // driver (0xC0000005). Single-window closes never hit this
+                        // because no sibling context exists, which is why a relaunch
+                        // (onboarding already done) doesn't crash.
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
+                        let mut guard = WINDOWS.lock().unwrap();
+                        if let Some(map) = guard.as_mut() {
+                            map.remove(&handle);
+                        }
                     }
                 }
                 UserEvent::SetMaximized { handle, maximized } => {

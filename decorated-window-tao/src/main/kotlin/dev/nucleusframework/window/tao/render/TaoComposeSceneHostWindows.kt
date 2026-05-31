@@ -1066,6 +1066,16 @@ internal class TaoComposeSceneHostWindows(
 
     fun detach() {
         textToolbar.hide()
+        // Make THIS host's GL context current before tearing down Skia
+        // resources. A sibling host (e.g. the main window opened while this
+        // one — the onboarding window — closes) may have left its own HGLRC
+        // current on the shared event-loop thread after its last frame.
+        // Destroying our scene + DirectContext against a foreign context makes
+        // Skia issue glDelete* on the wrong context and faults inside the
+        // driver (0xC0000005). Same defensive make-current as onRedrawRequested.
+        if (attachmentHandle != 0L) {
+            NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+        }
         scene?.close()
         scene = null
         if (directContext != null) {
