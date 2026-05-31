@@ -37,7 +37,11 @@ internal object SingleInstanceRestoreBus {
  * - Second instance: writes its CLI deep link (if any) for the primary to pick
  *   up, then terminates the process with exit code 0 — Compose never starts.
  */
-internal fun acquireSingleInstanceLock() {
+internal fun acquireSingleInstanceLock(args: Array<String>) {
+    // Capture the deep link from this launch's CLI args up front: a secondary
+    // instance exits inside this function (before the composition's
+    // onDeepLink { } would parse them), so writeUriTo must already see the URI.
+    DeepLinkHandler.captureFromArgs(args)
     val isFirst =
         SingleInstanceManager.isSingleInstance(
             onRestoreFileCreated = { DeepLinkHandler.writeUriTo(this) },

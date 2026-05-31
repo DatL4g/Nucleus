@@ -43,7 +43,7 @@ fun nucleusApplication(
     GraalVmInitializer.initialize()
 
     if (enableSingleInstance) {
-        acquireSingleInstanceLock()
+        acquireSingleInstanceLock(args)
     }
 
     primePlatformIntegrations(args)

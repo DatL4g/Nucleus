@@ -70,6 +70,20 @@ object DeepLinkHandler {
     }
 
     /**
+     * Captures any deep link URI present in [args] into [uri] without
+     * installing a callback or touching `java.awt.Desktop`. Safe on every
+     * backend.
+     *
+     * Used by the single-instance bootstrap of a secondary launch (e.g. a
+     * Windows jump-list relaunch): the process must record its URI *before*
+     * forwarding it via [writeUriTo] and exiting — well before the composition
+     * (and its `onDeepLink { … }` registration) would ever run.
+     */
+    fun captureFromArgs(args: Array<String>) {
+        parseUriFromArgs(args)
+    }
+
+    /**
      * Installs the AWT-based macOS Apple Events handler. **Calling this
      * initialises AWT** — only invoke from an AWT-driven application launch.
      */
