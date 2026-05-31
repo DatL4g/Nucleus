@@ -732,6 +732,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 )
             OS.Windows ->
                 configureWindowsGraalvmPackaging(
+                    graalvm,
                     graalvmHome,
                     nativeImageCompile,
                     nativeCompileDir,
@@ -1227,6 +1228,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
 
 @Suppress("LongParameterList")
 private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
+    graalvm: GraalvmSettings,
     graalvmHome: org.gradle.api.provider.Provider<String>,
     nativeImageCompile: TaskProvider<Exec>,
     nativeCompileDir: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
@@ -1311,12 +1313,51 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
             into(outputDir.map { it.dir("bin") })
         }
 
+    // Bundle the MSVC C/C++ runtime DLLs next to the executable so the app runs on machines
+    // without the Visual C++ Redistributable (otherwise: "VCRUNTIME140.dll not found").
+    val copyCRuntime =
+        if (graalvm.windows.bundleCRuntime.get()) {
+            val requestedDlls = graalvm.windows.dlls.get()
+            val cRuntimeSourceDir =
+                graalvm.windows.sourceDir
+                    .map { it.asFile.absolutePath }
+                    .orElse(graalvmHome.map { "$it/bin" })
+            tasks.register<Copy>(
+                taskNameAction = "copy",
+                taskNameObject = "graalvmCRuntimeDlls",
+            ) {
+                description = "Copy MSVC C/C++ runtime DLLs next to the native executable"
+                dependsOn(nativeImageCompile)
+                from(cRuntimeSourceDir.get()) {
+                    requestedDlls.forEach { include(it) }
+                }
+                into(outputDir)
+                doLast {
+                    val present =
+                        outputDir.get().asFile.list()?.map { it.lowercase() }?.toSet().orEmpty()
+                    val missing = requestedDlls.filterNot { it.lowercase() in present }
+                    if (missing.isNotEmpty()) {
+                        logger.warn(
+                            "[graalvm] C runtime DLLs not found in ${cRuntimeSourceDir.get()}: " +
+                                "${missing.joinToString()}. The app may fail to start with a " +
+                                "\"DLL not found\" error on machines without the Visual C++ " +
+                                "Redistributable. Point graalvm.windows.sourceDir at a directory " +
+                                "that contains them (e.g. the MSVC redistributable folder).",
+                        )
+                    }
+                }
+            }
+        } else {
+            null
+        }
+
     return tasks.register<DefaultTask>(
         taskNameAction = "package",
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with DLLs"
         dependsOn(copyBinary, copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib)
+        copyCRuntime?.let { dependsOn(it) }
     }
 }
 

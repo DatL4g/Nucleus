@@ -29,10 +29,15 @@ abstract class GraalvmSettings
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val macOS: GraalvmMacOSSettings = objects.new()
+        val windows: GraalvmWindowsSettings = objects.new()
         val metadataRepository: MetadataRepositorySettings = objects.new()
 
         fun macOS(fn: Action<GraalvmMacOSSettings>) {
             fn.execute(macOS)
+        }
+
+        fun windows(fn: Action<GraalvmWindowsSettings>) {
+            fn.execute(windows)
         }
 
         fun metadataRepository(fn: Action<MetadataRepositorySettings>) {
@@ -48,6 +53,47 @@ abstract class GraalvmMacOSSettings
         val cStubsSrc: RegularFileProperty = objects.fileProperty()
         val minimumSystemVersion: Property<String> = objects.notNullProperty("12.0")
         val macOsSdkVersion: Property<String> = objects.notNullProperty("26.0")
+    }
+
+/**
+ * Windows-specific settings for GraalVM native images.
+ */
+abstract class GraalvmWindowsSettings
+    @Inject
+    constructor(
+        objects: ObjectFactory,
+    ) {
+        /**
+         * Whether to bundle the MSVC C/C++ runtime DLLs (vcruntime140.dll, vcruntime140_1.dll,
+         * msvcp140.dll) next to the produced native executable.
+         *
+         * GraalVM native images on Windows are dynamically linked against the Visual C++
+         * runtime, which is **not** part of a clean Windows install (it ships with the
+         * "Visual C++ Redistributable"). Without these DLLs end users get
+         * `VCRUNTIME140.dll not found` and the app fails to start. Bundling them next to the
+         * `.exe` lets the app run with no admin install and no external prerequisite.
+         *
+         * Defaults to `true`.
+         */
+        val bundleCRuntime: Property<Boolean> = objects.notNullProperty(true)
+
+        /**
+         * The DLL file names copied next to the executable when [bundleCRuntime] is enabled.
+         * Only files that actually exist in [sourceDir] are copied; missing ones are reported
+         * as a warning at packaging time.
+         */
+        val dlls: ListProperty<String> =
+            objects
+                .listProperty(String::class.java)
+                .convention(listOf("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"))
+
+        /**
+         * Directory the runtime DLLs are copied from. Defaults to the GraalVM toolchain's
+         * `bin` directory, which ships these DLLs. Override it to point at the MSVC
+         * redistributable directory (e.g. `VC\Redist\MSVC\<version>\x64\Microsoft.VC143.CRT`)
+         * if one of the requested DLLs is not present in the toolchain.
+         */
+        val sourceDir: DirectoryProperty = objects.directoryProperty()
     }
 
 /**
