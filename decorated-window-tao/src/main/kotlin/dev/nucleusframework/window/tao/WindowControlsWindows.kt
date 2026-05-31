@@ -24,9 +24,9 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.DecoratedWindowState
+import dev.nucleusframework.window.LocalControlButtonsDirection
 import dev.nucleusframework.window.LocalIsDarkTheme
 import dev.nucleusframework.window.icons.windows.Close
 import dev.nucleusframework.window.icons.windows.CloseDark
@@ -97,13 +97,9 @@ internal fun WindowControlsWindows(
     onExitFullscreen: (() -> Unit)? = null,
 ) {
     val isDark = LocalIsDarkTheme.current
-    // Force LTR for the buttons row so the canonical Windows order
-    // Minimize → Maximize → Close is preserved even when the app uses an RTL
-    // global LayoutDirection (e.g., Hebrew/Arabic UIs). Outer placement on the
-    // title bar's leading/trailing edge is still controlled by the
-    // TitleBarMeasurePolicy's `controlIsRtl`, so RTL users see the group on the
-    // expected side; only the internal child order is pinned here.
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+    // Match decorated-window-jni's WindowsWindowControlArea: LTR renders
+    // Minimize/Maximize/Close, RTL mirrors it to Close/Maximize/Minimize.
+    CompositionLocalProvider(LocalLayoutDirection provides LocalControlButtonsDirection.current) {
         Row(modifier = modifier.fillMaxHeight()) {
             // Minimize
             WindowsCaptionButton(
