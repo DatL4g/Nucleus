@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -192,7 +194,6 @@ internal fun ApplicationScope.openDecoratedWindow(
     // inset to the PlatformContext) and the TitleBar composable (which
     // updates it via SideEffect from its requested height).
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 28f }
-    var buttonLayoutApplied = false
 
     val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, ColumnScope by this {
@@ -234,6 +235,23 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalTaoPopupHost provides host.popupHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
             ) {
+                // Re-centre the native AppKit traffic-lights whenever the
+                // TitleBar/DialogTitleBar publishes a new measured height. A
+                // one-shot in window.onResized used to latch the stale initial
+                // height: the regular window's first resize fired after its
+                // TitleBar had published 40dp, but a dialog's first resize
+                // (driven by the centring + addChildWindow path) raced ahead of
+                // DialogTitleBar's publish, latching the 28dp init and leaving
+                // the traffic-lights at the wrong inset (margin 14 vs 20).
+                // snapshotFlow keeps the read out of the content recomposition.
+                LaunchedEffect(Unit) {
+                    snapshotFlow { titleBarHeightState.value }.collect { height ->
+                        val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
+                        if (nsView != 0L && NativeMetalBridge.isLoaded) {
+                            NativeMetalBridge.nativeApplyButtonLayout(nsView, height)
+                        }
+                    }
+                }
                 Column(modifier = Modifier.fillMaxSize()) {
                     scopeFactory().content()
                 }
@@ -250,13 +268,9 @@ internal fun ApplicationScope.openDecoratedWindow(
     }
     window.onResized { w, h ->
         host.onResized(w, h)
-        if (!buttonLayoutApplied) {
-            buttonLayoutApplied = true
-            val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
-            if (nsView != 0L) {
-                NativeMetalBridge.nativeApplyButtonLayout(nsView, titleBarHeightState.value)
-            }
-        }
+        // Traffic-light centring is now driven reactively from the title-bar
+        // height (see the snapshotFlow in setContent), so it no longer needs to
+        // be kicked off here on first resize.
         // Tao does not emit a dedicated "fullscreen state changed" event, but
         // every native fullscreen / unfullscreen transition resizes the
         // window. Re-query so [DecoratedWindowState.isFullscreen] (read by

@@ -1,3 +1,5 @@
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.KotlinJvm
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -29,11 +31,16 @@ kotlin {
     }
 }
 
+// All Java sources are package-private SVM substitutions (Target_* classes), so there is
+// nothing for javadoc to document. Disable the task to avoid the "No public or protected
+// classes found to document" error, and publish an empty javadoc jar instead.
 tasks.named<Javadoc>("javadoc") {
-    isFailOnError = false
+    enabled = false
 }
 
 mavenPublishing {
+    configure(KotlinJvm(javadocJar = JavadocJar.Empty(), sourcesJar = true))
+
     coordinates("dev.nucleusframework", "nucleus.graalvm-runtime", publishVersion)
 
     pom {
