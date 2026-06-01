@@ -5,7 +5,6 @@
 
 package dev.nucleusframework.desktop.application.tasks
 
-import dev.nucleusframework.desktop.application.internal.ExternalToolRunner
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
 import dev.nucleusframework.internal.utils.ioFile
@@ -21,6 +20,14 @@ import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
+import software.amazon.awssdk.core.exception.SdkException
+import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.ObjectCannedACL
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import java.io.File
 
 /**
@@ -130,50 +137,55 @@ abstract class AbstractMergeUpdateYmlTask : AbstractNucleusTask() {
         val bucket =
             s3Bucket.orNull?.takeIf { it.isNotBlank() }
                 ?: throw GradleException("S3 publishing is enabled but no S3 bucket is configured.")
-        val aws =
-            findAwsExecutable()
-                ?: throw GradleException(
-                    "The merged auto-update manifest must be uploaded to S3, but the AWS CLI ('aws') " +
-                        "was not found on PATH. electron-builder uploads the package artifacts via its " +
-                        "bundled SDK, but the plugin uploads the merged '<channel>' manifest via " +
-                        "'aws s3 cp'. Install the AWS CLI on the build machine, or publish only a single " +
-                        "auto-updatable format per OS to S3.",
-                )
+        val cannedAcl = s3Acl.orNull?.takeIf { it.isNotBlank() }?.let { ObjectCannedACL.fromValue(it) }
 
-        for (file in files) {
-            val key = UpdateYmlPublish.s3Key(s3Path.orNull, file.name)
-            val args =
-                buildList {
-                    add("s3")
-                    add("cp")
-                    add(file.absolutePath)
-                    add("s3://$bucket/$key")
-                    s3Region.orNull?.takeIf { it.isNotBlank() }?.let {
-                        add("--region")
-                        add(it)
-                    }
-                    s3Acl.orNull?.takeIf { it.isNotBlank() }?.let {
-                        add("--acl")
-                        add(it)
-                    }
+        // Credentials and (when not configured here) region are resolved by the AWS SDK's default
+        // provider chains — env vars (AWS_ACCESS_KEY_ID, AWS_REGION, ...), system properties, the
+        // shared profile/config files and container/instance metadata — the same sources the `aws`
+        // CLI and electron-builder's S3 publisher read.
+        buildS3Client().use { s3 ->
+            for (file in files) {
+                val key = UpdateYmlPublish.s3Key(s3Path.orNull, file.name)
+                val request =
+                    PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(key)
+                        .contentType("text/yaml")
+                        .apply { if (cannedAcl != null) acl(cannedAcl) }
+                        .build()
+                logger.lifecycle("Uploading merged update manifest to s3://$bucket/$key")
+                try {
+                    s3.putObject(request, RequestBody.fromFile(file))
+                } catch (e: SdkException) {
+                    throw GradleException("Failed to upload merged update manifest to s3://$bucket/$key: ${e.message}", e)
                 }
-            logger.lifecycle("Uploading merged update manifest to s3://$bucket/$key")
-            // AWS credentials are inherited from the process environment (AWS_ACCESS_KEY_ID, etc.),
-            // the same way electron-builder's S3 publisher reads them.
-            runExternalTool(
-                tool = aws,
-                args = args,
-                logToConsole = ExternalToolRunner.LogToConsole.Always,
-            )
+            }
         }
     }
 
-    private fun findAwsExecutable(): File? {
-        val pathEnv = System.getenv("PATH") ?: return null
-        return pathEnv.split(File.pathSeparator)
-            .asSequence()
-            .filter { it.isNotBlank() }
-            .map { File(it, "aws") }
-            .firstOrNull { it.isFile && it.canExecute() }
+    /**
+     * Builds a synchronous [S3Client] backed by the lightweight JDK-HttpURLConnection HTTP client.
+     * Uses the configured [s3Region] when set, otherwise falls back to the SDK's default region
+     * provider chain (env var / profile), matching how the `aws` CLI inferred the region.
+     */
+    private fun buildS3Client(): S3Client {
+        val region =
+            s3Region.orNull?.takeIf { it.isNotBlank() }?.let { Region.of(it) }
+                ?: resolveDefaultRegion()
+        return S3Client.builder()
+            .region(region)
+            .httpClientBuilder(UrlConnectionHttpClient.builder())
+            .build()
     }
+
+    private fun resolveDefaultRegion(): Region =
+        try {
+            DefaultAwsRegionProviderChain.builder().build().region
+        } catch (e: SdkException) {
+            throw GradleException(
+                "S3 publishing is enabled but no AWS region is configured. Set `s3.region` in the publish " +
+                    "DSL, or provide it via the AWS_REGION environment variable / a shared AWS config profile.",
+                e,
+            )
+        }
 }
