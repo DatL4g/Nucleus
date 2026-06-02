@@ -12,14 +12,93 @@ import java.awt.event.InputEvent
 import javax.swing.JPanel
 
 /**
- * Synthesizes a Compose [KeyEvent] of type [KeyEventType.Unknown]
- * piggy-backing on a real `java.awt.event.KeyEvent.KEY_TYPED`. Compose
- * Desktop's `BasicTextField` only inserts a character when it sees the
- * AWT KEY_TYPED event nested inside a Compose KeyEvent — that's the
- * gate `KeyEvent.isTypedEvent` checks.
+ * Builds the Compose [KeyEvent] for a physical key press/release.
  *
- * Without this trick, KeyDown alone moves focus / fires onKeyEvent but
- * never produces visible text input.
+ * CRITICAL: the event MUST carry a non-null `nativeEvent`. Without it, Compose's
+ * `ComposeSceneInputHandler` treats the event as non-system-initiated and, when
+ * its modifiers are empty, REPLACES them with its own tracked keyboard-modifier
+ * state (`KeyEvent.withTrackedModifiers`). That tracker latches a modifier on its
+ * key-down and only clears it on the matching key-up — but an OS hotkey
+ * (e.g. Win+Space switching keyboard layout) swallows the modifier key-up, so the
+ * tracker stays stuck and every later unmodified key is delivered as
+ * Ctrl/Cmd/Alt+<key> (pressing Hebrew א — same physical key as T — opened a new
+ * tab). The AWT (JNI) backend never hits this because real key events always
+ * carry a nativeEvent; we mirror that so our authoritative modifiers always win.
+ */
+@OptIn(InternalComposeUiApi::class)
+internal fun taoKeyEvent(
+    keyDown: Boolean,
+    vkCode: Int,
+    keyLocation: Int,
+    isShift: Boolean,
+    isCtrl: Boolean,
+    isAlt: Boolean,
+    isMeta: Boolean,
+    codePoint: Int,
+): KeyEvent {
+    val awtEvent =
+        java.awt.event.KeyEvent(
+            SyntheticAwtKeyEventSource,
+            if (keyDown) java.awt.event.KeyEvent.KEY_PRESSED else java.awt.event.KeyEvent.KEY_RELEASED,
+            System.currentTimeMillis(),
+            awtModifierMask(isShift, isCtrl, isAlt, isMeta),
+            vkCode,
+            java.awt.event.KeyEvent.CHAR_UNDEFINED,
+            keyLocation,
+        )
+    return KeyEvent(
+        key = Key(nativeKeyCode = vkCode, nativeKeyLocation = keyLocation),
+        type = if (keyDown) KeyEventType.KeyDown else KeyEventType.KeyUp,
+        codePoint = codePoint,
+        isShiftPressed = isShift,
+        isCtrlPressed = isCtrl,
+        isAltPressed = isAlt,
+        isMetaPressed = isMeta,
+        nativeEvent = awtEvent,
+    )
+}
+
+/**
+ * Builds a Compose [KeyEvent] of type [KeyEventType.Unknown] piggy-backing on a
+ * real `java.awt.event.KeyEvent.KEY_TYPED`. Compose Desktop's `BasicTextField`
+ * only inserts a character when it sees the AWT KEY_TYPED event nested inside a
+ * Compose KeyEvent — that's the gate `KeyEvent.isTypedEvent` checks. Without it,
+ * KeyDown alone moves focus / fires onKeyEvent but never produces visible text.
+ */
+@OptIn(InternalComposeUiApi::class)
+internal fun taoTypedKeyEvent(
+    codePoint: Int,
+    keyLocation: Int,
+    isShift: Boolean,
+    isCtrl: Boolean,
+    isAlt: Boolean,
+    isMeta: Boolean,
+): KeyEvent {
+    val awtEvent =
+        java.awt.event.KeyEvent(
+            SyntheticAwtKeyEventSource,
+            java.awt.event.KeyEvent.KEY_TYPED,
+            System.currentTimeMillis(),
+            awtModifierMask(isShift, isCtrl, isAlt, isMeta),
+            java.awt.event.KeyEvent.VK_UNDEFINED,
+            codePoint.toChar(),
+            java.awt.event.KeyEvent.KEY_LOCATION_UNKNOWN,
+        )
+    return KeyEvent(
+        key = Key(nativeKeyCode = 0, nativeKeyLocation = keyLocation),
+        type = KeyEventType.Unknown,
+        codePoint = codePoint,
+        isShiftPressed = isShift,
+        isCtrlPressed = isCtrl,
+        isAltPressed = isAlt,
+        isMetaPressed = isMeta,
+        nativeEvent = awtEvent,
+    )
+}
+
+/**
+ * Dispatches a synthetic KEY_TYPED to [this] scene for character insertion.
+ * See [taoTypedKeyEvent]. No-op for non-text input (control chars, Cmd/Ctrl combos).
  */
 @OptIn(InternalComposeUiApi::class)
 internal fun ComposeScene.dispatchSyntheticKeyTyped(
@@ -30,34 +109,19 @@ internal fun ComposeScene.dispatchSyntheticKeyTyped(
     isMeta: Boolean,
 ): Boolean {
     if (!codePoint.isPrintableTextInput(isCtrl, isMeta)) return false
-    val awtModifiers =
-        (if (isShift) InputEvent.SHIFT_DOWN_MASK else 0) or
-            (if (isCtrl) InputEvent.CTRL_DOWN_MASK else 0) or
-            (if (isAlt) InputEvent.ALT_DOWN_MASK else 0) or
-            (if (isMeta) InputEvent.META_DOWN_MASK else 0)
-    val awtEvent =
-        java.awt.event.KeyEvent(
-            SyntheticAwtKeyEventSource,
-            java.awt.event.KeyEvent.KEY_TYPED,
-            System.currentTimeMillis(),
-            awtModifiers,
-            java.awt.event.KeyEvent.VK_UNDEFINED,
-            codePoint.toChar(),
-            java.awt.event.KeyEvent.KEY_LOCATION_UNKNOWN,
-        )
-    return sendKeyEvent(
-        KeyEvent(
-            key = Key(nativeKeyCode = 0, nativeKeyLocation = 0),
-            type = KeyEventType.Unknown,
-            codePoint = codePoint,
-            isShiftPressed = isShift,
-            isCtrlPressed = isCtrl,
-            isAltPressed = isAlt,
-            isMetaPressed = isMeta,
-            nativeEvent = awtEvent,
-        ),
-    )
+    return sendKeyEvent(taoTypedKeyEvent(codePoint, keyLocation = 0, isShift, isCtrl, isAlt, isMeta))
 }
+
+private fun awtModifierMask(
+    isShift: Boolean,
+    isCtrl: Boolean,
+    isAlt: Boolean,
+    isMeta: Boolean,
+): Int =
+    (if (isShift) InputEvent.SHIFT_DOWN_MASK else 0) or
+        (if (isCtrl) InputEvent.CTRL_DOWN_MASK else 0) or
+        (if (isAlt) InputEvent.ALT_DOWN_MASK else 0) or
+        (if (isMeta) InputEvent.META_DOWN_MASK else 0)
 
 /** Heuristic: ASCII control range and Cmd/Ctrl combos are not text input. */
 internal fun Int.isPrintableTextInput(

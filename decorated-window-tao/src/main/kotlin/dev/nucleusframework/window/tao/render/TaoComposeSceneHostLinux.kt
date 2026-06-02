@@ -10,9 +10,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -1186,45 +1184,19 @@ internal class TaoComposeSceneHostLinux(
         val isShift = (modifiers and TaoModifierMask.SHIFT) != 0
         val composeEvent =
             when (type) {
-                TaoEventCode.KEY_DOWN, TaoEventCode.KEY_UP -> {
-                    KeyEvent(
-                        key = Key(nativeKeyCode = vkCode, nativeKeyLocation = keyLocation),
-                        type = if (type == TaoEventCode.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
+                TaoEventCode.KEY_DOWN, TaoEventCode.KEY_UP ->
+                    taoKeyEvent(
+                        keyDown = type == TaoEventCode.KEY_DOWN,
+                        vkCode = vkCode,
+                        keyLocation = keyLocation,
+                        isShift = isShift,
+                        isCtrl = isCtrl,
+                        isAlt = isAlt,
+                        isMeta = isMeta,
                         codePoint = codePoint,
-                        isCtrlPressed = isCtrl,
-                        isMetaPressed = isMeta,
-                        isAltPressed = isAlt,
-                        isShiftPressed = isShift,
                     )
-                }
-                TaoEventCode.KEY_TYPED -> {
-                    val ch = codePoint.toChar()
-                    val awtModifiers =
-                        (if (isShift) java.awt.event.InputEvent.SHIFT_DOWN_MASK else 0) or
-                            (if (isCtrl) java.awt.event.InputEvent.CTRL_DOWN_MASK else 0) or
-                            (if (isAlt) java.awt.event.InputEvent.ALT_DOWN_MASK else 0) or
-                            (if (isMeta) java.awt.event.InputEvent.META_DOWN_MASK else 0)
-                    val awtEvent =
-                        java.awt.event.KeyEvent(
-                            SyntheticEventSource,
-                            java.awt.event.KeyEvent.KEY_TYPED,
-                            System.currentTimeMillis(),
-                            awtModifiers,
-                            java.awt.event.KeyEvent.VK_UNDEFINED,
-                            ch,
-                            java.awt.event.KeyEvent.KEY_LOCATION_UNKNOWN,
-                        )
-                    KeyEvent(
-                        key = Key(nativeKeyCode = 0, nativeKeyLocation = keyLocation),
-                        type = KeyEventType.Unknown,
-                        codePoint = codePoint,
-                        isCtrlPressed = isCtrl,
-                        isMetaPressed = isMeta,
-                        isAltPressed = isAlt,
-                        isShiftPressed = isShift,
-                        nativeEvent = awtEvent,
-                    )
-                }
+                TaoEventCode.KEY_TYPED ->
+                    taoTypedKeyEvent(codePoint, keyLocation, isShift, isCtrl, isAlt, isMeta)
                 else -> return false
             }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
@@ -1436,8 +1408,6 @@ internal class TaoComposeSceneHostLinux(
     }
 
     private companion object {
-        private val SyntheticEventSource: java.awt.Component = javax.swing.JPanel()
-
         // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
         // `TRACKPAD_VALUE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f

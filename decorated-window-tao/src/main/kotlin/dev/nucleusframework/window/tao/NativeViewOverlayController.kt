@@ -5,9 +5,7 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -25,6 +23,7 @@ import dev.nucleusframework.window.tao.render.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.render.TaoPopupHost
 import dev.nucleusframework.window.tao.render.dispatchSyntheticKeyTyped
 import dev.nucleusframework.window.tao.render.renderMetalFrame
+import dev.nucleusframework.window.tao.render.taoKeyEvent
 import org.jetbrains.skia.DirectContext
 import kotlin.coroutines.CoroutineContext
 
@@ -183,14 +182,15 @@ internal class NativeViewOverlayController(
             val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
             val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
             sc.sendKeyEvent(
-                KeyEvent(
-                    key = Key(nativeKeyCode = vkCode, nativeKeyLocation = 0),
-                    type = if (type == TaoNativeWireFormat.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
+                taoKeyEvent(
+                    keyDown = type == TaoNativeWireFormat.KEY_DOWN,
+                    vkCode = vkCode,
+                    keyLocation = 0,
+                    isShift = isShift,
+                    isCtrl = isCtrl,
+                    isAlt = isAlt,
+                    isMeta = isMeta,
                     codePoint = codePoint,
-                    isShiftPressed = isShift,
-                    isCtrlPressed = isCtrl,
-                    isAltPressed = isAlt,
-                    isMetaPressed = isMeta,
                 ),
             )
             if (type == TaoNativeWireFormat.KEY_DOWN) {

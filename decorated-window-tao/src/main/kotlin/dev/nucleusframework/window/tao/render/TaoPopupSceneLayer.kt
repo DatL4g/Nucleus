@@ -7,9 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -236,14 +234,15 @@ internal class TaoPopupSceneLayer(
             val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
             val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
             val ev =
-                KeyEvent(
-                    key = Key(nativeKeyCode = vkCode, nativeKeyLocation = 0),
-                    type = if (type == TaoNativeWireFormat.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
+                taoKeyEvent(
+                    keyDown = type == TaoNativeWireFormat.KEY_DOWN,
+                    vkCode = vkCode,
+                    keyLocation = 0,
+                    isShift = isShift,
+                    isCtrl = isCtrl,
+                    isAlt = isAlt,
+                    isMeta = isMeta,
                     codePoint = codePoint,
-                    isShiftPressed = isShift,
-                    isCtrlPressed = isCtrl,
-                    isAltPressed = isAlt,
-                    isMetaPressed = isMeta,
                 )
             if (onPreviewKeyEvent?.invoke(ev) == true) return
             val consumed = innerScene.sendKeyEvent(ev)

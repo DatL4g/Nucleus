@@ -8,36 +8,96 @@ use tao::event::MouseButton;
 use tao::keyboard::ModifiersState;
 use tao::window::WindowId;
 
-use crate::state::{CURRENT_MODIFIERS, EVENT_CALLBACK, JAVA_VM, WINDOWS};
+use crate::state::{EVENT_CALLBACK, JAVA_VM, WINDOWS};
 
 // ── Modifier bitmask (mirrors `TaoModifierMask` on the JVM side) ──────────
 
 pub(crate) const MOD_MASK_SHIFT: i32 = 1 << 0;
 pub(crate) const MOD_MASK_CONTROL: i32 = 1 << 1;
 pub(crate) const MOD_MASK_ALT: i32 = 1 << 2;
+// Mirrors `TaoModifierMask.META`. Only set on macOS (Cmd); on Windows/Linux the
+// super key is never mapped to Meta, so this is unused there.
+#[allow(dead_code)]
 pub(crate) const MOD_MASK_META: i32 = 1 << 3;
 
 pub(crate) fn pack_modifiers(state: ModifiersState) -> i32 {
     let mut m = 0;
-    if state.shift_key() { m |= MOD_MASK_SHIFT; }
-    if state.control_key() { m |= MOD_MASK_CONTROL; }
-    if state.alt_key() { m |= MOD_MASK_ALT; }
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    if state.super_key() { m |= MOD_MASK_META; }
-    #[cfg(target_os = "linux")]
+    if state.shift_key() {
+        m |= MOD_MASK_SHIFT;
+    }
+    if state.control_key() {
+        m |= MOD_MASK_CONTROL;
+    }
+    if state.alt_key() {
+        m |= MOD_MASK_ALT;
+    }
+    // macOS only: Cmd is `super_key` and IS the primary shortcut modifier.
+    #[cfg(target_os = "macos")]
+    if state.super_key() {
+        m |= MOD_MASK_META;
+    }
+    #[cfg(not(target_os = "macos"))]
     {
-        // DIAGNOSTIC (Linux/Wayland): super_key() returns true permanently on
-        // some compositors after the first ModifiersChanged tick, contaminating
-        // every subsequent key event (Tab gets Meta, Backspace gets Meta →
-        // TextField mapping fails). Keep it disabled on Linux until a per-key
-        // SuperLeft/SuperRight tracker is in.
+        // Windows: the Win key is an OS-level key, never an app shortcut
+        // modifier — AWT's GetJavaModifiers ignores VK_LWIN/VK_RWIN, so the JNI
+        // backend never sets Meta. Mapping it caused a phantom Cmd/Meta after a
+        // Win+Space layout switch (the shell hotkey leaves the Win key reported
+        // "down"), so Hebrew א (physical T) read as Cmd+T → new tab.
+        // Linux/Wayland: super_key() also latches true permanently on some
+        // compositors. Never map super → Meta off macOS.
         let _ = state.super_key();
     }
     m
 }
 
+/// Modifier bits to attach to a key event at dispatch time.
+///
+/// On Windows we read the live hardware state with `GetAsyncKeyState`, matching
+/// what AWT's `GetJavaModifiers` reports — Ctrl, Shift, Alt only. Two reasons we
+/// don't use the cached `ModifiersChanged` snapshot or report Meta:
+///   - `GetKeyState`/winit's cache misses the **Ctrl** key-up during a
+///     Ctrl+Shift layout switch (the keyup is consumed by the OS hotkey), so
+///     Ctrl stays stuck and a plain key reads as Ctrl+<key>. The async state
+///     reflects the real physical key, so it doesn't latch.
+///   - We never set **Meta**: on Windows the Win key is an OS-level key, never
+///     an app shortcut modifier, and AWT ignores VK_LWIN/VK_RWIN (which is why
+///     the JNI backend has no bug here). Reporting it latched a phantom
+///     Cmd/Meta after a Win+Space switch (the shell hotkey leaves VK_LWIN stuck
+///     "down" even in `GetAsyncKeyState`), so Hebrew א (physical T) read as
+///     Cmd+T → new tab.
+///
+/// On other platforms we keep the cached `ModifiersChanged` snapshot, which
+/// Tao delivers reliably (macOS flagsChanged, Linux GTK modifier mask).
+#[cfg(target_os = "windows")]
 pub(crate) fn current_modifier_bits() -> i32 {
-    CURRENT_MODIFIERS.lock().map(|g| *g).unwrap_or(0)
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetAsyncKeyState(n_virt_key: i32) -> i16;
+    }
+    const VK_SHIFT: i32 = 0x10;
+    const VK_CONTROL: i32 = 0x11;
+    const VK_MENU: i32 = 0x12; // Alt
+    // High-order bit set means the key is currently physically down.
+    let down = |vk: i32| unsafe { (GetAsyncKeyState(vk) as u16) & 0x8000 != 0 };
+    let mut m = 0;
+    if down(VK_SHIFT) {
+        m |= MOD_MASK_SHIFT;
+    }
+    if down(VK_CONTROL) {
+        m |= MOD_MASK_CONTROL;
+    }
+    if down(VK_MENU) {
+        m |= MOD_MASK_ALT;
+    }
+    m
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn current_modifier_bits() -> i32 {
+    crate::state::CURRENT_MODIFIERS
+        .lock()
+        .map(|g| *g)
+        .unwrap_or(0)
 }
 
 // Cursor position is reported in physical pixels via integers to keep the JNI
@@ -77,11 +137,11 @@ pub(crate) const EVENT_MAIN_EVENTS_CLEARED: jint = 20;
 // the JVM side using the cached scale factor.
 pub(crate) const EVENT_MOVED: jint = 21;
 pub(crate) const EVENT_WINDOW_READY: jint = 16; // a = width, b = height (logical)
-// Scroll deltas come either as line counts (mouse wheel) or pixel deltas
-// (trackpad). Compose's `MacOSCocoaConfig` (cf. compose-multiplatform-core)
-// expects each kind to be shaped like AWT `MouseWheelEvent.preciseWheelRotation`,
-// which has different scaling: lines map ≈ 1 notch, pixels map ≈ scrollingDelta/10.
-// We split the event code so the JVM side can apply the right factor.
+                                                // Scroll deltas come either as line counts (mouse wheel) or pixel deltas
+                                                // (trackpad). Compose's `MacOSCocoaConfig` (cf. compose-multiplatform-core)
+                                                // expects each kind to be shaped like AWT `MouseWheelEvent.preciseWheelRotation`,
+                                                // which has different scaling: lines map ≈ 1 notch, pixels map ≈ scrollingDelta/10.
+                                                // We split the event code so the JVM side can apply the right factor.
 pub(crate) const EVENT_SCROLL_LINE: jint = 17; // a = dx * SCROLL_FIXED_SCALE, b = dy * SCROLL_FIXED_SCALE
 pub(crate) const EVENT_SCROLL_PIXEL: jint = 18;
 pub(crate) const EVENT_MODIFIERS_CHANGED: jint = 22;
@@ -129,10 +189,10 @@ pub(crate) const TRACKPAD_VALUE_FIXED_SCALE: f64 = 10_000.0;
 // `phase` uses the same constants as the Linux multi-finger path so the
 // JVM-side enum (`TaoTouchEvent`) is shared.
 
-pub(crate) const TOUCH_EVENT_PRESS:   jint = 0;
-pub(crate) const TOUCH_EVENT_MOVE:    jint = 1;
+pub(crate) const TOUCH_EVENT_PRESS: jint = 0;
+pub(crate) const TOUCH_EVENT_MOVE: jint = 1;
 pub(crate) const TOUCH_EVENT_RELEASE: jint = 2;
-pub(crate) const TOUCH_EVENT_CANCEL:  jint = 3;
+pub(crate) const TOUCH_EVENT_CANCEL: jint = 3;
 
 // Force is reported as a unit-interval value [0.0, 1.0] when the platform
 // supports it (Windows 8+ via WM_POINTER's pressure field), or `-1` when
@@ -174,12 +234,28 @@ pub(crate) enum UserEvent {
         // at builder time avoids the glitch entirely.
         maximized: bool,
     },
-    SetVisible { handle: u64, visible: bool },
-    SetTitle { handle: u64, title: String },
-    RequestRedraw { handle: u64 },
-    RequestClose { handle: u64 },
-    SetMaximized { handle: u64, maximized: bool },
-    SetMinimized { handle: u64, minimized: bool },
+    SetVisible {
+        handle: u64,
+        visible: bool,
+    },
+    SetTitle {
+        handle: u64,
+        title: String,
+    },
+    RequestRedraw {
+        handle: u64,
+    },
+    RequestClose {
+        handle: u64,
+    },
+    SetMaximized {
+        handle: u64,
+        maximized: bool,
+    },
+    SetMinimized {
+        handle: u64,
+        minimized: bool,
+    },
     /// Posted by the platform minimize hook (Windows WM_SIZE / macOS window
     /// delegate / Linux GTK window-state-event). Carries the tao WindowId so the
     /// loop can resolve our handle and dispatch EVENT_MINIMIZED at a safe point —
@@ -190,9 +266,17 @@ pub(crate) enum UserEvent {
         window_id: tao::window::WindowId,
         minimized: bool,
     },
-    SetAlwaysOnTop { handle: u64, always_on_top: bool },
-    SetFocusable { handle: u64, focusable: bool },
-    Focus { handle: u64 },
+    SetAlwaysOnTop {
+        handle: u64,
+        always_on_top: bool,
+    },
+    SetFocusable {
+        handle: u64,
+        focusable: bool,
+    },
+    Focus {
+        handle: u64,
+    },
     SetMinInnerSize {
         handle: u64,
         // Negative width/height means "clear the minimum".
@@ -206,9 +290,20 @@ pub(crate) enum UserEvent {
         height: u32,
         pixels: Vec<u8>,
     },
-    SetInnerSize { handle: u64, width: f64, height: f64 },
-    SetOuterPosition { handle: u64, x: f64, y: f64 },
-    SetFullscreen { handle: u64, fullscreen: bool },
+    SetInnerSize {
+        handle: u64,
+        width: f64,
+        height: f64,
+    },
+    SetOuterPosition {
+        handle: u64,
+        x: f64,
+        y: f64,
+    },
+    SetFullscreen {
+        handle: u64,
+        fullscreen: bool,
+    },
     Exit,
 }
 
@@ -216,9 +311,15 @@ pub(crate) enum UserEvent {
 
 pub(crate) fn dispatch(handle: u64, code: jint, a: jint, b: jint) {
     let Some(vm) = JAVA_VM.get() else { return };
-    let Ok(guard) = EVENT_CALLBACK.lock() else { return };
-    let Some(callback) = guard.as_ref() else { return };
-    let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
     let _ = env.call_method(
         callback.as_obj(),
         "onEvent",
@@ -246,9 +347,15 @@ pub(crate) fn dispatch_key(
     code_point: jint,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
-    let Ok(guard) = EVENT_CALLBACK.lock() else { return };
-    let Some(callback) = guard.as_ref() else { return };
-    let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
     let _ = env.call_method(
         callback.as_obj(),
         "onKeyEvent",
@@ -278,9 +385,15 @@ pub(crate) fn dispatch_trackpad_gesture(
     value_fixed: jint,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
-    let Ok(guard) = EVENT_CALLBACK.lock() else { return };
-    let Some(callback) = guard.as_ref() else { return };
-    let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
     let _ = env.call_method(
         callback.as_obj(),
         "onTrackpadGesture",
@@ -314,9 +427,15 @@ pub(crate) fn dispatch_touch_input(
     force_fixed: jint,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
-    let Ok(guard) = EVENT_CALLBACK.lock() else { return };
-    let Some(callback) = guard.as_ref() else { return };
-    let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
     let _ = env.call_method(
         callback.as_obj(),
         "onTouchInput",
