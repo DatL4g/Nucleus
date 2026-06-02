@@ -18,18 +18,10 @@
  * the same child-surface architecture AWT/Skiko and Chromium use.
  * (Same symptom in the wild: sublimehq/sublime_text#3595.)
  *
- * The child is transparent to input via HTTRANSPARENT in its WM_NCHITTEST:
- * mouse, touch and OLE drag-and-drop all resolve to the Tao HWND through
- * WindowFromPoint semantics, whose subclass (nucleus_tao_windows_deco.c)
- * keeps handling them — same mechanism the overlay popup relies on. The
- * extended style WS_EX_TRANSPARENT is deliberately NOT used: it adds nothing
- * to input routing here (HTTRANSPARENT already covers it), forces the child
- * to paint above its siblings (contradicting the HWND_BOTTOM z-order that
- * lets NativeView children composite on top), and on legacy Intel ICDs
- * (HD 5xx/6xx, Windows 10) it suppresses the GL blit entirely — the window
- * renders all-white. A plain opaque child composites correctly everywhere.
- * Escape hatch: set NUCLEUS_TAO_WIN_GL_DIRECT=1 to restore direct-on-HWND
- * rendering.
+ * The child is transparent to input (WS_EX_TRANSPARENT + HTTRANSPARENT):
+ * mouse, touch, OLE drag-and-drop all fall through to the Tao HWND, whose
+ * subclass (nucleus_tao_windows_deco.c) keeps handling them. Escape hatch:
+ * set NUCLEUS_TAO_WIN_GL_DIRECT=1 to restore direct-on-HWND rendering.
  *
  * Sequence used by the JVM side:
  *   nativeAttach(hwnd)     → creates render-surface child + HDC + HGLRC
@@ -209,7 +201,7 @@ static HWND createRenderSurface(HWND parent) {
     int h = (int)(rc.bottom - rc.top); if (h < 1) h = 1;
 
     HWND surface = CreateWindowExW(
-        WS_EX_NOPARENTNOTIFY,
+        WS_EX_TRANSPARENT | WS_EX_NOPARENTNOTIFY,
         kSurfaceClassName, L"",
         WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
         0, 0, w, h,
