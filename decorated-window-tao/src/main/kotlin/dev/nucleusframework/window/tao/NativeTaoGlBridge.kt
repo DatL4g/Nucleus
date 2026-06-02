@@ -17,9 +17,17 @@ internal object NativeTaoGlBridge {
     val isLoaded: Boolean get() = loaded
 
     /**
-     * Sets the pixel format on the HWND, creates a 3.3 compatibility GL
-     * context and makes it current on the calling thread. Returns an opaque
-     * attachment handle, or 0 on failure.
+     * Creates an input-transparent render-surface child HWND covering the
+     * window's client area, sets the pixel format on it, creates a 3.3
+     * compatibility GL context and makes it current on the calling thread.
+     * Returns an opaque attachment handle, or 0 on failure.
+     *
+     * Rendering goes through a child (not the Tao HWND itself) to dodge an
+     * Intel driver bug on Windows 10: with the client area extended into the
+     * caption via WM_NCCALCSIZE, SwapBuffers on the top-level HWND blits the
+     * buffer shifted down by the theoretical caption height (black band +
+     * visually miscalibrated pointer). `NUCLEUS_TAO_WIN_GL_DIRECT=1` restores
+     * the old direct-on-HWND path.
      */
     @JvmStatic
     external fun nativeAttach(hwnd: Long): Long

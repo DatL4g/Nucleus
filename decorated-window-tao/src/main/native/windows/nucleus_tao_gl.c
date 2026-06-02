@@ -1,14 +1,33 @@
 /**
  * JNI bridge: WGL renderer for the Tao backend on Windows.
  *
- * Creates an OpenGL 3.3 compatibility context on the HWND so Skia's
- * `DirectContext.makeGL()` can render directly into the window's default
- * framebuffer. Modeled after the Metal helper on macOS.
+ * Creates an OpenGL 3.3 compatibility context so Skia's
+ * `DirectContext.makeGL()` can render into the window's default framebuffer.
+ * Modeled after the Metal helper on macOS.
+ *
+ * The GL surface is NOT the Tao HWND itself: it is a borderless WS_CHILD
+ * "render surface" HWND covering the client area. Rendering directly into a
+ * top-level window whose client area was extended into the caption via
+ * WM_NCCALCSIZE triggers a long-standing Intel driver bug (HD 5xx/6xx,
+ * Windows 10): the ICD derives the client origin from the window *style*
+ * (WS_CAPTION ⇒ caption present), so SwapBuffers blits the buffer shifted
+ * down by the theoretical caption height — black band at the top, content
+ * offset from the real client coordinates, mouse hit-testing visually
+ * miscalibrated. A caption-less child window has no style-derived
+ * non-client area, so the blit always lands exactly on its rect; this is
+ * the same child-surface architecture AWT/Skiko and Chromium use.
+ * (Same symptom in the wild: sublimehq/sublime_text#3595.)
+ *
+ * The child is transparent to input (WS_EX_TRANSPARENT + HTTRANSPARENT):
+ * mouse, touch, OLE drag-and-drop all fall through to the Tao HWND, whose
+ * subclass (nucleus_tao_windows_deco.c) keeps handling them. Escape hatch:
+ * set NUCLEUS_TAO_WIN_GL_DIRECT=1 to restore direct-on-HWND rendering.
  *
  * Sequence used by the JVM side:
- *   nativeAttach(hwnd)     → creates HDC + HGLRC, makes current
+ *   nativeAttach(hwnd)     → creates render-surface child + HDC + HGLRC
  *   nativeMakeCurrent(h)   → restores current context (defensive)
- *   nativeResize(h,w,h,s)  → stores dimensions for the next BackendRenderTarget
+ *   nativeResize(h,w,h,s)  → resizes the child, stores dimensions for the
+ *                            next BackendRenderTarget
  *   <Skia rendering>
  *   nativePresent(h)       → SwapBuffers
  *   nativeDetach(h)        → tear-down
@@ -112,13 +131,89 @@ static void loadWglExtensions(void) {
 }
 
 typedef struct {
-    HWND  hwnd;
+    HWND  hwnd;        /* Tao top-level window (input, decoration) */
+    HWND  surfaceHwnd; /* render-surface child; == hwnd in direct mode */
     HDC   hdc;
     HGLRC hglrc;
     int   widthPx;
     int   heightPx;
     float scale;
 } WglAttachment;
+
+/* ================================================================== */
+/*  Render-surface child window                                        */
+/* ================================================================== */
+
+static const wchar_t *kSurfaceClassName = L"NucleusTaoGlSurface";
+static volatile LONG sSurfaceClassRegistered = 0;
+
+static LRESULT CALLBACK surfaceWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_NCHITTEST:
+        /* Transparent to every hit test: mouse, touch (WM_POINTER) and
+         * WindowFromPoint (OLE drag-and-drop) all resolve to the Tao
+         * parent, whose deco subclass owns input handling. */
+        return HTTRANSPARENT;
+    case WM_ERASEBKGND:
+        /* GL owns every pixel. The themed startup fill stays on the parent
+         * (deco WM_ERASEBKGND); without WS_CLIPCHILDREN it covers this
+         * child's area too until the first SwapBuffers. */
+        return 1;
+    case WM_PAINT:
+        /* Painting happens via WGL outside the paint cycle; validate so
+         * the update region doesn't refire WM_PAINT forever. */
+        ValidateRect(hwnd, NULL);
+        return 0;
+    default:
+        break;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+static void ensureSurfaceClassRegistered(void) {
+    if (InterlockedCompareExchange(&sSurfaceClassRegistered, 1, 0) != 0) return;
+    WNDCLASSW wc;
+    memset(&wc, 0, sizeof(wc));
+    /* CS_OWNDC: GetDC(hwnd) returns a stable HDC for the window's
+     * lifetime — required so wglMakeCurrent's HDC matches across frames. */
+    wc.style = CS_OWNDC;
+    wc.lpfnWndProc = surfaceWndProc;
+    wc.hInstance = GetModuleHandleW(NULL);
+    wc.lpszClassName = kSurfaceClassName;
+    wc.hbrBackground = NULL;
+    RegisterClassW(&wc);
+}
+
+static BOOL directModeRequested(void) {
+    char buf[8];
+    DWORD n = GetEnvironmentVariableA("NUCLEUS_TAO_WIN_GL_DIRECT", buf, sizeof(buf));
+    return n == 1 && buf[0] == '1';
+}
+
+/* Creates the render-surface child covering the parent's current client
+ * area. Returns NULL on failure (caller falls back to direct mode). */
+static HWND createRenderSurface(HWND parent) {
+    ensureSurfaceClassRegistered();
+
+    RECT rc;
+    if (!GetClientRect(parent, &rc)) { rc.right = 1; rc.bottom = 1; }
+    int w = (int)(rc.right - rc.left); if (w < 1) w = 1;
+    int h = (int)(rc.bottom - rc.top); if (h < 1) h = 1;
+
+    HWND surface = CreateWindowExW(
+        WS_EX_TRANSPARENT | WS_EX_NOPARENTNOTIFY,
+        kSurfaceClassName, L"",
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+        0, 0, w, h,
+        parent, NULL, GetModuleHandleW(NULL), NULL);
+    if (!surface) return NULL;
+
+    /* Bottom of the sibling z-order: NativeView children (WebView, …)
+     * attached later must composite above the Compose canvas. */
+    SetWindowPos(surface, HWND_BOTTOM, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    return surface;
+}
 
 /* ================================================================== */
 /*  Host pixel-format / HGLRC sharing                                  */
@@ -169,8 +264,20 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeAttach(
 
     loadWglExtensions();
 
-    HDC hdc = GetDC(hwnd);
-    if (!hdc) return 0;
+    /* Render-surface child (see file header). Falls back to rendering
+     * directly on the Tao HWND if creation fails or the escape hatch
+     * NUCLEUS_TAO_WIN_GL_DIRECT=1 is set. */
+    HWND surfaceHwnd = NULL;
+    if (!directModeRequested()) {
+        surfaceHwnd = createRenderSurface(hwnd);
+    }
+    if (!surfaceHwnd) surfaceHwnd = hwnd;
+
+    HDC hdc = GetDC(surfaceHwnd);
+    if (!hdc) {
+        if (surfaceHwnd != hwnd) DestroyWindow(surfaceHwnd);
+        return 0;
+    }
 
     int pixelFormat = 0;
     PIXELFORMATDESCRIPTOR pfd;
@@ -213,7 +320,8 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeAttach(
 
     DescribePixelFormat(hdc, pixelFormat, sizeof(pfd), &pfd);
     if (!SetPixelFormat(hdc, pixelFormat, &pfd)) {
-        ReleaseDC(hwnd, hdc);
+        ReleaseDC(surfaceHwnd, hdc);
+        if (surfaceHwnd != hwnd) DestroyWindow(surfaceHwnd);
         return 0;
     }
     /* Cache for cross-DLL share-group reuse. */
@@ -234,7 +342,8 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeAttach(
         hglrc = wglCreateContext(hdc);
     }
     if (!hglrc) {
-        ReleaseDC(hwnd, hdc);
+        ReleaseDC(surfaceHwnd, hdc);
+        if (surfaceHwnd != hwnd) DestroyWindow(surfaceHwnd);
         return 0;
     }
 
@@ -250,10 +359,12 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeAttach(
     if (!att) {
         wglMakeCurrent(NULL, NULL);
         wglDeleteContext(hglrc);
-        ReleaseDC(hwnd, hdc);
+        ReleaseDC(surfaceHwnd, hdc);
+        if (surfaceHwnd != hwnd) DestroyWindow(surfaceHwnd);
         return 0;
     }
     att->hwnd = hwnd;
+    att->surfaceHwnd = surfaceHwnd;
     att->hdc = hdc;
     att->hglrc = hglrc;
     att->scale = 1.0f;
@@ -271,7 +382,10 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeDetach(
     wglMakeCurrent(NULL, NULL);
     if (sHostHglrc == att->hglrc) sHostHglrc = NULL;
     wglDeleteContext(att->hglrc);
-    ReleaseDC(att->hwnd, att->hdc);
+    ReleaseDC(att->surfaceHwnd, att->hdc);
+    if (att->surfaceHwnd != att->hwnd && IsWindow(att->surfaceHwnd)) {
+        DestroyWindow(att->surfaceHwnd);
+    }
     HeapFree(GetProcessHeap(), 0, att);
 }
 
@@ -295,6 +409,13 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeResize(
     att->widthPx = (int)widthPx;
     att->heightPx = (int)heightPx;
     att->scale = scale;
+    /* Keep the render-surface child glued to the client area. Runs in the
+     * same event-dispatch turn as the parent's WM_SIZE (before the next
+     * render), so the surface never lags the window visually. */
+    if (att->surfaceHwnd != att->hwnd && IsWindow(att->surfaceHwnd)) {
+        SetWindowPos(att->surfaceHwnd, NULL, 0, 0, att->widthPx, att->heightPx,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_DEFERERASE);
+    }
     /* Update GL viewport so subsequent Skia surface creation matches. */
     wglMakeCurrent(att->hdc, att->hglrc);
     glViewport(0, 0, att->widthPx, att->heightPx);
