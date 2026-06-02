@@ -407,6 +407,8 @@ abstract class AbstractElectronBuilderPackageTask
                 )
             }
 
+            val nsisProtocolInclude = generateProtocolNsisInclude(distributions, outputDir)
+
             val configContent =
                 configGenerator.generateConfig(
                     distributions = distributions,
@@ -420,11 +422,92 @@ abstract class AbstractElectronBuilderPackageTask
                     executableName = executableName.orNull,
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
+                    nsisProtocolInclude = nsisProtocolInclude,
                 )
             val configFile = File(outputDir, "electron-builder.yml")
             configFile.writeText(configContent)
             logger.info("Generated electron-builder config at: ${configFile.absolutePath}")
             return configFile
+        }
+
+        /**
+         * Generates an NSIS include script that registers the declared URL protocol handlers
+         * (deep linking) in the Windows registry at install time.
+         *
+         * electron-builder's `protocols` field only registers schemes on macOS (Info.plist) and
+         * Linux (.desktop `x-scheme-handler`); the NSIS target ignores it. Windows therefore needs
+         * explicit registry writes, which we emit via the `customInstall`/`customUnInstall` hooks.
+         *
+         * Returns null (no registration) when the current OS is not Windows, the target is not an
+         * NSIS-family installer, no protocols are declared, or the user already supplied a custom
+         * NSIS include script (which must not be overridden).
+         */
+        private fun generateProtocolNsisInclude(
+            distributions: JvmApplicationDistributions,
+            outputDir: File,
+        ): File? {
+            if (currentOS != OS.Windows) return null
+            if (distributions.protocols.isEmpty()) return null
+            if (targetFormat !in setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)) return null
+
+            if (distributions.windows.nsis.includeScript.orNull != null) {
+                logger.warn(
+                    "URL protocol handlers are declared but a custom nsis.includeScript is set; " +
+                        "skipping automatic protocol registration. Register the schemes yourself " +
+                        "in a customInstall macro inside your include script.",
+                )
+                return null
+            }
+
+            val schemes =
+                distributions.protocols
+                    .flatMap { it.schemes }
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+            if (schemes.isEmpty()) return null
+
+            // SHELL_CONTEXT resolves to HKLM (per-machine) or HKCU (per-user) automatically.
+            // ${APP_EXECUTABLE_FILENAME} is provided by electron-builder's NSIS template.
+            val script =
+                buildString {
+                    appendLine("!macro customInstall")
+                    for (scheme in schemes) {
+                        val key = "Software\\Classes\\$scheme"
+                        appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")
+                        appendLine("  DeleteRegKey SHELL_CONTEXT \"$key\"")
+                        appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"\" \"URL:$scheme\"")
+                        appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"URL Protocol\" \"\"")
+                        appendLine(
+                            "  WriteRegStr SHELL_CONTEXT \"$key\\DefaultIcon\" \"\" " +
+                                "\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME},0\"",
+                        )
+                        appendLine(
+                            "  WriteRegStr SHELL_CONTEXT \"$key\\shell\\open\\command\" \"\" " +
+                                "'\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME}\" \"%1\"'",
+                        )
+                    }
+                    appendLine("!macroend")
+                    appendLine()
+                    appendLine("!macro customUnInstall")
+                    // Guard against auto-update: the new installer runs before the old uninstaller,
+                    // so unconditional cleanup would drop a just-registered scheme.
+                    appendLine("  \${ifNot} \${isUpdated}")
+                    for (scheme in schemes) {
+                        appendLine("    DeleteRegKey SHELL_CONTEXT \"Software\\Classes\\$scheme\"")
+                    }
+                    appendLine("  \${endIf}")
+                    appendLine("!macroend")
+                }
+
+            val nshFile = File(outputDir, "nucleus-protocols.nsh")
+            nshFile.parentFile.mkdirs()
+            nshFile.writeText(script)
+            logger.info(
+                "Generated NSIS protocol registration script at ${nshFile.absolutePath} " +
+                    "for schemes: ${schemes.joinToString()}",
+            )
+            return nshFile
         }
 
         private fun exportPackagingMetadata(

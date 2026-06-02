@@ -50,6 +50,7 @@ internal class ElectronBuilderConfigGenerator {
         executableName: String? = null,
         dmgBackgroundOverride: File? = null,
         dmgWindowOverride: DmgWindowOverride? = null,
+        nsisProtocolInclude: File? = null,
     ): String {
         val yaml = StringBuilder()
 
@@ -104,6 +105,7 @@ internal class ElectronBuilderConfigGenerator {
                     targetArch,
                     windowsIconOverride,
                     executableName,
+                    nsisProtocolInclude,
                 )
             OS.Linux ->
                 generateLinuxConfig(
@@ -256,6 +258,7 @@ internal class ElectronBuilderConfigGenerator {
         targetArch: Arch,
         windowsIconOverride: File?,
         executableName: String?,
+        nsisProtocolInclude: File?,
     ) {
         yaml.appendLine("win:")
         yaml.appendLine("  target:")
@@ -276,11 +279,11 @@ internal class ElectronBuilderConfigGenerator {
         when (targetFormat) {
             TargetFormat.Nsis, TargetFormat.Exe -> {
                 yaml.appendLine("nsis:")
-                generateNsisSettings(yaml, distributions.windows.nsis, "  ")
+                generateNsisSettings(yaml, distributions.windows.nsis, "  ", nsisProtocolInclude)
             }
             TargetFormat.NsisWeb -> {
                 yaml.appendLine("nsisWeb:")
-                generateNsisSettings(yaml, distributions.windows.nsis, "  ")
+                generateNsisSettings(yaml, distributions.windows.nsis, "  ", nsisProtocolInclude)
             }
             TargetFormat.Msi -> {
                 yaml.appendLine("msi:")
@@ -384,6 +387,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml: StringBuilder,
         nsis: NsisSettings,
         indent: String,
+        protocolInclude: File? = null,
     ) {
         yaml.appendLine("${indent}oneClick: ${nsis.oneClick}")
         yaml.appendLine("${indent}allowElevation: ${nsis.allowElevation}")
@@ -395,7 +399,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("${indent}deleteAppDataOnUninstall: ${nsis.deleteAppDataOnUninstall}")
         yaml.appendLine("${indent}warningsAsErrors: false")
 
-        appendNsisFileSettings(yaml, nsis, indent)
+        appendNsisFileSettings(yaml, nsis, indent, protocolInclude)
 
         if (nsis.multiLanguageInstaller) {
             yaml.appendLine("${indent}multiLanguageInstaller: true")
@@ -412,6 +416,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml: StringBuilder,
         nsis: NsisSettings,
         indent: String,
+        protocolInclude: File? = null,
     ) {
         appendIfNotNull(
             yaml,
@@ -439,7 +444,8 @@ internal class ElectronBuilderConfigGenerator {
             "${indent}include",
             nsis.includeScript.orNull
                 ?.asFile
-                ?.absolutePath,
+                ?.absolutePath
+                ?: protocolInclude?.absolutePath,
         )
         appendIfNotNull(
             yaml,

@@ -5,6 +5,7 @@ package dev.nucleusframework.desktop.application.internal
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
+import dev.nucleusframework.desktop.application.dsl.UrlProtocol
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
@@ -1023,6 +1024,10 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
         app.nativeDistributions.macOS.fileAssociations
             .toSet()
 
+    // Capture URL protocol handlers (deep linking) at configuration time for the Info.plist
+    val plistUrlProtocols: List<UrlProtocol> =
+        app.nativeDistributions.protocols.toList()
+
     // Build a mapping from icon File -> unique name inside Resources/ (avoids collisions)
     val fileAssociationIconMapping: Map<File, File> =
         run {
@@ -1071,6 +1076,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             inputs.property("copyright", plistCopyright ?: "")
             inputs.property("iconFileName", plistIconFileName)
             inputs.property("fileAssociations", plistFileAssociations.toString())
+            inputs.property("urlProtocols", plistUrlProtocols.toString())
 
             doLast {
                 val plist = InfoPlistBuilder()
@@ -1116,6 +1122,17 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
                                         InfoPlistListValue(InfoPlistStringValue("****")),
                                 )
                             }
+                }
+
+                if (plistUrlProtocols.isNotEmpty()) {
+                    plist[PlistKeys.CFBundleURLTypes] =
+                        plistUrlProtocols.map { protocol ->
+                            InfoPlistMapValue(
+                                PlistKeys.CFBundleURLName to InfoPlistStringValue(protocol.name),
+                                PlistKeys.CFBundleURLSchemes to
+                                    InfoPlistListValue(protocol.schemes.map { InfoPlistStringValue(it) }),
+                            )
+                        }
                 }
 
                 plistFile
