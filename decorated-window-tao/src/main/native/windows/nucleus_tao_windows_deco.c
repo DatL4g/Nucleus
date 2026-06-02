@@ -290,8 +290,17 @@ static LRESULT CALLBACK decoWndProc(
     }
 
     case WM_SYSCOMMAND: {
+        WPARAM cmd = wParam & 0xFFF0;
+        /* Suppress the Alt / F10 system-menu activation. On a custom-decorated
+         * window with no menu bar, SC_KEYMENU makes DefWindowProc enter a modal
+         * menu loop that blocks the Tao/winit message pump (MainEventsCleared,
+         * WGL present) — the app appears frozen until Alt/Esc is pressed again.
+         * Tao still processes WM_SYSKEYDOWN/UP, so Compose keeps receiving the
+         * Alt KeyDown/KeyUp; we only prevent the menu loop from starting.
+         * Mirrors AWT, which returns mrConsume for sys-keys and never lets
+         * DefWindowProc generate SC_KEYMENU. */
+        if (cmd == SC_KEYMENU) return 0;
         if (state->isFullscreen) {
-            WPARAM cmd = wParam & 0xFFF0;
             if (cmd == SC_RESTORE || cmd == SC_MAXIMIZE ||
                 cmd == SC_SIZE   || cmd == SC_MOVE) {
                 return 0;
@@ -299,6 +308,12 @@ static LRESULT CALLBACK decoWndProc(
         }
         break;
     }
+
+    /* No menu bar exists, so Alt+<key> would otherwise produce the Windows
+     * "no matching mnemonic" beep. MNC_CLOSE tells DefWindowProc to dismiss
+     * the (non-existent) menu silently. */
+    case WM_MENUCHAR:
+        return MAKELRESULT(0, MNC_CLOSE);
 
     case WM_NCDESTROY: {
         if (state->isFullscreen) {
