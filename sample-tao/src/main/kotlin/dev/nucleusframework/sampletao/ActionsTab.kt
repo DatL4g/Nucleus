@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -53,6 +55,16 @@ fun ActionsTab(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         SectionTitle("Title")
+        SelectionContainer {
+            BasicText(
+                text = "Selectable non-editable text — select me and try PopClip (Copy only).",
+                style = TextStyle(color = Color.White, fontSize = 14.sp),
+                modifier =
+                    Modifier
+                        .testTag("selectable-sample")
+                        .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Text),
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BasicTextField(
                 value = titleInput,

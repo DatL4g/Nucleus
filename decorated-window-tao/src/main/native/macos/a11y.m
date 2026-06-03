@@ -204,11 +204,19 @@ nucleus_tao_a11y_scroll_by(int64_t ns_view_handle, uint64_t node_id,
 @property(nonatomic, assign) BOOL horizontal;
 @end
 
+@class NucleusA11yExternalSelection;
+
 @interface NucleusA11yProjection : NSObject
 @property(nonatomic, weak) NSView *taoView;
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, NucleusA11yElement *> *byId;
 @property(nonatomic, strong) NSMutableArray<NucleusA11yElement *> *roots;
 @property(nonatomic, assign) uint64_t focusedNodeId;
+// Compose's non-editable selection (SelectionContainer), pushed from Kotlin via
+// `nucleus_tao_a11y_set_external_selection`. When non-empty AND no Compose
+// element holds focus, `externalSelectionElement` becomes the view's focused
+// a11y element so cross-process readers (PopClip) can read its AXSelectedText.
+@property(nonatomic, copy) NSString *externalSelectedText;
+@property(nonatomic, strong) NucleusA11yExternalSelection *externalSelectionElement;
 // Notification observers for backing-properties / screen change. Stored so
 // we can remove them on detach.
 @property(nonatomic, strong) NSMutableArray<id> *observers;
@@ -415,16 +423,59 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 }
 
 // Modern NSAccessibility per-selector gate. AppKit calls this to decide
-// which setters / getters to advertise; returning NO for the value mutators
-// on a read-only text field tells VoiceOver to skip the "edit text"
-// affordance and makes AT scripting reject `setAccessibilityValue:` /
-// `setAccessibilitySelectedTextRange:`.
+// which getters / setters to advertise to *out-of-process* AX clients.
+//
+// This is the linchpin for cross-process text reading (PopClip, AppleScript
+// System Events, Accessibility Inspector): AppKit only exposes an attribute
+// like `AXSelectedText` to another process when the selector backing it is
+// "allowed" here. The stock `NSAccessibilityElement` gate does NOT advertise
+// the text-range selectors for a generic element, so without explicitly
+// allowing them an AXTextField never exposes `AXSelectedText` /
+// `AXSelectedTextRange` to a reader like PopClip. VoiceOver reads these
+// selectors *in-process* and is unaffected, which is why the gap is invisible
+// until an out-of-process tool tries to read the selection. Mirrors
+// AccessKit's `is_selector_allowed` (platforms/macos/src/node.rs).
 - (BOOL)isAccessibilitySelectorAllowed:(SEL)selector {
-    if (self.readOnly && [self isTextElement] &&
-        (selector == @selector(setAccessibilityValue:) ||
-         selector == @selector(setAccessibilitySelectedText:) ||
-         selector == @selector(setAccessibilitySelectedTextRange:))) {
-        return NO;
+    if (selector == @selector(accessibilityNumberOfCharacters) ||
+        selector == @selector(accessibilitySelectedText) ||
+        selector == @selector(accessibilitySelectedTextRange) ||
+        selector == @selector(accessibilitySelectedTextRanges) ||
+        selector == @selector(accessibilityInsertionPointLineNumber) ||
+        selector == @selector(accessibilityVisibleCharacterRange) ||
+        selector == @selector(accessibilityRangeForLine:) ||
+        selector == @selector(accessibilityLineForIndex:) ||
+        selector == @selector(accessibilityRangeForPosition:) ||
+        selector == @selector(accessibilityStringForRange:) ||
+        selector == @selector(accessibilityAttributedStringForRange:) ||
+        selector == @selector(accessibilityFrameForRange:) ||
+        selector == @selector(accessibilityBoundsForRange:)) {
+        return [self supportsTextRanges];
+    }
+    // Mutators: only on a writable text element.
+    if (selector == @selector(setAccessibilityValue:) ||
+        selector == @selector(setAccessibilitySelectedText:) ||
+        selector == @selector(setAccessibilitySelectedTextRange:)) {
+        return [self supportsTextRanges] && !self.readOnly;
+    }
+    // Role-scope value / scroll / modal selectors. We implement these methods
+    // on a single element class shared by every role, so without gating, a
+    // plain text field also advertises AXMinValue / AXMaxValue (→ looks like a
+    // slider/stepper), AXScrollBar, and AXModal. Real editable fields (Chrome's
+    // omnibox, TextEdit) expose NONE of those, and an AX client that sees
+    // min/max value on the focused element can mis-classify it as a numeric
+    // control rather than editable text — suppressing Cut / Paste. Restrict
+    // each to the role it actually belongs to.
+    if (selector == @selector(accessibilityMinValue) ||
+        selector == @selector(accessibilityMaxValue)) {
+        return self.role == NucleusA11yRoleSlider || self.role == NucleusA11yRoleProgress;
+    }
+    if (selector == @selector(accessibilityHorizontalScrollBar) ||
+        selector == @selector(accessibilityVerticalScrollBar) ||
+        selector == @selector(accessibilityVisibleChildren)) {
+        return self.role == NucleusA11yRoleScrollArea;
+    }
+    if (selector == @selector(isAccessibilityModal)) {
+        return (self.flags & NucleusA11yFlagModal) != 0;
     }
     return [super isAccessibilitySelectorAllowed:selector];
 }
@@ -453,6 +504,62 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     }
     NucleusA11yElement *parent = self.projection.byId[@(self.parentId)];
     return parent ?: (v ? NSAccessibilityUnignoredAncestor(v) : nil);
+}
+
+// AppKit does NOT auto-derive AXWindow / AXTopLevelUIElement for a plain
+// NSAccessibilityElement from its parent chain, so without these our elements
+// report AXWindow = nil. Cross-process AX clients (PopClip, AppleScript,
+// Accessibility Inspector) rely on AXWindow to anchor their UI to the right
+// window and to validate the element; a nil window makes some of them treat
+// the element as orphaned and drop actions. Real Cocoa text views (TextEdit)
+// always return these. Mirrors Chromium's AXWindow / AXTopLevelUIElement
+// exposure on its custom-rendered nodes.
+- (id)accessibilityWindow {
+    return self.taoView.window;
+}
+
+- (id)accessibilityTopLevelUIElement {
+    return self.taoView.window;
+}
+
+// ── Editable-ancestor family (legacy informal protocol) ───────────────────
+//
+// `AXEditableAncestor` / `AXFocusableAncestor` / `AXHighestEditableAncestor`
+// have no modern NSAccessibility selector, so — exactly like Chromium's
+// `ax_platform_node_cocoa.mm` — we expose them through the legacy
+// `accessibilityAttributeNames` / `accessibilityAttributeValue:` path. This is
+// how cross-process clients (PopClip) decide that a *custom-rendered* text
+// field (Chrome's omnibox, web inputs, and us) is editable and therefore offer
+// Cut / Paste. Native NSTextViews don't carry these (PopClip recognises them by
+// role) but custom UI must advertise them.
+//
+// We only augment the attribute set (append to `super`'s names) and only answer
+// these three names ourselves, delegating everything else to `super`, so the
+// modern attribute marshalling that the rest of this class relies on stays
+// intact.
+static NSString *const kAXEditableAncestor = @"AXEditableAncestor";
+static NSString *const kAXFocusableAncestor = @"AXFocusableAncestor";
+static NSString *const kAXHighestEditableAncestor = @"AXHighestEditableAncestor";
+
+- (NSArray *)accessibilityAttributeNames {
+    NSArray *base = [super accessibilityAttributeNames];
+    if (![self supportsTextRanges]) return base;
+    NSMutableArray *names = base ? [base mutableCopy] : [NSMutableArray new];
+    for (NSString *n in @[kAXFocusableAncestor, kAXEditableAncestor, kAXHighestEditableAncestor]) {
+        if (![names containsObject:n]) [names addObject:n];
+    }
+    return names;
+}
+
+- (id)accessibilityAttributeValue:(NSString *)attribute {
+    if ([self supportsTextRanges]) {
+        if ([attribute isEqualToString:kAXEditableAncestor] ||
+            [attribute isEqualToString:kAXHighestEditableAncestor] ||
+            [attribute isEqualToString:kAXFocusableAncestor]) {
+            return self;
+        }
+    }
+    return [super accessibilityAttributeValue:attribute];
 }
 
 - (NSArray *)accessibilityChildren {
@@ -746,6 +853,16 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return self.role == NucleusA11yRoleTextField || self.role == NucleusA11yRoleTextArea;
 }
 
+// Whether this element should expose the NSAccessibility text-range protocol
+// (selected text, ranges, caret) to AT clients. Today that's the editable
+// roles; once non-editable `SelectionContainer` selection is wired, a
+// StaticText element carrying a live selection will also answer YES so its
+// AXSelectedText reaches cross-process readers like PopClip. Mirrors
+// AccessKit's `supports_text_ranges`.
+- (BOOL)supportsTextRanges {
+    return [self isTextElement];
+}
+
 - (NSInteger)accessibilityNumberOfCharacters {
     if (![self isTextElement]) return 0;
     return (NSInteger)(self.valueString.length);
@@ -836,9 +953,42 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return [self accessibilityStringForRange:[self accessibilitySelectedTextRange]];
 }
 
+// AT clients (and PopClip's Cut / Paste) replace the current selection by
+// setting AXSelectedText. The Compose semantics layer only exposes whole-text
+// replacement (`SetText`) plus selection, not a splice primitive, so we
+// rebuild the full string around the current selection and route it through
+// `set_text`. The follow-up snapshot re-publishes the new value + caret.
+- (void)setAccessibilitySelectedText:(NSString *)newText {
+    if (![self supportsTextRanges] || self.readOnly) return;
+    if (!(self.actions & NucleusA11yActionSetText)) return;
+    NSString *insert = newText ?: @"";
+    NSString *value = self.valueString ?: @"";
+    NSUInteger start = self.selectionStart, end = self.selectionEnd;
+    if (end < start) { NSUInteger t = start; start = end; end = t; }
+    if (start > value.length) start = value.length;
+    if (end > value.length) end = value.length;
+    NSString *combined =
+        [[[value substringToIndex:start] stringByAppendingString:insert]
+            stringByAppendingString:[value substringFromIndex:end]];
+    if (nucleus_tao_a11y_set_text) {
+        const char *utf8 = [combined UTF8String] ?: "";
+        nucleus_tao_a11y_set_text((int64_t)(uintptr_t)self.taoView,
+                                  self.nodeId, utf8, (int32_t)strlen(utf8));
+    }
+}
+
 - (NSInteger)accessibilityInsertionPointLineNumber {
     if (![self isTextElement]) return -1;
     return [self accessibilityLineForIndex:(NSInteger)self.selectionStart];
+}
+
+// AXSelectedTextRanges (plural) — part of the standard editable-text protocol
+// that real Cocoa text views expose. We carry a single selection, so the array
+// holds one range. Some AT clients enumerate this instead of the singular
+// AXSelectedTextRange.
+- (NSArray<NSValue *> *)accessibilitySelectedTextRanges {
+    if (![self supportsTextRanges]) return @[];
+    return @[[NSValue valueWithRange:[self accessibilitySelectedTextRange]]];
 }
 
 - (NSRange)accessibilityVisibleCharacterRange {
@@ -1060,6 +1210,88 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 @end
 
 // ────────────────────────────────────────────────────────────────────────────
+// NucleusA11yExternalSelection — read-only text element exposing Compose's
+// non-editable SelectionContainer selection.
+//
+// Compose keeps SelectionContainer selection internal (no semantics), so the
+// JVM side captures it via the public `TextContextMenu.TextManager.selectedText`
+// and pushes the string here. We surface it as a read-only AXTextArea whose
+// AXSelectedText is the whole pushed string — enough for a cross-process reader
+// (PopClip) to offer Copy. It deliberately does NOT advertise an editable
+// ancestor or any settable attribute, so Cut/Paste stay hidden (correct for
+// read-only text).
+// ────────────────────────────────────────────────────────────────────────────
+
+@interface NucleusA11yExternalSelection : NSAccessibilityElement
+@property(nonatomic, weak) NSView *taoView;
+@property(nonatomic, copy) NSString *text;
+@end
+
+@implementation NucleusA11yExternalSelection
+
+- (BOOL)isAccessibilityElement { return YES; }
+- (NSAccessibilityRole)accessibilityRole { return NSAccessibilityTextAreaRole; }
+- (NSString *)accessibilityRoleDescription {
+    return NSAccessibilityRoleDescription(NSAccessibilityTextAreaRole, nil);
+}
+- (BOOL)isAccessibilityEnabled { return YES; }
+- (id)accessibilityValue { return self.text ?: @""; }
+- (NSString *)accessibilitySelectedText { return self.text ?: @""; }
+- (NSRange)accessibilitySelectedTextRange { return NSMakeRange(0, (self.text ?: @"").length); }
+- (NSArray<NSValue *> *)accessibilitySelectedTextRanges {
+    return @[[NSValue valueWithRange:[self accessibilitySelectedTextRange]]];
+}
+- (NSInteger)accessibilityNumberOfCharacters { return (NSInteger)(self.text ?: @"").length; }
+- (NSRange)accessibilityVisibleCharacterRange { return NSMakeRange(0, (self.text ?: @"").length); }
+- (NSInteger)accessibilityInsertionPointLineNumber { return 0; }
+- (NSString *)accessibilityStringForRange:(NSRange)range {
+    NSString *s = self.text ?: @"";
+    if (range.location > s.length) return @"";
+    NSRange clamped = NSMakeRange(range.location, MIN(range.length, s.length - range.location));
+    return [s substringWithRange:clamped];
+}
+- (NSAttributedString *)accessibilityAttributedStringForRange:(NSRange)range {
+    return [[NSAttributedString alloc] initWithString:[self accessibilityStringForRange:range]];
+}
+
+- (id)accessibilityParent {
+    NSView *v = self.taoView;
+    return v ? NSAccessibilityUnignoredAncestor(v) : nil;
+}
+- (id)accessibilityWindow { return self.taoView.window; }
+- (id)accessibilityTopLevelUIElement { return self.taoView.window; }
+- (NSRect)accessibilityFrame {
+    NSView *v = self.taoView;
+    if (!v || !v.window) return NSZeroRect;
+    return [v.window convertRectToScreen:[v convertRect:v.bounds toView:nil]];
+}
+
+// Read-only: advertise the text getters cross-process, forbid every mutator.
+- (BOOL)isAccessibilitySelectorAllowed:(SEL)selector {
+    if (selector == @selector(accessibilityValue) ||
+        selector == @selector(accessibilitySelectedText) ||
+        selector == @selector(accessibilitySelectedTextRange) ||
+        selector == @selector(accessibilitySelectedTextRanges) ||
+        selector == @selector(accessibilityNumberOfCharacters) ||
+        selector == @selector(accessibilityVisibleCharacterRange) ||
+        selector == @selector(accessibilityInsertionPointLineNumber) ||
+        selector == @selector(accessibilityStringForRange:) ||
+        selector == @selector(accessibilityAttributedStringForRange:)) {
+        return YES;
+    }
+    if (selector == @selector(setAccessibilityValue:) ||
+        selector == @selector(setAccessibilitySelectedText:) ||
+        selector == @selector(setAccessibilitySelectedTextRange:)) {
+        return NO;
+    }
+    return [super isAccessibilitySelectorAllowed:selector];
+}
+
+- (BOOL)accessibilityNotifiesWhenDestroyed { return YES; }
+
+@end
+
+// ────────────────────────────────────────────────────────────────────────────
 // NucleusA11yProjection implementation.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -1152,6 +1384,7 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
     // Queued notifications — flushed after the whole snapshot is consistent.
     NSMutableArray<NucleusA11yElement *> *valueChanged = [NSMutableArray new];
     NSMutableArray<NucleusA11yElement *> *titleChanged = [NSMutableArray new];
+    NSMutableArray<NucleusA11yElement *> *selectionChanged = [NSMutableArray new];
     NSMutableArray<NucleusA11yElement *> *createdNodes = [NSMutableArray new];
     // Live-region announcements collected during the parse pass. Each entry is
     // (priority, text). Flushed at the end via NSAccessibilityAnnouncementRequested.
@@ -1245,6 +1478,13 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
                              ![el.valueString isEqualToString:valueStr];
             if (labelDiff) [titleChanged addObject:el];
             if (valueDiff) [valueChanged addObject:el];
+            // Selection moved within a text element → AXSelectedTextChanged so
+            // out-of-process readers (PopClip's AXObserver) re-read the new
+            // selection. Compared before the element is mutated below. Mirrors
+            // AccessKit's `raw_text_selection` diff (event.rs).
+            BOOL selDiff = (el.selectionStart != (NSUInteger)selStart) ||
+                           (el.selectionEnd != (NSUInteger)selEnd);
+            if (selDiff && [el supportsTextRanges]) [selectionChanged addObject:el];
             // Selected toggled? Track at the projection level so the post-loop
             // pass can fire a single SelectedChildrenChanged on the root.
             BOOL prevSelected = (el.flags & NucleusA11yFlagSelected) != 0;
@@ -1399,6 +1639,9 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
     for (NucleusA11yElement *el in titleChanged) {
         if (canPost) NSAccessibilityPostNotification(el, NSAccessibilityTitleChangedNotification);
     }
+    for (NucleusA11yElement *el in selectionChanged) {
+        if (canPost) NSAccessibilityPostNotification(el, NSAccessibilitySelectedTextChangedNotification);
+    }
     if (anyFrameChanged && canPost) {
         // Single layout-changed on the root view is enough — VoiceOver
         // re-queries frames it has cached. Posting per-element would
@@ -1519,8 +1762,18 @@ static id tao_view_accessibility_focused_ui_element(id self, SEL _cmd) {
     (void)_cmd;
     note_a11y_query();
     NucleusA11yProjection *proj = projection_for_view((NSView *)self);
+    // A live non-editable SelectionContainer selection takes precedence: the
+    // editable path force-clears `externalSelectedText` whenever a field owns
+    // an active selection, so a non-empty external value always reflects the
+    // *visible* selection even if a TextField still holds Compose focus (with
+    // an empty caret). Without this, a once-focused field would shadow every
+    // subsequent non-editable selection.
+    if (proj.externalSelectedText.length > 0 && proj.externalSelectionElement) {
+        return proj.externalSelectionElement;
+    }
     NucleusA11yElement *focused = [proj focusedElement];
-    return focused ?: self;
+    if (focused) return focused;
+    return self;
 }
 
 // Returns the rotors VoiceOver navigates via VO+U. Built eagerly at attach
@@ -1698,9 +1951,53 @@ static void build_default_rotors(NucleusA11yProjection *proj) {
     proj.cachedRotors = @[headings, forms];
 }
 
+// Installs a standard macOS **Edit** menu (Undo/Redo/Cut/Copy/Paste/Select All)
+// into NSApp.mainMenu once. This is what selection tools like PopClip inspect
+// to decide whether Cut / Copy / Paste are offered (PopClip's own log shows it
+// probing for a "copy menu action": no Edit menu → it only offers Copy). Tao —
+// like Compose's AWT backend — ships no Edit menu, which is exactly why PopClip
+// Cut/Paste don't appear in Compose desktop apps.
+//
+// We attach the standard selectors (cut:/copy:/paste:/…) with their ⌘ key
+// equivalents but DON'T wire a responder. AppKit then auto-disables the items
+// (nothing in the responder chain answers copy:), and — crucially — a disabled
+// menu item does NOT consume its key equivalent, so Compose keeps receiving
+// ⌘C/⌘X/⌘V as ordinary key events and its in-field editing is unaffected.
+// PopClip still sees the items exist and executes its actions via synthesized
+// keystrokes, which Compose handles.
+static void nucleus_tao_install_edit_menu_once(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMenu *mainMenu = NSApp.mainMenu;
+        if (!mainMenu) {
+            mainMenu = [[NSMenu alloc] init];
+            NSApp.mainMenu = mainMenu;
+        }
+        for (NSMenuItem *existing in mainMenu.itemArray) {
+            NSString *t = existing.submenu.title;
+            if ([t isEqualToString:@"Edit"] || [t isEqualToString:@"Édition"]) return;
+        }
+        NSMenuItem *editItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:NULL keyEquivalent:@""];
+        NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+        editMenu.autoenablesItems = YES;
+        [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+        NSMenuItem *redo = [editMenu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"z"];
+        redo.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+        [editMenu addItem:[NSMenuItem separatorItem]];
+        [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+        [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+        [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+        [editMenu addItem:[NSMenuItem separatorItem]];
+        [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+        editItem.submenu = editMenu;
+        [mainMenu addItem:editItem];
+    });
+}
+
 void nucleus_tao_a11y_attach(int64_t ns_view_handle) {
     NSView *view = (__bridge NSView *)(void *)(intptr_t)ns_view_handle;
     if (!view) return;
+    nucleus_tao_install_edit_menu_once();
     nucleus_tao_swizzle_taoview_a11y_once();
     NucleusA11yProjection *proj = ensure_projection_for_view(view);
     build_default_rotors(proj);
@@ -1824,6 +2121,56 @@ int nucleus_tao_a11y_consume_resync(void) {
         return 1;
     }
     return 0;
+}
+
+// Receives Compose's non-editable selection string (UTF-8) from the JVM and
+// republishes it as the view's focused-element AXSelectedText. Empty clears.
+// Runs on the macOS main thread (the caller dispatches through TaoMainDispatcher).
+void nucleus_tao_a11y_set_external_selection(int64_t ns_view_handle,
+                                             const uint8_t *utf8, int32_t len) {
+    NSView *view = (__bridge NSView *)(void *)(intptr_t)ns_view_handle;
+    if (!view) return;
+    NucleusA11yProjection *proj = projection_for_view(view);
+    if (!proj) return;
+    NSString *text = @"";
+    if (utf8 != NULL && len > 0) {
+        text = [[NSString alloc] initWithBytes:utf8 length:(NSUInteger)len
+                                      encoding:NSUTF8StringEncoding] ?: @"";
+    }
+    NSString *previous = proj.externalSelectedText ?: @"";
+    if ([previous isEqualToString:text]) return;
+    BOOL wasActive = previous.length > 0;
+    BOOL nowActive = text.length > 0;
+    proj.externalSelectedText = text;
+    if (text.length > 0) {
+        if (!proj.externalSelectionElement) {
+            proj.externalSelectionElement = [NucleusA11yExternalSelection new];
+            proj.externalSelectionElement.taoView = view;
+        }
+        proj.externalSelectionElement.text = text;
+    }
+    // Tell AT clients to re-read. The external (non-editable) selection takes
+    // precedence in the focused-element resolver, so we post on the synthetic
+    // element whenever it's non-empty — even if a TextField still holds Compose
+    // focus. `SelectedTextChanged` fires on every content change; the heavier
+    // `FocusedUIElementChanged` fires only on the empty↔non-empty transition
+    // (the focused element only actually changes then), avoiding a notification
+    // storm while a drag-selection grows.
+    if (!view.window) return;
+    if (nowActive && proj.externalSelectionElement) {
+        NSAccessibilityPostNotification(
+            proj.externalSelectionElement, NSAccessibilitySelectedTextChangedNotification);
+        if (!wasActive) {
+            NSAccessibilityPostNotification(
+                proj.externalSelectionElement, NSAccessibilityFocusedUIElementChangedNotification);
+        }
+    } else if (wasActive) {
+        // Just cleared: hand focus back to whatever Compose element (if any) owns it.
+        NucleusA11yElement *composeFocused = [proj focusedElement];
+        id target = composeFocused ?: (id)view;
+        NSAccessibilityPostNotification(
+            target, NSAccessibilityFocusedUIElementChangedNotification);
+    }
 }
 
 void nucleus_tao_a11y_post_focus_changed(int64_t ns_view_handle, uint64_t node_id) {

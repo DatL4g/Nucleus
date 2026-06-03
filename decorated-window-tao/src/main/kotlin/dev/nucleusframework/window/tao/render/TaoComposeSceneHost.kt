@@ -515,9 +515,24 @@ internal class TaoComposeSceneHost(
         }
     }
 
+    /**
+     * Wired by the window to the a11y controller so Compose's non-editable text
+     * selection (`SelectionContainer`) can be published to native accessibility
+     * (PopClip et al.). `(selectedText, editable)`; see
+     * [TaoSelectionAccessibilityObserver]. Null = no a11y bridge.
+     */
+    var onTextSelectionForA11y: ((text: String, editable: Boolean, sourceId: Int) -> Unit)? = null
+
     fun setContent(content: @Composable () -> Unit) {
         scene?.setContent {
-            TaoTextToolbarHost(textToolbar, content)
+            TaoTextToolbarHost(textToolbar) {
+                val onSel = onTextSelectionForA11y
+                if (onSel != null) {
+                    TaoSelectionAccessibilityObserver(onSelection = onSel, content = content)
+                } else {
+                    content()
+                }
+            }
         }
     }
 

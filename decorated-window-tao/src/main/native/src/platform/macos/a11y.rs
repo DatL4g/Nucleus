@@ -25,7 +25,7 @@ use crate::platform::macos::ffi::{
     nucleus_tao_a11y_apply_snapshot, nucleus_tao_a11y_attach,
     nucleus_tao_a11y_consume_resync, nucleus_tao_a11y_detach, nucleus_tao_a11y_is_active,
     nucleus_tao_a11y_is_voiceover_running, nucleus_tao_a11y_note_pushed,
-    nucleus_tao_a11y_post_focus_changed,
+    nucleus_tao_a11y_post_focus_changed, nucleus_tao_a11y_set_external_selection,
 };
 use crate::state::JAVA_VM;
 
@@ -117,6 +117,29 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
 ) {
     if ns_view == 0 { return; }
     unsafe { nucleus_tao_a11y_post_focus_changed(ns_view, node_id as u64) };
+}
+
+/// Publishes Compose's non-editable text selection (`SelectionContainer`) to
+/// the ObjC projection so it surfaces as the focused element's `AXSelectedText`
+/// for cross-process readers (PopClip). An empty string clears it.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeA11ySetExternalSelection(
+    mut env: JNIEnv,
+    _class: JClass,
+    ns_view: jlong,
+    text: JString,
+) {
+    if ns_view == 0 {
+        return;
+    }
+    let s: String = match env.get_string(&text) {
+        Ok(j) => j.into(),
+        Err(_) => String::new(),
+    };
+    let bytes = s.as_bytes();
+    unsafe {
+        nucleus_tao_a11y_set_external_selection(ns_view, bytes.as_ptr(), bytes.len() as i32);
+    }
 }
 
 /// No-op on macOS — VoiceOver reads `CFBundleName` for the app name.

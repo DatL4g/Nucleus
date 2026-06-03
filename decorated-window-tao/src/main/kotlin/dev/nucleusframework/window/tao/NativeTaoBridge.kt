@@ -426,6 +426,18 @@ internal object NativeTaoBridge {
     )
 
     /**
+     * macOS-only: publishes Compose's non-editable selection
+     * (`SelectionContainer`) as the focused element's `AXSelectedText` for
+     * cross-process readers (PopClip). Empty string clears it. No-op on other
+     * platforms. See [TaoAccessibilityController.setExternalSelection].
+     */
+    @JvmStatic
+    external fun nativeA11ySetExternalSelection(
+        nsView: Long,
+        text: String,
+    )
+
+    /**
      * Linux-only: pushes outer + inner window geometry (in screen-relative
      * physical pixels) into AccessKit's root-bounds slot. Required because
      * AT-SPI's `Component.GetExtents(SCREEN)` queries return window-local

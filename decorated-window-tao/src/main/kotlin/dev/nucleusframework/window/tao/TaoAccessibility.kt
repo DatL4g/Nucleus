@@ -403,6 +403,55 @@ internal class TaoAccessibilityController(
         prevNodesById = null
     }
 
+    /** Last non-editable selection published to native; avoids redundant JNI hops. */
+    private var lastExternalSelection: String = ""
+
+    /**
+     * Identity of the `TextContextMenu.Area` (selectable region) that currently
+     * owns the published selection. Each region's observer also fires with an
+     * empty string when it has no selection; without ownership tracking those
+     * empties would clobber the region the user is actually selecting in
+     * (causing intermittent "no selection" for cross-process readers). 0 = none.
+     */
+    private var selectionOwner: Int = 0
+
+    /**
+     * Publishes Compose's non-editable text selection (`SelectionContainer`) to
+     * native accessibility so cross-process readers (PopClip) see it as the
+     * focused element's `AXSelectedText`. Editable selections are already
+     * exposed via the focused field's semantics, so those are treated as empty
+     * here (`editable = true`) to avoid competing with the real field.
+     *
+     * [sourceId] identifies the originating selectable region so an empty
+     * update from a *different* region can't wipe the owner's live selection.
+     */
+    fun setExternalSelection(
+        text: String,
+        editable: Boolean,
+        sourceId: Int,
+    ) {
+        if (isDisposed || nsView == 0L) return
+        if (editable) {
+            // An editable field with a live (non-empty) selection has taken over
+            // focus + selection and exposes it via semantics; force-clear any
+            // stale non-editable selection so it doesn't shadow the field. An
+            // empty editable caret must NOT clobber a non-editable selection
+            // owned by another region.
+            if (text.isEmpty() || lastExternalSelection.isEmpty()) return
+            selectionOwner = 0
+        } else if (text.isEmpty()) {
+            // Only the region that set the current selection may clear it.
+            if (sourceId != selectionOwner) return
+            selectionOwner = 0
+        } else {
+            selectionOwner = sourceId
+        }
+        val payload = if (editable) "" else text
+        if (payload == lastExternalSelection) return
+        lastExternalSelection = payload
+        NativeTaoBridge.nativeA11ySetExternalSelection(nsView, payload)
+    }
+
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
         if (isDisposed || nsView == 0L) return
         // Smart gating: skip when no AX client is active AND no resync was

@@ -218,6 +218,12 @@ internal fun ApplicationScope.openDecoratedWindow(
         // NSWindow focus forwarder). Must follow attach() so the NSView
         // exists and the window is reachable.
         a11yController.attach()
+        // Bridge Compose's non-editable selection (SelectionContainer) to native
+        // a11y so PopClip can read it (editable selection already flows through
+        // semantics). See TaoSelectionAccessibilityObserver.
+        host.onTextSelectionForA11y = { text, editable, sourceId ->
+            a11yController.setExternalSelection(text, editable, sourceId)
+        }
         // Apply `minimumSize` synchronously *now*, while the window is still
         // hidden (visible=false). Tao's own `setMinimumSize` is queued via
         // its UserEvent loop and may not be drained before the LE that

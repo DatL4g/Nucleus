@@ -30,6 +30,11 @@ extern "C" {
         len: usize,
     ) -> i32;
     pub(crate) fn nucleus_tao_a11y_post_focus_changed(ns_view_handle: i64, node_id: u64);
+    pub(crate) fn nucleus_tao_a11y_set_external_selection(
+        ns_view_handle: i64,
+        utf8: *const u8,
+        len: i32,
+    );
     pub(crate) fn nucleus_tao_a11y_is_voiceover_running() -> i32;
     pub(crate) fn nucleus_tao_apple_events_install();
     pub(crate) fn nucleus_tao_a11y_is_active() -> i32;
