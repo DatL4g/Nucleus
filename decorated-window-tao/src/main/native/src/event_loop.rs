@@ -20,6 +20,11 @@ use crate::events::{
     EVENT_UNFOCUSED, EVENT_WINDOW_READY, SCROLL_FIXED_SCALE, TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE,
     TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
 };
+#[cfg(target_os = "windows")]
+use crate::events::{
+    dispatch_trackpad_gesture, TRACKPAD_GESTURE_MAGNIFY, TRACKPAD_PHASE_CHANGED,
+    TRACKPAD_VALUE_FIXED_SCALE,
+};
 use crate::keymap;
 use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
 
@@ -41,6 +46,29 @@ use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn on_tao_minimized(window_id: tao::window::WindowId, minimized: bool) {
     crate::state::send_user_event(crate::events::UserEvent::MinimizedChanged { window_id, minimized });
+}
+
+// Ctrl-flagged WM_MOUSEWHEEL (precision-touchpad pinch or real Ctrl+wheel),
+// forwarded by the vendored Tao MAGNIFY_HOOK patch. Each call is one discrete
+// wheel tick; the JVM host accumulates the stream into a continuous two-finger
+// pinch (debounced end), so we only emit a CHANGED magnify delta. Unlike the
+// minimize hook this is never re-entered by our own calls (we never synthesize
+// a wheel), so we dispatch straight to the JVM here — same as the macOS NSEvent
+// trackpad callback. x/y are 0: the host centres the synthesised gesture on the
+// last cursor position (the zoom focal point), exactly like a real pinch.
+#[cfg(target_os = "windows")]
+fn on_tao_magnify(window_id: tao::window::WindowId, value: f32) {
+    let Some(handle) = handle_for(window_id) else {
+        return;
+    };
+    dispatch_trackpad_gesture(
+        handle,
+        TRACKPAD_GESTURE_MAGNIFY,
+        TRACKPAD_PHASE_CHANGED,
+        0,
+        0,
+        (value as f64 * TRACKPAD_VALUE_FIXED_SCALE) as jint,
+    );
 }
 
 pub(crate) fn run_event_loop_blocking() {
@@ -85,6 +113,9 @@ pub(crate) fn run_event_loop_blocking() {
     // Event-driven minimize/restore detection (see on_tao_minimized).
     #[cfg(target_os = "windows")]
     tao::platform::windows::set_minimized_hook(on_tao_minimized);
+    // Trackpad pinch / Ctrl+wheel → magnify gesture (see on_tao_magnify).
+    #[cfg(target_os = "windows")]
+    tao::platform::windows::set_magnify_hook(on_tao_magnify);
     #[cfg(target_os = "macos")]
     tao::platform::macos::set_minimized_hook(on_tao_minimized);
     #[cfg(target_os = "linux")]

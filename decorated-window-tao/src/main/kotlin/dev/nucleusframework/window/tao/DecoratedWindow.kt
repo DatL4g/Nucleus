@@ -707,6 +707,15 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     host.keyHandler = onKeyEvent
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
+    // Trackpad pinch-to-zoom. Windows delivers a precision-touchpad pinch (and
+    // a real Ctrl+wheel) as a Ctrl-flagged WM_MOUSEWHEEL; the Tao patch routes
+    // those to the magnify hook instead of a scroll, and the host synthesises a
+    // two-finger Touch pinch so cross-platform `detectTransformGestures` zooms
+    // uniformly — same model as macOS.
+    window.onTrackpadGesture { kind, phase, x, y, value ->
+        if (enabled) host.onTrackpadGesture(kind, phase, x, y, value)
+    }
+
     // ── Windows accessibility (UIA) ────────────────────────────────────────
     // Per-window UIA projection driven by the same SemanticsObserver pipeline
     // as macOS. The controller resolves the HWND on attach via

@@ -467,3 +467,26 @@ pub(crate) static MINIMIZED_HOOK: std::sync::OnceLock<fn(crate::window::WindowId
 pub fn set_minimized_hook(hook: fn(crate::window::WindowId, bool)) {
   let _ = MINIMIZED_HOOK.set(hook);
 }
+
+// PATCH(nucleus): trackpad-pinch / Ctrl+wheel magnify hook.
+//
+// Windows Precision Touchpads deliver pinch-to-zoom as a WM_MOUSEWHEEL message
+// with the MK_CONTROL flag set in `wparam` — the same wire a real Ctrl+wheel
+// uses. Tao has no magnify event, so rather than emit a scroll (which drives
+// the scrollable, the bug we're fixing) the WM_MOUSEWHEEL handler calls this
+// hook with the normalized wheel delta whenever MK_CONTROL is present and
+// swallows the scroll. The embedder synthesises a two-finger pinch from the
+// stream of deltas — matching the macOS / Linux trackpad-gesture path — so
+// cross-platform `detectTransformGestures` zooms uniformly. Idempotent: the
+// first installed hook wins; runs on the event-loop thread inside the window
+// procedure, so it must not block or pump messages.
+pub(crate) static MAGNIFY_HOOK: std::sync::OnceLock<fn(crate::window::WindowId, f32)> =
+  std::sync::OnceLock::new();
+
+/// Install a hook invoked from the WM_MOUSEWHEEL handler when a Ctrl-flagged
+/// wheel event (precision-touchpad pinch or a real Ctrl+wheel) arrives. The
+/// `f32` is the normalized wheel delta (notches; fractional for precision
+/// touchpads). See [`MAGNIFY_HOOK`].
+pub fn set_magnify_hook(hook: fn(crate::window::WindowId, f32)) {
+  let _ = MAGNIFY_HOOK.set(hook);
+}

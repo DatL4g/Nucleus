@@ -535,7 +535,11 @@ class TaoWindow internal constructor(
         keyListener = listener
     }
 
-    /** macOS only — see [TrackpadGestureListener]. No-op on Windows / Linux. */
+    /**
+     * Trackpad gesture stream — see [TrackpadGestureListener]. macOS/Linux emit
+     * magnify/rotate/smart-magnify; Windows emits magnify only (Ctrl+wheel /
+     * precision-touchpad pinch). No native source on other configurations.
+     */
     fun onTrackpadGesture(listener: TrackpadGestureListener) {
         trackpadGestureListener = listener
     }

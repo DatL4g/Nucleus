@@ -33,6 +33,12 @@ import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
@@ -43,6 +49,7 @@ import org.jetbrains.skia.SurfaceOrigin
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
@@ -86,6 +93,14 @@ internal class TaoComposeSceneHostWindows(
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
     private val frameClock = BroadcastFrameClock()
     private val flushingDispatcher = FlushingMainDispatcher()
+
+    /**
+     * Scope for host-owned timers (currently only the trackpad-pinch idle-end
+     * debounce). Runs on [flushingDispatcher] so resumed continuations land on
+     * the event-loop thread; `delay` itself ticks on the shared coroutines
+     * scheduler. Cancelled in [detach].
+     */
+    private val gestureScope = CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob())
 
     /** Floating text-selection bar shown on touch selection. */
     private val textToolbar = TaoTextToolbar()
@@ -373,6 +388,108 @@ internal class TaoComposeSceneHostWindows(
                 sc.cancelPointerInput()
             }
         }
+    }
+
+    // ── Trackpad pinch-to-zoom (Ctrl-flagged WM_MOUSEWHEEL) ───────────────
+    //
+    // Windows delivers a precision-touchpad pinch (and a real Ctrl+wheel) as a
+    // WM_MOUSEWHEEL carrying the Ctrl flag; the vendored Tao patch routes those
+    // to the magnify hook (instead of a scroll, which would drive the
+    // scrollable — the bug we're fixing). Each notch/tick is a discrete delta,
+    // but pinch detection (`detectTransformGestures`) only crosses its touch
+    // slop once distance has changed enough, so per-tick Press→Release bursts
+    // would swallow fine touchpad zooms. We instead keep ONE continuous
+    // two-finger Touch gesture: the first tick presses, every tick moves
+    // (accumulating scale), and an idle debounce releases it — the same
+    // continuous model the macOS path uses, so zoom is smooth and the gesture
+    // never reaches the scrollable.
+
+    private var pinchActive = false
+    private var pinchScale = 1f
+    private var pinchCenterX = 0f
+    private var pinchCenterY = 0f
+    private var pinchEndJob: Job? = null
+
+    /**
+     * Synthesises a two-finger pinch from one Ctrl+wheel tick. [valueFixed] is
+     * the normalized wheel delta × [TRACKPAD_VALUE_SCALE] (positive = zoom in).
+     * Only magnify gestures are produced on Windows, so kind/phase/x/y from the
+     * shared `onTrackpadGesture` wire are ignored.
+     */
+    @OptIn(ExperimentalComposeUiApi::class)
+    fun onTrackpadGesture(
+        @Suppress("UNUSED_PARAMETER") kind: Int,
+        @Suppress("UNUSED_PARAMETER") phase: Int,
+        @Suppress("UNUSED_PARAMETER") xFixed: Int,
+        @Suppress("UNUSED_PARAMETER") yFixed: Int,
+        valueFixed: Int,
+    ) {
+        if (scene == null) return
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
+
+        val value = valueFixed / TRACKPAD_VALUE_SCALE
+        // Wheel notches are coarse (≈±1.0); precision-touchpad ticks are small
+        // fractions. A fixed sensitivity maps both onto a smooth per-tick step;
+        // continuous accumulation across ticks is what crosses the touch slop.
+        val step = (1f + value * PINCH_WHEEL_SENSITIVITY).coerceAtLeast(MIN_PINCH_STEP)
+
+        if (!pinchActive) {
+            pinchActive = true
+            pinchScale = 1f
+            // Centre on the cursor = zoom focal point (the pinch doesn't move it).
+            pinchCenterX = lastPointerX
+            pinchCenterY = lastPointerY
+            sendPinchPointers(PointerEventType.Press)
+        }
+        pinchScale *= step
+        sendPinchPointers(PointerEventType.Move)
+        schedulePinchEnd()
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    private fun sendPinchPointers(eventType: PointerEventType) {
+        val sc = scene ?: return
+        val radius = PINCH_BASE_RADIUS_PX * pinchScale
+        val pressed = eventType != PointerEventType.Release
+        val pointers =
+            listOf(
+                ComposeScenePointer(
+                    id = PointerId(PINCH_POINTER_ID_A),
+                    position = Offset(pinchCenterX - radius, pinchCenterY),
+                    pressed = pressed,
+                    type = PointerType.Touch,
+                ),
+                ComposeScenePointer(
+                    id = PointerId(PINCH_POINTER_ID_B),
+                    position = Offset(pinchCenterX + radius, pinchCenterY),
+                    pressed = pressed,
+                    type = PointerType.Touch,
+                ),
+            )
+        sc.sendPointerEvent(
+            eventType = eventType,
+            pointers = pointers,
+            keyboardModifiers = currentKeyboardModifiers,
+        )
+    }
+
+    /** Re-arms the idle timer that releases the synthetic pinch once ticks stop. */
+    private fun schedulePinchEnd() {
+        pinchEndJob?.cancel()
+        pinchEndJob =
+            gestureScope.launch {
+                delay(PINCH_IDLE_END_MS.milliseconds)
+                endPinchGesture()
+            }
+    }
+
+    private fun endPinchGesture() {
+        pinchEndJob = null
+        if (!pinchActive) return
+        sendPinchPointers(PointerEventType.Release)
+        pinchActive = false
+        pinchScale = 1f
     }
 
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
@@ -1052,6 +1169,11 @@ internal class TaoComposeSceneHostWindows(
 
     fun detach() {
         textToolbar.hide()
+        // Stop the pinch idle timer; the scene is going away so no Release needed.
+        pinchEndJob?.cancel()
+        pinchEndJob = null
+        pinchActive = false
+        gestureScope.cancel()
         // Make THIS host's GL context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this
         // one — the onboarding window — closes) may have left its own HGLRC
@@ -1088,6 +1210,32 @@ internal class TaoComposeSceneHostWindows(
         // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f
         private const val TOUCH_FORCE_SCALE: Float = 10_000f
+
+        /**
+         * Trackpad pinch (Ctrl+wheel → magnify) wire scale — matches Rust
+         * `TRACKPAD_VALUE_FIXED_SCALE` in `events.rs`.
+         */
+        private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
+
+        /**
+         * Per-tick zoom step = `1 + delta × sensitivity`. A full mouse notch
+         * (delta ≈ 1) yields ≈1.15× per notch; precision-touchpad ticks send
+         * small deltas that accumulate continuously into a smooth zoom.
+         */
+        private const val PINCH_WHEEL_SENSITIVITY: Float = 0.15f
+
+        /** Floor on the per-tick step so a hard pinch-out can't invert it. */
+        private const val MIN_PINCH_STEP: Float = 0.05f
+
+        /** Half-distance of the synthetic two-finger pair at scale 1.0. */
+        private const val PINCH_BASE_RADIUS_PX: Float = 120f
+
+        // Stable ids well clear of real touch ids (raw WM_POINTER finger ids).
+        private const val PINCH_POINTER_ID_A: Long = 0xA001L
+        private const val PINCH_POINTER_ID_B: Long = 0xA002L
+
+        /** Idle gap after the last tick before the synthetic pinch releases. */
+        private const val PINCH_IDLE_END_MS: Long = 120L
 
         /**
          * Live attached-host count across the JVM. When > 1, every host

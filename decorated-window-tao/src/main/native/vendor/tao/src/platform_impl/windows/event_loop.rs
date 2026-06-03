@@ -1397,31 +1397,46 @@ unsafe fn public_window_callback_inner<T: 'static>(
       let value = f32::from(util::GET_WHEEL_DELTA_WPARAM(wparam));
       let value = value / WHEEL_DELTA as f32;
 
-      let modifiers = update_modifiers(window, subclass_input);
+      // PATCH(nucleus): a Ctrl-flagged wheel is how Windows delivers a
+      // precision-touchpad pinch (and a real Ctrl+wheel). The low word of
+      // `wparam` carries the key-state flags; MK_CONTROL is bit 0x0008. Route
+      // the gesture to the magnify hook and swallow the scroll so it zooms
+      // instead of driving the scrollable. See MAGNIFY_HOOK / set_magnify_hook.
+      const MK_CONTROL_FLAG: usize = 0x0008;
+      let ctrl_pinch = (wparam.0 & MK_CONTROL_FLAG) != 0
+        && crate::platform::windows::MAGNIFY_HOOK.get().is_some();
 
-      let mut scroll_lines = DEFAULT_SCROLL_LINES_PER_WHEEL_DELTA;
+      if ctrl_pinch {
+        if let Some(hook) = crate::platform::windows::MAGNIFY_HOOK.get() {
+          hook(RootWindowId(WindowId(window.0 as _)), value);
+        }
+      } else {
+        let modifiers = update_modifiers(window, subclass_input);
 
-      let _ = SystemParametersInfoW(
-        SPI_GETWHEELSCROLLLINES,
-        0,
-        Some(&mut scroll_lines as *mut isize as *mut c_void),
-        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-      );
+        let mut scroll_lines = DEFAULT_SCROLL_LINES_PER_WHEEL_DELTA;
 
-      if scroll_lines as u32 == WHEEL_PAGESCROLL {
-        // TODO: figure out how to handle page scrolls
-        scroll_lines = DEFAULT_SCROLL_LINES_PER_WHEEL_DELTA;
+        let _ = SystemParametersInfoW(
+          SPI_GETWHEELSCROLLLINES,
+          0,
+          Some(&mut scroll_lines as *mut isize as *mut c_void),
+          SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        );
+
+        if scroll_lines as u32 == WHEEL_PAGESCROLL {
+          // TODO: figure out how to handle page scrolls
+          scroll_lines = DEFAULT_SCROLL_LINES_PER_WHEEL_DELTA;
+        }
+
+        subclass_input.send_event(Event::WindowEvent {
+          window_id: RootWindowId(WindowId(window.0 as _)),
+          event: WindowEvent::MouseWheel {
+            device_id: DEVICE_ID,
+            delta: LineDelta(0.0, value * scroll_lines as f32),
+            phase: TouchPhase::Moved,
+            modifiers,
+          },
+        });
       }
-
-      subclass_input.send_event(Event::WindowEvent {
-        window_id: RootWindowId(WindowId(window.0 as _)),
-        event: WindowEvent::MouseWheel {
-          device_id: DEVICE_ID,
-          delta: LineDelta(0.0, value * scroll_lines as f32),
-          phase: TouchPhase::Moved,
-          modifiers,
-        },
-      });
 
       result = ProcResult::Value(LRESULT(0));
     }
