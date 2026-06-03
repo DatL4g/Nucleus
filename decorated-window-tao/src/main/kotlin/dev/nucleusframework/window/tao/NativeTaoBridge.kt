@@ -155,18 +155,8 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeIsAvailable(): Boolean
 
-    /**
-     * Installs the macOS `NSAppleEventManager` handler for `kInternetEventClass
-     * / kAEGetURL`. Must be called *before* [nativeRunBlocking] so the
-     * cold-start URL (app launched via deep link) is delivered. No-op on
-     * Windows / Linux. The Java callback receives URLs through
-     * [dispatchDeepLink].
-     */
     @JvmStatic
-    external fun nativeAppleEventsInstall()
-
-    @JvmStatic
-    @Suppress("unused") // called from JNI (macos/apple_events.m → nucleus_tao_apple_events_dispatch)
+    @Suppress("unused") // called from JNI (macOS Event::Opened → apple_events::dispatch_deep_link)
     fun dispatchDeepLink(uri: String) {
         TaoDeepLinkBridge.onUrlFromNative(uri)
     }

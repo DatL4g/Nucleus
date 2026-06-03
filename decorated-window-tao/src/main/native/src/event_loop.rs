@@ -623,6 +623,17 @@ pub(crate) fn run_event_loop_blocking() {
             Event::MainEventsCleared => {
                 dispatch(0, EVENT_MAIN_EVENTS_CLEARED, 0, 0);
             }
+            // macOS deep links: AppKit installs its own `kAEGetURL` handler
+            // during `finishLaunching` (routing to `application:openURLs:`).
+            // Tao's delegate turns `openURLs` into `Event::Opened`, so we
+            // forward the URLs to the JVM here. Covers cold start (the launch
+            // URL replayed after `finishLaunching`) and warm start.
+            #[cfg(target_os = "macos")]
+            Event::Opened { urls } => {
+                for url in &urls {
+                    crate::platform::macos::apple_events::dispatch_deep_link(url.as_str());
+                }
+            }
             _ => {}
         }
     });

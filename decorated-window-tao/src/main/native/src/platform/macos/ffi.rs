@@ -36,7 +36,6 @@ extern "C" {
         len: i32,
     );
     pub(crate) fn nucleus_tao_a11y_is_voiceover_running() -> i32;
-    pub(crate) fn nucleus_tao_apple_events_install();
     pub(crate) fn nucleus_tao_a11y_is_active() -> i32;
     pub(crate) fn nucleus_tao_a11y_consume_resync() -> i32;
     pub(crate) fn nucleus_tao_a11y_note_pushed();

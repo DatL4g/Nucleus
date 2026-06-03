@@ -3,7 +3,6 @@ fn main() {
         cc::Build::new()
             .file("macos/main_thread_dispatch.m")
             .file("macos/a11y.m")
-            .file("macos/apple_events.m")
             .file("macos/window_drag.m")
             .file("macos/touchpad_gestures.m")
             .flag("-fobjc-arc")
@@ -12,7 +11,6 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=Cocoa");
         println!("cargo:rerun-if-changed=macos/main_thread_dispatch.m");
         println!("cargo:rerun-if-changed=macos/a11y.m");
-        println!("cargo:rerun-if-changed=macos/apple_events.m");
         println!("cargo:rerun-if-changed=macos/window_drag.m");
         println!("cargo:rerun-if-changed=macos/touchpad_gestures.m");
     }

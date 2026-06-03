@@ -1,40 +1,27 @@
-// Apple Events bridge.
+// Apple Events deep-link bridge.
 //
-// Installs an `NSAppleEventManager` handler for `kInternetEventClass /
-// kAEGetURL`. Must be called *before* `nativeRunBlocking` so the cold-start
-// URL (when the app is launched via a `nucleus://…` link) is delivered to
-// our handler instead of being lost.
-//
-// Replaces `Desktop.setOpenURIHandler` (AWT) which is incompatible with the
-// Tao backend on macOS — AWT's `Desktop.getDesktop()` boots a second NSApp.
+// macOS delivers URL-scheme deep links (`nucleus://…`) as a `kAEGetURL` Apple
+// Event. When `CFBundleURLTypes` is declared in the bundle's Info.plist,
+// NSApplication installs its own handler for that event during
+// `finishLaunching` and routes it to `application:openURLs:`. Tao's app
+// delegate implements that selector and re-emits it as `Event::Opened`, which
+// the event loop forwards here. This is the modern, recommended path and
+// covers both cold start (the launch URL replayed after `finishLaunching`) and
+// warm start.
 
-use jni::objects::{JClass, JValue};
-use jni::JNIEnv;
+use jni::objects::JValue;
 
-use crate::platform::macos::ffi::nucleus_tao_apple_events_install;
 use crate::state::JAVA_VM;
 
-#[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeAppleEventsInstall(
-    _env: JNIEnv,
-    _class: JClass,
-) {
-    unsafe { nucleus_tao_apple_events_install() };
-}
-
-/// Called from `macos/apple_events.m` on the main thread when AppKit delivers
-/// a `kAEGetURL` event. Forwards the UTF-8 URL to
-/// `NativeTaoBridge.dispatchDeepLink(String)`.
-#[no_mangle]
-pub extern "C" fn nucleus_tao_apple_events_dispatch(utf8: *const u8, len: i32) {
+/// Forwards a deep-link URL to `NativeTaoBridge.dispatchDeepLink(String)` on the
+/// JVM side. Called from the macOS `Event::Opened` arm of the event loop.
+pub(crate) fn dispatch_deep_link(url: &str) {
     let Some(jvm) = JAVA_VM.get() else { return };
-    if utf8.is_null() || len <= 0 { return };
-    let slice = unsafe { std::slice::from_raw_parts(utf8, len as usize) };
-    let Ok(url) = std::str::from_utf8(slice) else { return };
+    if url.is_empty() {
+        return;
+    }
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class(
-            "dev/nucleusframework/window/tao/NativeTaoBridge",
-        ) {
+        let class = match env.find_class("dev/nucleusframework/window/tao/NativeTaoBridge") {
             Ok(c) => c,
             Err(_) => return,
         };

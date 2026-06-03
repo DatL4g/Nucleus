@@ -4,13 +4,14 @@ import java.net.URI
 import java.net.URISyntaxException
 
 /**
- * Receives macOS Apple Events URLs from the native Tao runtime and routes them
- * to a Kotlin sink registered by `nucleus-application`'s `TaoLauncher`.
+ * Receives macOS deep-link URLs from the native Tao runtime and routes them to
+ * a Kotlin sink registered by `nucleus-application`'s `TaoLauncher`.
  *
- * The native handler is installed once, very early (before
- * [NativeTaoBridge.nativeRunBlocking]). The user's `onDeepLink { … }` block
- * is registered later, from inside the application scope. Any URI received
- * before the sink is wired is buffered (one slot) and replayed.
+ * URLs arrive via Tao's `application:openURLs:` delegate (re-emitted as the
+ * `Event::Opened` event the native loop forwards to [NativeTaoBridge.dispatchDeepLink]).
+ * The user's `onDeepLink { … }` block is registered later, from inside the
+ * application scope. Any URI received before the sink is wired is buffered
+ * (one slot) and replayed.
  */
 object TaoDeepLinkBridge {
     @Volatile
@@ -18,19 +19,6 @@ object TaoDeepLinkBridge {
 
     @Volatile
     private var pending: URI? = null
-
-    /**
-     * Installs the macOS `NSAppleEventManager` handler. Idempotent. Safe no-op
-     * on Windows / Linux (the JNI symbol resolves to a no-op stub there).
-     */
-    fun installNativeHandler() {
-        if (!NativeTaoBridge.isLoaded) return
-        try {
-            NativeTaoBridge.nativeAppleEventsInstall()
-        } catch (_: UnsatisfiedLinkError) {
-            // Non-macOS targets do not export the symbol.
-        }
-    }
 
     /**
      * Registers [onUri] as the deep-link sink and replays any URI that
