@@ -4,6 +4,7 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -50,6 +51,11 @@ fun ApplicationScope.DecoratedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
+    // Parent composition locals bridged into the dialog's own ComposeScene from
+    // the first composition. Forwarded to the underlying [DecoratedWindow] so the
+    // dialog content sees the parent window's theme/user locals without
+    // hijacking popup routing. See [LocalTaoCompositionLocalContextBridge].
+    compositionLocalContext: CompositionLocalContext? = null,
     content: @Composable TaoDecoratedDialogScope.() -> Unit,
 ) {
     // Captured in the parent's composition: `LocalTaoWindow.current` here is
@@ -122,6 +128,7 @@ fun ApplicationScope.DecoratedDialog(
         isDialog = true,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
+        compositionLocalContext = compositionLocalContext,
         content = {
             val windowScope = this
             val dialogScope =

@@ -123,6 +123,9 @@ internal class TaoComposeSceneHost(
     private var nsViewHandle: Long = 0
     private var directContext: DirectContext? = null
     private var scene: ComposeScene? = null
+
+    /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
+    private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
     private val frameClock = BroadcastFrameClock()
 
     // Dispatcher that funnels Compose's async work (notably MouseWheel scroll
@@ -290,7 +293,7 @@ internal class TaoComposeSceneHost(
                 invalidate = {
                     window.requestRedraw()
                 },
-            )
+            ).apply { compositionLocalContext = pendingCompositionLocalContext }
 
         registerInboundDnD()
     }
@@ -516,6 +519,17 @@ internal class TaoComposeSceneHost(
         scene?.setContent {
             TaoTextToolbarHost(textToolbar, content)
         }
+    }
+
+    /**
+     * Forwards a parent composition's locals into this scene via
+     * `ComposeScene.compositionLocalContext` — applied above the scene's own
+     * `LocalComposeSceneContext`, so popups keep routing into THIS scene. See
+     * [dev.nucleusframework.window.tao.LocalTaoCompositionLocalContextBridge].
+     */
+    fun setSceneCompositionLocalContext(context: androidx.compose.runtime.CompositionLocalContext?) {
+        pendingCompositionLocalContext = context
+        scene?.compositionLocalContext = context
     }
 
     fun onResized(

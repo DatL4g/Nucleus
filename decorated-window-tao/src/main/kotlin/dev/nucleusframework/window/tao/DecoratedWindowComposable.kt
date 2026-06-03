@@ -3,6 +3,7 @@
 package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -62,6 +63,10 @@ fun ApplicationScope.DecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
+    // Parent composition locals bridged into this window's own ComposeScene from
+    // the first composition (see [openDecoratedWindow]). Defaults to null for
+    // top-level windows; [DecoratedDialog] forwards its parent's locals here.
+    compositionLocalContext: CompositionLocalContext? = null,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestOnClose by rememberUpdatedState(onCloseRequest)
@@ -126,6 +131,7 @@ fun ApplicationScope.DecoratedWindow(
                     onPreviewKeyEvent = { latestPreview(it) },
                     onKeyEvent = { latestKey(it) },
                     macOSStyle = macOSStyle,
+                    initialCompositionLocalContext = compositionLocalContext,
                     content = {
                         val taoWindow = window
                         val backgroundArgb = latestWindowBackgroundArgb.value

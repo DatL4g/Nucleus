@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -103,6 +104,12 @@ internal fun ApplicationScope.openDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
+    // Parent composition locals to bridge into this window's own ComposeScene
+    // (applied above the scene's LocalComposeSceneContext so popups still route
+    // into THIS scene). Used by DecoratedDialog so a dialog's content sees the
+    // parent window's theme/user locals from the first composition without
+    // hijacking popup positioning. See [LocalTaoCompositionLocalContextBridge].
+    initialCompositionLocalContext: CompositionLocalContext? = null,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val window =
@@ -140,6 +147,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             onCloseRequest,
             onPreviewKeyEvent,
             onKeyEvent,
+            initialCompositionLocalContext,
             content,
         )
     }
@@ -159,6 +167,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             onCloseRequest,
             onPreviewKeyEvent,
             onKeyEvent,
+            initialCompositionLocalContext,
             content,
         )
     }
@@ -166,6 +175,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle)
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
+    host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // Trackpad pinch / rotate / smart-magnify, intercepted before AppKit
     // dispatches them down the responder chain (Tao 0.35 doesn't surface
@@ -234,6 +244,7 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalRequestedClearColor provides host.clearColorArgbState,
                 LocalTaoPopupHost provides host.popupHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
             ) {
                 // Re-centre the native AppKit traffic-lights whenever the
                 // TitleBar/DialogTitleBar publishes a new measured height. A
@@ -370,11 +381,13 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     onCloseRequest: () -> Unit,
     onPreviewKeyEvent: (KeyEvent) -> Boolean,
     onKeyEvent: (KeyEvent) -> Boolean,
+    initialCompositionLocalContext: CompositionLocalContext?,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host = TaoComposeSceneHostLinux(window)
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
+    host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────
     // Same SemanticsObserver pipeline as macOS / Windows. The controller
@@ -417,6 +430,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 dev.nucleusframework.window.tao.render.LocalTaoLinuxOverlayController
                     provides host.overlayController(),
                 // Override the default Skiko `URIManager` (calls
@@ -679,11 +693,13 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     onCloseRequest: () -> Unit,
     onPreviewKeyEvent: (KeyEvent) -> Boolean,
     onKeyEvent: (KeyEvent) -> Boolean,
+    initialCompositionLocalContext: CompositionLocalContext?,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host = TaoComposeSceneHostWindows(window)
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
+    host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // ── Windows accessibility (UIA) ────────────────────────────────────────
     // Per-window UIA projection driven by the same SemanticsObserver pipeline
@@ -720,6 +736,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 dev.nucleusframework.window.tao.render.LocalTaoPopupHostWindows
                     provides host.popupHost(),
             ) {
