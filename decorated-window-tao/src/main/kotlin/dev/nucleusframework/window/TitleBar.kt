@@ -489,6 +489,8 @@ private fun macTrafficLightInset(height: Dp): Dp {
 // `nativeConfigureChrome`, so clicks in the title bar reach Compose
 // undisturbed. The native side defers `performWindowDragWithEvent:` via
 // `dispatch_async`, mirroring JNI exactly.
+@OptIn(ExperimentalComposeUiApi::class)
+@Suppress("CyclomaticComplexMethod")
 internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
     pointerInput(window) {
         val ctx = currentCoroutineContext()
@@ -510,8 +512,14 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                                 val touchOnWindows =
                                     isTouch &&
                                         Platform.Current == Platform.Windows &&
-                                        dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge.isLoaded
-                                pendingDrag = !touchOnWindows
+                                        NativeTaoWindowsDecoBridge.isLoaded
+                                // Only the primary button (or touch) may drag the window.
+                                // A secondary/middle press must not arm the drag: on Linux
+                                // `dragWindow()` starts an interactive compositor move grab
+                                // that swallows every subsequent pointer event.
+                                val isPrimaryOrTouch =
+                                    event.button == PointerButton.Primary || isTouch
+                                pendingDrag = isPrimaryOrTouch && !touchOnWindows
                                 if (touchOnWindows) {
                                     // Fallback touch drag (no Aero Snap): only reached if the
                                     // native WndProc did NOT capture this title-bar touch (it
@@ -526,14 +534,14 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                                             .nativeHwndHandle(window.handle)
                                     val rect =
                                         if (hwnd != 0L) {
-                                            dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
+                                            NativeTaoWindowsDecoBridge
                                                 .nativeGetWindowRect(hwnd)
                                         } else {
                                             null
                                         }
                                     val screen =
                                         if (hwnd != 0L) {
-                                            dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
+                                            NativeTaoWindowsDecoBridge
                                                 .nativeClientToScreen(
                                                     hwnd,
                                                     it.position.x.toInt(),
@@ -556,8 +564,7 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                                             startOuterX = rect[0],
                                             startOuterY = rect[1],
                                             maximized =
-                                                dev.nucleusframework.window.tao
-                                                    .NativeTaoWindowsDecoBridge
+                                                NativeTaoWindowsDecoBridge
                                                     .nativeIsMaximized(hwnd),
                                         )
                                     }
