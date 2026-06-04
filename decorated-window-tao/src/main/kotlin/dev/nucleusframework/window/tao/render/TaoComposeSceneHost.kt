@@ -527,10 +527,16 @@ internal class TaoComposeSceneHost(
         scene?.setContent {
             TaoTextToolbarHost(textToolbar) {
                 val onSel = onTextSelectionForA11y
-                if (onSel != null) {
-                    TaoSelectionAccessibilityObserver(onSelection = onSel, content = content)
-                } else {
-                    content()
+                // Expose the publisher so themed wrappers (nucleus-application) can
+                // re-install the observer inside their theme's own LocalTextContextMenu.
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalTaoTextSelectionA11yPublisher provides onSel,
+                ) {
+                    if (onSel != null) {
+                        TaoSelectionAccessibilityObserver(onSelection = onSel, content = content)
+                    } else {
+                        content()
+                    }
                 }
             }
         }

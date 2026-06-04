@@ -20,6 +20,8 @@ import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
+import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
+import dev.nucleusframework.window.tao.render.TaoTextSelectionAccessibility
 import dev.nucleusframework.window.tao.DecoratedWindow as TaoDecoratedWindow
 
 /**
@@ -90,13 +92,25 @@ internal object TaoDecoratedWindowAdapter {
                 // can re-provide it inside. LocalLayoutDirection is intentionally
                 // left to outerLocals so an app-level RTL override propagates here.
                 val sceneDensity = LocalDensity.current
+                // outerLocals carries the app theme's own LocalTextContextMenu
+                // (e.g. Jewel's). Applying it here shadows the scene's selection
+                // observer, which silently breaks cross-process selection reading
+                // (PopClip, AppleScript). Re-install the observer INSIDE outerLocals
+                // via the publisher, so it sits below the theme's menu and keeps it
+                // as its delegate — preserving cut/copy/paste icons & shortcuts. The
+                // publisher itself is reset by outerLocals, so snapshot + re-provide
+                // it, exactly like LocalDensity.
+                val scenePublisher = LocalTaoTextSelectionA11yPublisher.current
                 CompositionLocalProvider(outerLocals) {
                     CompositionLocalProvider(
                         LocalDensity provides sceneDensity,
+                        LocalTaoTextSelectionA11yPublisher provides scenePublisher,
                         LocalNucleusBackend provides NucleusBackend.Tao,
                         LocalNucleusWindow provides nucleusWindow,
                     ) {
-                        nucleusScope.content()
+                        TaoTextSelectionAccessibility {
+                            nucleusScope.content()
+                        }
                     }
                 }
             }
