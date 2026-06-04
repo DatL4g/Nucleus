@@ -1,9 +1,6 @@
 {
     "serialization": [
-        {
-            "type": "java.lang.String",
-            "comment": "AWT clipboard transfer (TransferableProxy.getTransferData -> ObjectOutputStream.writeObject) serializes the payload, which native-image strips unless the types are registered. Fixes 'UnsupportedFeatureError: SerializationConstructorAccessor class not found' when reading/writing the clipboard in Compose/Jewel desktop apps."
-        },
+        { "type": "java.lang.String" },
         { "type": "java.lang.Object" },
         { "type": "java.lang.Boolean" },
         { "type": "java.lang.Byte" },
@@ -17,7 +14,7 @@
         { "type": "java.lang.StringBuilder" },
         { "type": "java.lang.StringBuffer" },
         { "type": "java.lang.Enum" },
-        { "type": "java.util.ArrayList", "comment": "java.awt.datatransfer file lists are serialized as ArrayList<File>" },
+        { "type": "java.util.ArrayList" },
         { "type": "java.util.LinkedList" },
         { "type": "java.util.HashMap" },
         { "type": "java.util.LinkedHashMap" },

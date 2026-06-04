@@ -59,7 +59,6 @@ internal class TaoDragAndDropManager(
 
     init {
         TaoDnDDiagnostics.constructed.intValue++
-        TaoDnDDiagnostics.log("manager constructed (outbound=${outboundLauncher != null})")
     }
 
     override val isRequestDragAndDropTransferRequired: Boolean

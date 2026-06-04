@@ -701,6 +701,25 @@ jobs:
           path: decorated-window-tao/src/main/resources/nucleus/native/darwin-*/
           retention-days: 1
 
+      - name: Build graalvm-runtime macOS dylibs
+        run: bash graalvm-runtime/src/main/native/macos/build.sh
+
+      - name: Verify graalvm-runtime macOS natives
+        run: |
+          for f in \
+            graalvm-runtime/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_locale.dylib \
+            graalvm-runtime/src/main/resources/nucleus/native/darwin-x64/libnucleus_locale.dylib; do
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload graalvm-runtime macOS dylibs
+        uses: actions/upload-artifact@v4
+        with:
+          name: graalvm-runtime-macos
+          path: graalvm-runtime/src/main/resources/nucleus/native/darwin-*/
+          retention-days: 1
+
   linux:
     runs-on: ${{ matrix.os }}
     strategy:

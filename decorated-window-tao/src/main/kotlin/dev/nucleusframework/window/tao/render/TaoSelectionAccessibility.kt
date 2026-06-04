@@ -9,9 +9,40 @@ import androidx.compose.foundation.text.TextContextMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.flow.distinctUntilChanged
+
+/**
+ * Carries the per-window callback that publishes a non-editable selection to
+ * native accessibility (wired by `DecoratedWindow` to the a11y controller).
+ *
+ * Provided at the scene root by the host. Exposed so higher-level wrappers
+ * (e.g. `nucleus-application`'s themed adapter) can re-install the selection
+ * observer *inside* a theme's own `LocalTextContextMenu` (Jewel's, …) — keeping
+ * that theme's menu as the observer's delegate so cut/copy/paste icons and
+ * shortcuts survive. `null` outside a Tao window content lambda.
+ */
+val LocalTaoTextSelectionA11yPublisher:
+    ProvidableCompositionLocal<((text: String, editable: Boolean, sourceId: Int) -> Unit)?> =
+    staticCompositionLocalOf { null }
+
+/**
+ * Wraps [content] with the selection-accessibility observer, delegating to
+ * whatever [TextContextMenu] is currently ambient (so a theme's styled context
+ * menu is preserved). No-op when [LocalTaoTextSelectionA11yPublisher] is unset.
+ */
+@Composable
+fun TaoTextSelectionAccessibility(content: @Composable () -> Unit) {
+    val publisher = LocalTaoTextSelectionA11yPublisher.current
+    if (publisher != null) {
+        TaoSelectionAccessibilityObserver(onSelection = publisher, content = content)
+    } else {
+        content()
+    }
+}
 
 /**
  * Bridges Compose's **non-editable** text selection (`SelectionContainer` /

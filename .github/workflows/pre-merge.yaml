@@ -183,6 +183,13 @@ jobs:
           pattern: 'decorated-window-tao-*'
           merge-multiple: true
 
+      - name: Download graalvm-runtime artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: graalvm-runtime/src/main/resources/nucleus/native/
+          pattern: 'graalvm-runtime-*'
+          merge-multiple: true
+
       - name: Verify all natives present
         run: |
           EXPECTED=(
@@ -302,6 +309,8 @@ jobs:
             "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_egl.so"
             "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_widget.so"
             "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_widget.so"
+            "graalvm-runtime/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_locale.dylib"
+            "graalvm-runtime/src/main/resources/nucleus/native/darwin-x64/libnucleus_locale.dylib"
           )
           MISSING=0
           for f in "${EXPECTED[@]}"; do

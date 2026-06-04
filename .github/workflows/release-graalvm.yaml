@@ -223,6 +223,13 @@ jobs:
           pattern: 'decorated-window-tao-*'
           merge-multiple: true
 
+      - name: Download graalvm-runtime artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: graalvm-runtime/src/main/resources/nucleus/native/
+          pattern: 'graalvm-runtime-*'
+          merge-multiple: true
+
       - name: Setup Nucleus (GraalVM)
         uses: ./.github/actions/setup-nucleus
         with:

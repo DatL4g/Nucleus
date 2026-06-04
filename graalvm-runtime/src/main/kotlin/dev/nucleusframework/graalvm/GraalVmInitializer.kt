@@ -1,8 +1,11 @@
 package dev.nucleusframework.graalvm
 
+import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.graalvm.locale.NativeLocaleBridge
 import dev.nucleusframework.hidpi.applyLinuxHiDpiScale
 import java.io.File
 import java.nio.charset.Charset
+import java.util.Locale
 
 object GraalVmInitializer {
     val isNativeImage: Boolean =
@@ -27,6 +30,13 @@ object GraalVmInitializer {
 
             // Early charset init
             Charset.defaultCharset()
+
+            // macOS: recover the OS UI language. SubstrateVM never runs HotSpot's
+            // java_props_macosx.c, so the default locale stays the POSIX "C"
+            // locale (en) regardless of System Settings. Compose Resources is
+            // keyed off Locale.getDefault(), so every translation falls back to
+            // the default. We restore JBR behaviour by reading CoreFoundation.
+            applyMacOsLocale()
         }
 
         // Linux HiDPI — must come AFTER java.library.path is configured above,
@@ -41,6 +51,38 @@ object GraalVmInitializer {
             } catch (_: Throwable) {
                 // Ignore — fontmanager may already be loaded or unavailable
             }
+        }
+    }
+
+    /**
+     * Align [Locale.getDefault] with the macOS UI language under native-image.
+     *
+     * Faithful to JBR: java_props_macosx.c resolves the default locale from
+     * CoreFoundation's preferred languages first and only falls back to
+     * `LANG`/`LC_*` when that yields nothing. So we read CoreFoundation
+     * unconditionally and leave the env-derived locale untouched only when it
+     * returns no language.
+     */
+    private fun applyMacOsLocale() {
+        if (Platform.Current != Platform.MacOS) return
+        if (!NativeLocaleBridge.isLoaded) return
+
+        val tag =
+            runCatching { NativeLocaleBridge.nativePreferredLanguageTag() }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() } ?: return
+
+        val locale = Locale.forLanguageTag(tag)
+        if (locale.language.isNullOrBlank()) return
+
+        Locale.setDefault(locale)
+        // Keep user.* in sync for any code reading the properties directly.
+        System.setProperty("user.language", locale.language)
+        if (locale.country.isNotBlank()) {
+            System.setProperty("user.country", locale.country)
+        }
+        if (locale.script.isNotBlank()) {
+            System.setProperty("user.script", locale.script)
         }
     }
 

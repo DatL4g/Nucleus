@@ -50,6 +50,14 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import com.example.demo.gallery.GalleryScreen
+import com.example.demo.generated.resources.Res
+import com.example.demo.generated.resources.system_info_app_id
+import com.example.demo.generated.resources.system_info_app_version
+import com.example.demo.generated.resources.system_info_java
+import com.example.demo.generated.resources.system_info_os
+import com.example.demo.generated.resources.system_info_runtime
+import com.example.demo.generated.resources.system_info_title
+import com.example.demo.generated.resources.system_info_vendor
 import com.example.demo.icons.MaterialIconsDark_mode
 import com.example.demo.icons.MaterialIconsInfo
 import com.example.demo.icons.MaterialIconsLight_mode
@@ -82,6 +90,7 @@ import dev.nucleusframework.window.material.MaterialDecoratedWindow
 import dev.nucleusframework.window.material.MaterialDialogTitleBar
 import dev.nucleusframework.window.material.MaterialTitleBar
 import dev.nucleusframework.window.newFullscreenControls
+import org.jetbrains.compose.resources.stringResource
 import java.io.File
 import java.net.URI
 import kotlin.time.Duration.Companion.seconds
@@ -306,7 +315,7 @@ fun main(args: Array<String>) =
                         MaterialDecoratedDialog(
                             onCloseRequest = { showInfoDialog = false },
                             state = DialogState(size = DpSize(400.dp, 350.dp)),
-                            title = "System Info",
+                            title = stringResource(Res.string.system_info_title),
                         ) {
                             MaterialDialogTitleBar { _ ->
                                 Text(
@@ -321,16 +330,33 @@ fun main(args: Array<String>) =
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center,
                                 ) {
-                                    Text("App ID: ${NucleusApp.appId}")
-                                    NucleusApp.version?.let { Text("App Version: $it") }
-                                    NucleusApp.vendor?.let { Text("Vendor: $it") }
+                                    Text(stringResource(Res.string.system_info_app_id, NucleusApp.appId))
+                                    NucleusApp.version?.let {
+                                        Text(stringResource(Res.string.system_info_app_version, it))
+                                    }
+                                    NucleusApp.vendor?.let {
+                                        Text(stringResource(Res.string.system_info_vendor, it))
+                                    }
                                     Spacer(Modifier.height(12.dp))
-                                    Text("OS: ${System.getProperty("os.name")} ${System.getProperty("os.arch")}")
                                     Text(
-                                        "Java: ${System.getProperty("java.version")}" +
-                                            " (${System.getProperty("java.vendor")})",
+                                        stringResource(
+                                            Res.string.system_info_os,
+                                            "${System.getProperty("os.name")} ${System.getProperty("os.arch")}",
+                                        ),
                                     )
-                                    Text("Runtime: ${System.getProperty("java.runtime.name", "Unknown")}")
+                                    Text(
+                                        stringResource(
+                                            Res.string.system_info_java,
+                                            "${System.getProperty("java.version")}" +
+                                                " (${System.getProperty("java.vendor")})",
+                                        ),
+                                    )
+                                    Text(
+                                        stringResource(
+                                            Res.string.system_info_runtime,
+                                            System.getProperty("java.runtime.name", "Unknown"),
+                                        ),
+                                    )
                                 }
                             }
                         }
