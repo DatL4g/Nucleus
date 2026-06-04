@@ -404,14 +404,21 @@ impl WindowFlags {
 
     // Minimize operations should execute after maximize for proper window animations
     if diff.contains(WindowFlags::MINIMIZED) {
+      // PATCH(nucleus): when de-minimizing a window whose target state is
+      // maximized (e.g. a maximized window minimized to the taskbar, then
+      // restored programmatically via single-instance focus), use SW_MAXIMIZE
+      // rather than SW_RESTORE. SW_RESTORE on a maximized window un-maximizes
+      // it back to floating, undoing the SW_MAXIMIZE issued by the MAXIMIZED
+      // block above and leaving the window restored instead of maximized.
+      let show_cmd = if new.contains(WindowFlags::MINIMIZED) {
+        SW_MINIMIZE
+      } else if new.contains(WindowFlags::MAXIMIZED) {
+        SW_MAXIMIZE
+      } else {
+        SW_RESTORE
+      };
       unsafe {
-        let _ = ShowWindow(
-          window,
-          match new.contains(WindowFlags::MINIMIZED) {
-            true => SW_MINIMIZE,
-            false => SW_RESTORE,
-          },
-        );
+        let _ = ShowWindow(window, show_cmd);
       }
 
       diff.remove(WindowFlags::MINIMIZED);
