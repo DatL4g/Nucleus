@@ -1,5 +1,6 @@
 package dev.nucleusframework.updater
 
+import dev.nucleusframework.core.runtime.AppRestarter
 import dev.nucleusframework.core.runtime.ExecutableRuntime
 import dev.nucleusframework.core.runtime.ExecutableType
 import dev.nucleusframework.core.runtime.Platform
@@ -141,6 +142,14 @@ class NucleusUpdater(
         val platform = PlatformInfo.currentPlatform()
         PlatformInstaller.install(installerFile, platform, restart = false)
     }
+
+    /**
+     * Restarts the application without installing an update (e.g. to apply a setting).
+     *
+     * Returns `false` and stays running when the relaunch command cannot be resolved
+     * (such as in dev mode); otherwise the process is terminated and relaunched.
+     */
+    fun restartApp(): Boolean = AppRestarter.restartApp()
 
     /**
      * Returns the update event if the application was just updated, and consumes it
