@@ -339,6 +339,12 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Capture runner egress IP
+        run: |
+          echo "Runner egress IP (for Sonatype support):"
+          curl -s https://api.ipify.org; echo
+          curl -s https://api64.ipify.org; echo
+
       - name: Run pre-merge checks
         run: ./gradlew preMerge --continue
 
