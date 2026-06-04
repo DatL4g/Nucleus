@@ -100,6 +100,21 @@ Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeSetOwner(
     NSWindow *owner = ownerView.window;
     if (!owner) return;
 
+    // A dialog must never be a *primary* fullscreen window. `nativeConfigureChrome`
+    // sets `FullScreenPrimary` on every Tao window (so the green button can take
+    // the main window fullscreen), but when the owner is already fullscreen,
+    // `addChildWindow:` pulls the child into the owner's Space — and a
+    // FullScreenPrimary child gets promoted to its own fullscreen there, which is
+    // the "settings dialog also goes fullscreen / parent turns black on close"
+    // bug. The two flags are mutually exclusive; swapping to
+    // FullScreenAuxiliary makes the dialog float *over* the owner's fullscreen
+    // content in the same Space, matching AppKit's auxiliary-window behaviour
+    // (and `decorated-window-jni`, whose AWT JDialog is never FullScreenPrimary).
+    NSWindowCollectionBehavior cb = child.collectionBehavior;
+    cb &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+    cb |= NSWindowCollectionBehaviorFullScreenAuxiliary;
+    child.collectionBehavior = cb;
+
     // Critical: `addChildWindow:` orders an invisible child front, so it
     // becomes visible *at its current frame*. Tao creates windows at a
     // default origin, so without pre-positioning we'd see the dialog flash
