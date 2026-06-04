@@ -508,7 +508,18 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetFullscr
                      | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
         SetWindowLongW(hwnd, GWL_EXSTYLE, exStyle);
 
-        SetWindowPos(hwnd, HWND_TOPMOST,
+        /* Cover the monitor as a NON-topmost window (HWND_NOTOPMOST), exactly
+         * matching SDL's borderless-fullscreen pattern. We deliberately do NOT
+         * use HWND_TOPMOST: a topmost fullscreen window forms its own z-order
+         * band, which pushes owned dialogs/popups *below* it (they'd need to be
+         * topmost too) and gets the window promoted to a hardware overlay plane
+         * (DirectFlip/MPO), so composited dialogs are hidden and the
+         * independent-flip↔composed toggle flashes DWM's stale non-client cache
+         * ("old frame"). As a plain top window, owned dialogs sit naturally
+         * above it and DWM composes normally. The taskbar still hides because
+         * the shell auto-hides it for a foreground window that covers the whole
+         * monitor — no topmost required (this is exactly what SDL relies on). */
+        SetWindowPos(hwnd, HWND_NOTOPMOST,
             mi.rcMonitor.left, mi.rcMonitor.top,
             mi.rcMonitor.right - mi.rcMonitor.left,
             mi.rcMonitor.bottom - mi.rcMonitor.top,
