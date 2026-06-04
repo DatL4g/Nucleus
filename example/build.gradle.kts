@@ -18,6 +18,7 @@ plugins {
 
 dependencies {
     implementation(compose.desktop.currentOs)
+    implementation(compose.components.resources)
     implementation("org.jetbrains.compose.material3:material3:1.9.0")
     implementation(project(":core-runtime"))
     implementation(project(":aot-runtime"))
@@ -59,6 +60,12 @@ kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
+}
+
+compose.resources {
+    publicResClass = true
+    generateResClass = always
+    packageOfResClass = "com.example.demo.generated.resources"
 }
 
 val releaseVersion =

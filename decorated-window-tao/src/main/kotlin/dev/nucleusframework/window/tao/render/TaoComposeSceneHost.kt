@@ -358,13 +358,10 @@ internal class TaoComposeSceneHost(
             return
         }
         val callback = InboundDnDCallback()
-        val rc =
-            dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.nativeRegister(
-                nsView = nsViewHandle,
-                callback = callback,
-            )
-        dev.nucleusframework.window.tao.TaoDnDDiagnostics
-            .log("registerForDraggedTypes rc=$rc")
+        dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.nativeRegister(
+            nsView = nsViewHandle,
+            callback = callback,
+        )
     }
 
     /**
