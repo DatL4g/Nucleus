@@ -4,6 +4,13 @@
     },
     "reflection": [
         {
+            "type": "sun.lwawt.macosx.CClipboard",
+            "jniAccessible": true,
+            "allDeclaredConstructors": true,
+            "allDeclaredFields": true,
+            "allDeclaredMethods": true
+        },
+        {
             "type": "com.sun.java.accessibility.internal.AccessBridge",
             "jniAccessible": true,
             "methods": [
