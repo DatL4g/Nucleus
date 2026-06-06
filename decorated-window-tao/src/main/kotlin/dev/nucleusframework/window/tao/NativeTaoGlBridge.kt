@@ -8,8 +8,12 @@ private const val LIBRARY_NAME = "nucleus_tao_gl"
  * JNI bridge to the WGL helper that turns a Tao HWND into an OpenGL-rendering
  * surface usable from Skiko. Windows-only counterpart of [NativeMetalBridge].
  *
- * All methods must be invoked from the thread that owns the Tao event loop
- * (the OpenGL context is bound there and `wglMakeCurrent` is per-thread).
+ * The GL context is bound per-thread (`wglMakeCurrent`). Rendering (Skia
+ * commands) happens on the event-loop thread; presentation (`SwapBuffers`,
+ * which blocks for vsync) is handed to a dedicated swap thread. The two never
+ * hold the context at the same time: the render thread calls
+ * [nativeReleaseCurrent] before signalling the swap thread, which then
+ * re-binds via [nativeMakeCurrent], presents, and releases again.
  */
 internal object NativeTaoGlBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoGlBridge::class.java)
@@ -36,9 +40,16 @@ internal object NativeTaoGlBridge {
     external fun nativeDetach(handle: Long)
 
     /** Re-binds the GL context on the current thread. Defensive — `attach`
-     * already makes it current. */
+     * already makes it current. Also used by the swap thread to acquire the
+     * context before [nativePresent]. */
     @JvmStatic
     external fun nativeMakeCurrent(handle: Long)
+
+    /** Releases the GL context from the current thread (`wglMakeCurrent(NULL,
+     * NULL)`). The render thread calls this after `flushAndSubmit` so the swap
+     * thread can bind the same context for [nativePresent]. */
+    @JvmStatic
+    external fun nativeReleaseCurrent(handle: Long)
 
     /** Stores the new dimensions and updates the GL viewport. Call on resize
      * or scale-factor change before the next render. */

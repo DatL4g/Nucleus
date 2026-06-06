@@ -399,6 +399,18 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeMakeCurrent(
     wglMakeCurrent(att->hdc, att->hglrc);
 }
 
+/* Releases whatever GL context is current on the calling thread. The render
+ * thread calls this after flushAndSubmit so the dedicated swap thread can bind
+ * the same HGLRC for SwapBuffers — a WGL context is current on one thread at a
+ * time, so the two must never hold it simultaneously. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeReleaseCurrent(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz; (void)handle;
+    wglMakeCurrent(NULL, NULL);
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeResize(
     JNIEnv *env, jclass clazz, jlong handle, jint widthPx, jint heightPx, jfloat scale)
