@@ -62,6 +62,20 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
      * *after* a drain (i.e. blocks added by the just-run blocks).
      */
     private const val PUMP_RE_ARM_INTERVAL_NS = 1_000_000_000L / 60
+
+    /**
+     * Multi-pass drain bounds. [pump] drains re-dispatched blocks in additional
+     * passes within the *same* tick so a finite chain of coroutine continuations
+     * (e.g. `StateFlow → flatMapLatest → cachedIn → Paging collectFrom`) resolves
+     * in one pump instead of one hop per throttled (~16 ms) re-arm. Without this,
+     * a ~9-hop Paging pager rebuild took ~150 ms on macOS during a scrollbar drag,
+     * because each hop's continuation waited a full re-arm interval. The bounds cap
+     * runaway self-redispatch (infiniteRepeatable / snapshot-apply churn): once a
+     * pump exceeds [MAX_PUMP_PASSES] passes or the [PUMP_TIME_BUDGET_NS] wall-clock
+     * budget, it stops and yields to rendering, falling back to the throttled re-arm.
+     */
+    private const val MAX_PUMP_PASSES = 64
+    private const val PUMP_TIME_BUDGET_NS = 8_000_000L // 8 ms
     private var lastPumpNs = 0L
     private val pumpScheduler by lazy {
         Executors.newSingleThreadScheduledExecutor { r ->
@@ -86,22 +100,37 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
     /** Drains everything currently pending. New blocks dispatched while
      *  draining run on the next pump (no recursion). */
     fun pump() {
-        // Snapshot the count to avoid an infinite loop when a block
-        // re-dispatches itself synchronously.
-        var remaining = pending.size
         var ranAnything = false
+        // Drain across multiple passes within this single pump so blocks that the
+        // running blocks re-dispatch synchronously (the next hops of a coroutine
+        // chain) run NOW instead of waiting for the next throttled re-arm. Each
+        // pass snapshots the current queue size (no infinite loop on steady churn);
+        // the pass count and a wall-clock budget bound a runaway redispatch and let
+        // it yield to rendering + the throttled re-arm below.
+        val deadlineNs = System.nanoTime() + PUMP_TIME_BUDGET_NS
+        var pass = 0
         @Suppress("TooGenericExceptionCaught", "PrintStackTrace")
-        while (remaining-- > 0) {
-            val block = pending.poll() ?: break
-            ranAnything = true
-            try {
-                block.run()
-            } catch (t: Throwable) {
-                // Coroutine dispatchers swallow exceptions thrown synchronously
-                // from `run()`; the runtime reports them via the Recomposer's
-                // exception handler. Re-throwing here would crash the Tao loop.
-                t.printStackTrace()
+        while (pass++ < MAX_PUMP_PASSES) {
+            var remaining = pending.size
+            if (remaining == 0) break
+            var hitDeadline = false
+            while (remaining-- > 0) {
+                val block = pending.poll() ?: break
+                ranAnything = true
+                try {
+                    block.run()
+                } catch (t: Throwable) {
+                    // Coroutine dispatchers swallow exceptions thrown synchronously
+                    // from `run()`; the runtime reports them via the Recomposer's
+                    // exception handler. Re-throwing here would crash the Tao loop.
+                    t.printStackTrace()
+                }
+                if (System.nanoTime() >= deadlineNs) {
+                    hitDeadline = true
+                    break
+                }
             }
+            if (hitDeadline) break
         }
         // Propagate snapshot writes performed by the blocks above. Compose's
         // `GlobalSnapshotManager` posts `Snapshot.sendApplyNotifications()`
