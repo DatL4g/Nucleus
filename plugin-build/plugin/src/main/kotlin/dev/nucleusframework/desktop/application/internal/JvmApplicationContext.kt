@@ -80,6 +80,29 @@ internal data class JvmApplicationContext(
             }
         }
 
+    /**
+     * Resolves the package name for the current OS, honoring platform-specific
+     * `packageName` overrides:
+     * - macOS: macOS.packageName > root packageName > project.name
+     * - Linux: linux.packageName > root packageName > project.name
+     * - Windows: windows.packageName > root packageName > project.name
+     *
+     * This drives the native output/bundle directory name (e.g. the `.app` bundle
+     * on macOS). It lets the root [packageNameProvider] stay ASCII-safe for Debian/RPM
+     * package names while macOS uses a localized bundle name (e.g. a Hebrew display
+     * name), keeping the installed bundle name identical to the one shipped in the
+     * update archive so the auto-updater can relaunch it.
+     */
+    fun resolvedPackageNameProvider(): Provider<String> =
+        project.provider {
+            val dist = appInternal.nativeDistributions
+            when (currentOS) {
+                OS.MacOS -> dist.macOS.packageName ?: dist.packageName ?: project.name
+                OS.Linux -> dist.linux.packageName ?: dist.packageName ?: project.name
+                OS.Windows -> dist.windows.packageName ?: dist.packageName ?: project.name
+            }
+        }
+
     inline fun <reified T : Any> provider(noinline fn: () -> T): Provider<T> = project.provider(fn)
 
     fun configureDefaultApp() {

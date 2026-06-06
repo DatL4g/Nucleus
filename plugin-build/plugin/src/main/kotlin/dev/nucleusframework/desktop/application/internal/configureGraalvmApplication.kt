@@ -764,21 +764,21 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 OS.MacOS -> {
                     val dir =
                         appTmpDir.map {
-                            it.dir("graalvm/output/${packageNameProvider.get()}.app/Contents/MacOS")
+                            it.dir("graalvm/output/${resolvedPackageNameProvider().get()}.app/Contents/MacOS")
                         }
                     dir.map { it.file(imageName.get()) }
                 }
                 OS.Windows -> {
                     val dir =
                         appTmpDir.map {
-                            it.dir("graalvm/output/${packageNameProvider.get()}")
+                            it.dir("graalvm/output/${resolvedPackageNameProvider().get()}")
                         }
                     dir.map { it.file(binaryName.get()) }
                 }
                 OS.Linux -> {
                     val dir =
                         appTmpDir.map {
-                            it.dir("graalvm/output/${packageNameProvider.get()}")
+                            it.dir("graalvm/output/${resolvedPackageNameProvider().get()}")
                         }
                     dir.map { it.file(imageName.get()) }
                 }
@@ -807,7 +807,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
     packageUberJar: TaskProvider<Jar>,
 ): TaskProvider<DefaultTask> {
-    val appBundleName = packageNameProvider.map { "$it.app" }
+    val appBundleName = resolvedPackageNameProvider().map { "$it.app" }
     val appBundleDir =
         appTmpDir.map { tmpDir ->
             tmpDir.dir("graalvm/output/${appBundleName.get()}/Contents")
@@ -1252,7 +1252,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
 ): TaskProvider<DefaultTask> {
-    val outputDir = appTmpDir.map { it.dir("graalvm/output/${packageNameProvider.get()}") }
+    val outputDir = appTmpDir.map { it.dir("graalvm/output/${resolvedPackageNameProvider().get()}") }
 
     val copyBinary =
         tasks.register<Copy>(
@@ -1390,7 +1390,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
 ): TaskProvider<DefaultTask> {
-    val outputDir = appTmpDir.map { it.dir("graalvm/output/${packageNameProvider.get()}") }
+    val outputDir = appTmpDir.map { it.dir("graalvm/output/${resolvedPackageNameProvider().get()}") }
 
     val copyBinary =
         tasks.register<Copy>(
@@ -1553,7 +1553,7 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
                     },
                 )
 
-                packageName.set(packageNameProvider)
+                packageName.set(resolvedPackageNameProvider())
                 packageVersion.set(packageVersionFor(targetFormat))
 
                 // Only wire platform-specific icons/entitlements for the current OS
