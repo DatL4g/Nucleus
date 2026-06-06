@@ -43,9 +43,11 @@ import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.FramebufferFormat
+import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.Surface
 import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
+import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -89,6 +91,13 @@ internal class TaoComposeSceneHostWindows(
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
     private var directContext: DirectContext? = null
+
+    /**
+     * True when the active backend is EGL/ANGLE (vs WGL). Cached at [attach].
+     * Gates the off-thread present: ANGLE contexts on a shared EGLDisplay must
+     * not be driven from the swap thread while a sibling host renders.
+     */
+    private var backendIsEgl: Boolean = false
     private var scene: ComposeScene? = null
 
     /**
@@ -207,11 +216,39 @@ internal class TaoComposeSceneHostWindows(
         val initialTitleBarPx = (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
         NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
 
-        val handle = NativeTaoGlBridge.nativeAttach(hwnd)
-        require(handle != 0L) { "Failed to create WGL context for HWND" }
+        // Preferred backend is ANGLE (Direct3D 11, WARP-capable on RDP/VMs);
+        // it falls back to native WGL. The native side picks per
+        // NUCLEUS_TAO_WIN_RENDER, but a successful EGL *context* doesn't
+        // guarantee Skia can build a DirectContext on it — that's only known
+        // here, after makeGLWithInterface. So if the EGL attachment can't back
+        // a DirectContext we re-attach with WGL and retry.
+        var handle = NativeTaoGlBridge.nativeAttach(hwnd)
+        require(handle != 0L) { "Failed to create render context for HWND" }
+        // ANGLE needs an EGL-assembled GL interface (eglGetProcAddress); WGL uses
+        // the default. Returns null if Skia can't build a context on this backend.
+        var ctx =
+            try {
+                if (NativeTaoGlBridge.nativeBackend(handle) == BACKEND_EGL) {
+                    val intf = GLAssembledInterface.createFromNativePointers(0L, NativeTaoGlBridge.nativeEglGetProcFn())
+                    DirectContext.makeGLWithInterface(intf)
+                } else {
+                    DirectContext.makeGL()
+                }
+            } catch (_: RuntimeException) {
+                null
+            }
+        if (ctx == null && NativeTaoGlBridge.nativeBackend(handle) == BACKEND_EGL) {
+            NativeTaoGlBridge.nativeDetach(handle)
+            handle = NativeTaoGlBridge.nativeAttachWgl(hwnd)
+            require(handle != 0L) { "Failed to create WGL context for HWND (ANGLE fallback)" }
+            ctx = DirectContext.makeGL()
+        }
         attachmentHandle = handle
-
-        directContext = DirectContext.makeGL()
+        directContext = ctx ?: error("Failed to create DirectContext for HWND")
+        backendIsEgl = NativeTaoGlBridge.nativeBackend(handle) == BACKEND_EGL
+        // One-line diagnostic so the active render path is unambiguous (an EGL
+        // attachment that fell back to WGL would otherwise look identical).
+        System.err.println("[TaoGL] render backend: " + if (backendIsEgl) "ANGLE (Direct3D 11)" else "WGL")
         attachedHostCount.incrementAndGet()
 
         // Start the presenter. It parks until the first frame's `requestSwap`,
@@ -911,15 +948,25 @@ internal class TaoComposeSceneHostWindows(
         }
 
         // Hand the host context to the swap thread for the vsync-blocking
-        // `SwapBuffers`. Release it here first: a WGL context is current on one
+        // `SwapBuffers`. Release it here first: a GL context is current on one
         // thread at a time, and the swap thread re-binds it via
         // `nativeMakeCurrent`. This thread then returns to the event loop and
         // keeps processing input while the present blocks for the refresh.
-        if (st != null) {
+        //
+        // EXCEPTION — EGL/ANGLE with a sibling host (e.g. a DecoratedDialog over
+        // the main window): both contexts share one EGLDisplay / D3D11 device.
+        // Presenting host A from its swap thread while the event loop renders
+        // host B makes ANGLE touch that shared device from two threads at once
+        // → a NULL current-context deref inside `flushAndSubmit`. Present inline
+        // in that case so every EGL call stays serialised on the event-loop
+        // thread (Skiko's ANGLE backend likewise never presents off-thread).
+        // Single-host ANGLE keeps the swap thread (smooth-scroll pacing); WGL is
+        // unaffected.
+        if (st != null && !(backendIsEgl && attachedHostCount.get() > 1)) {
             NativeTaoGlBridge.nativeReleaseCurrent(attachmentHandle)
             st.requestSwap()
         } else {
-            // Defensive fallback (swap thread not running): present inline.
+            // Inline present: swap thread absent, or EGL multi-host (above).
             NativeTaoGlBridge.nativePresent(attachmentHandle)
         }
 
@@ -1269,6 +1316,9 @@ internal class TaoComposeSceneHostWindows(
     }
 
     private companion object {
+        /** Native backend kind reported by [NativeTaoGlBridge.nativeBackend] (EGL/ANGLE). */
+        private const val BACKEND_EGL: Int = 1
+
         // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
         // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f

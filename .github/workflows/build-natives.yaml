@@ -323,6 +323,14 @@ jobs:
         shell: cmd
         run: call decorated-window-tao\src\main\native\windows\build.bat
 
+      # ANGLE (libEGL + libGLESv2) backs the Tao Windows Direct3D-11 render path.
+      # Fetched from a pinned Electron release with SHA-256 verification (never
+      # committed — see .gitignore). Lands in the same win32-*/ dirs so the
+      # upload step below ships it inside the decorated-window-tao-windows artifact.
+      - name: Fetch ANGLE runtime DLLs
+        shell: bash
+        run: bash decorated-window-tao/src/main/native/windows/fetch-angle.sh all
+
       - name: Verify decorated-window-tao Windows natives
         shell: bash
         run: |
@@ -338,7 +346,11 @@ jobs:
             decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_dnd.dll \
             decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll \
             decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll; do
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libEGL.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libEGL.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libGLESv2.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libGLESv2.dll; do
             if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
             echo "OK: $f ($(wc -c < "$f") bytes)"
           done

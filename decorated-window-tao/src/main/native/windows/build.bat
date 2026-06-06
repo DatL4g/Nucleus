@@ -28,6 +28,10 @@ set "POPUP_SRC=%SCRIPT_DIR%nucleus_tao_windows_popup.c"
 set "RESOURCE_DIR=%NATIVE_DIR%\..\resources\nucleus\native"
 set "OUT_DIR_X64=%RESOURCE_DIR%\win32-x64"
 set "OUT_DIR_ARM64=%RESOURCE_DIR%\win32-aarch64"
+REM Vendored Khronos/ANGLE EGL headers (typedefs + ANGLE platform constants).
+REM EGL entry points are resolved at runtime via LoadLibrary, so only headers
+REM are needed at build time — no import lib.
+set "ANGLE_INC=%NATIVE_DIR%\vendor\angle-headers"
 
 REM ---- Check JAVA_HOME ----
 if "%JAVA_HOME%"=="" (
@@ -127,7 +131,7 @@ if errorlevel 1 (
 )
 
 cl /LD /O1 /GS- /nologo ^
-    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
+    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
     "%GL_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_gl.dll" ^
     /link /NODEFAULTLIB /ENTRY:DllMain opengl32.lib gdi32.lib user32.lib kernel32.lib
@@ -165,7 +169,7 @@ REM Combined NativeView/Overlay/Popup/Overlay-GL DLL — single artifact to
 REM limit JNI loader hops; the four .c files share a /NODEFAULTLIB shim
 REM defined in nucleus_tao_windows_native_view.c.
 cl /LD /O1 /GS- /nologo ^
-    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
+    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
     "%NV_SRC%" "%OVERLAY_SRC%" "%OVERLAY_GL_SRC%" "%POPUP_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_windows_native_view.dll" ^
     /link /NODEFAULTLIB /ENTRY:DllMain ^
@@ -204,7 +208,7 @@ if errorlevel 1 (
 )
 
 cl /LD /O1 /GS- /nologo ^
-    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
+    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
     "%GL_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_gl.dll" ^
     /link /ENTRY:DllMain opengl32.lib gdi32.lib user32.lib kernel32.lib
@@ -239,7 +243,7 @@ if errorlevel 1 (
 )
 
 cl /LD /O1 /GS- /nologo ^
-    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
+    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
     "%NV_SRC%" "%OVERLAY_SRC%" "%OVERLAY_GL_SRC%" "%POPUP_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_native_view.dll" ^
     /link /ENTRY:DllMain ^

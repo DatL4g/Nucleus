@@ -16,6 +16,20 @@ private const val LIBRARY_NAME = "nucleus_tao_gl"
  * re-binds via [nativeMakeCurrent], presents, and releases again.
  */
 internal object NativeTaoGlBridge {
+    init {
+        // ANGLE (libEGL + libGLESv2) backs the preferred Direct3D-11 render path
+        // (nucleus_tao_gl.c tries it before WGL). They ship next to the other
+        // Windows native libs but are only present on win32-*; load them by
+        // absolute path FIRST (libGLESv2 before libEGL, which depends on it) so
+        // the native `LoadLibraryW("libEGL.dll")` resolves the already-loaded
+        // module by base name. Best-effort: if absent or non-Windows, the native
+        // side simply falls back to WGL.
+        if (System.getProperty("os.name", "").lowercase().contains("win")) {
+            NativeLibraryLoader.load("libGLESv2", NativeTaoGlBridge::class.java)
+            NativeLibraryLoader.load("libEGL", NativeTaoGlBridge::class.java)
+        }
+    }
+
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoGlBridge::class.java)
 
     val isLoaded: Boolean get() = loaded
@@ -35,6 +49,28 @@ internal object NativeTaoGlBridge {
      */
     @JvmStatic
     external fun nativeAttach(hwnd: Long): Long
+
+    /**
+     * Forces the WGL backend. Fallback used when [nativeAttach] produced an
+     * EGL/ANGLE attachment but Skia couldn't build a [org.jetbrains.skia.DirectContext]
+     * on it — viability is only known after `makeGLWithInterface`, on the JVM side.
+     */
+    @JvmStatic
+    external fun nativeAttachWgl(hwnd: Long): Long
+
+    /** Backend of an attachment: 0 = WGL, 1 = EGL/ANGLE, -1 = invalid handle. */
+    @JvmStatic
+    external fun nativeBackend(handle: Long): Int
+
+    /**
+     * Address of the native GrGLGetProc trampoline routing to ANGLE's
+     * `eglGetProcAddress`. Passed to
+     * [org.jetbrains.skia.GLAssembledInterface.createFromNativePointers] so
+     * `DirectContext.makeGLWithInterface` can assemble an EGL/ES GL interface
+     * (the default `makeGL()` uses WGL and fails on ANGLE).
+     */
+    @JvmStatic
+    external fun nativeEglGetProcFn(): Long
 
     @JvmStatic
     external fun nativeDetach(handle: Long)
