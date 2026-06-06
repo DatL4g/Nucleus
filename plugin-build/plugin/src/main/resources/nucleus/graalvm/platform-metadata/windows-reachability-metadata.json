@@ -1,6 +1,21 @@
 {
     "reflection": [
         {
+            "type": "java.awt.DisplayMode",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "<init>",
+                    "parameterTypes": [
+                        "int",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                }
+            ]
+        },
+        {
             "type": "com.sun.java.accessibility.internal.AccessBridge",
             "jniAccessible": true,
             "methods": [

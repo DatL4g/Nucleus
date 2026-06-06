@@ -23,6 +23,22 @@
                     ]
                 }
             ]
+        },
+        {
+            "type": "dev.nucleusframework.launcher.windows.WindowsJumpListManager",
+            "fields": [
+                {
+                    "name": "INSTANCE"
+                }
+            ],
+            "methods": [
+                {
+                    "name": "setProcessAppId",
+                    "parameterTypes": [
+                        "java.lang.String"
+                    ]
+                }
+            ]
         }
     ]
 }

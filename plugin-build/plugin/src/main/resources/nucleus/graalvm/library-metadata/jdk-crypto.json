@@ -333,6 +333,11 @@
         },
         {
             "type": "sun.security.x509.AuthorityInfoAccessExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -345,6 +350,11 @@
         },
         {
             "type": "sun.security.x509.AuthorityKeyIdentifierExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -357,6 +367,11 @@
         },
         {
             "type": "sun.security.x509.BasicConstraintsExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -369,6 +384,11 @@
         },
         {
             "type": "sun.security.x509.CRLDistributionPointsExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -381,6 +401,11 @@
         },
         {
             "type": "sun.security.x509.CertificatePoliciesExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -393,6 +418,11 @@
         },
         {
             "type": "sun.security.x509.ExtendedKeyUsageExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -405,6 +435,11 @@
         },
         {
             "type": "sun.security.x509.KeyUsageExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -417,6 +452,11 @@
         },
         {
             "type": "sun.security.x509.NetscapeCertTypeExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -429,6 +469,11 @@
         },
         {
             "type": "sun.security.x509.PrivateKeyUsageExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -441,6 +486,11 @@
         },
         {
             "type": "sun.security.x509.SubjectAlternativeNameExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",
@@ -453,6 +503,11 @@
         },
         {
             "type": "sun.security.x509.SubjectKeyIdentifierExtension",
+            "fields": [
+                {
+                    "name": "NAME"
+                }
+            ],
             "methods": [
                 {
                     "name": "<init>",

@@ -1,7 +1,20 @@
 {
     "reflection": [
         {
-            "type": "dev.nucleusframework.autolaunch.AutoLaunch"
+            "type": "dev.nucleusframework.autolaunch.AutoLaunch",
+            "fields": [
+                {
+                    "name": "INSTANCE"
+                }
+            ],
+            "methods": [
+                {
+                    "name": "wasStartedAtLogin",
+                    "parameterTypes": [
+                        "java.lang.String[]"
+                    ]
+                }
+            ]
         },
         {
             "type": "dev.nucleusframework.autolaunch.windows.NativeAutoLaunchBridge",
