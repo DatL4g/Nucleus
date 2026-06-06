@@ -562,7 +562,25 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                         dispatch(handle, EVENT_MODIFIERS_CHANGED, modifiers, 0);
                     }
-                    WindowEvent::KeyboardInput { event: ke, .. } => {
+                    WindowEvent::KeyboardInput {
+                        event: ke,
+                        is_synthetic,
+                        ..
+                    } => {
+                        // Tao replays a KEY_DOWN for every physically-held key when a
+                        // window gains focus (Windows WM_SETFOCUS / Linux), reading the
+                        // global async keyboard state. If focus transfers to our window
+                        // while the user is still holding a shortcut they pressed in
+                        // another app — e.g. Ctrl+W in File Explorer, which closes its
+                        // tab and hands focus back to us before the keys are released —
+                        // that replay reaches Compose as a real Ctrl+W and fires the
+                        // shortcut here too. The reference JNI/JBR backend never does
+                        // this (it only refreshes modifier state on focus), and we read
+                        // live modifiers via GetAsyncKeyState on the next real key, so
+                        // synthetic key events are dropped entirely.
+                        if is_synthetic {
+                            return;
+                        }
                         let type_code = match ke.state {
                             ElementState::Pressed => EVENT_KEY_DOWN,
                             ElementState::Released => EVENT_KEY_UP,
