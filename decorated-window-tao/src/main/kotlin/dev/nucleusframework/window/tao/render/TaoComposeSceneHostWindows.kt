@@ -49,6 +49,9 @@ import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.coroutines.CoroutineContext
@@ -1243,28 +1246,59 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    // Debounce a11y syncs so a burst of `onSemanticsChange` callbacks during
-    // recomposition collapses into a single push at the next render tick.
-    private var a11ySyncScheduled: Runnable? = null
+    // A11y sync is debounced on a timer rather than run once per render tick.
+    // The SemanticsOwner walk in TaoSemanticsObserver is O(N); during a scroll
+    // `onLayoutChange`/`onSemanticsChange` fire every frame, so a per-frame walk
+    // stutters scrolling — most visibly once a UIA client (Narrator, NVDA) is
+    // attached. Debouncing collapses a burst of changes into a single walk once
+    // activity settles (trailing edge), with a max-wait so sustained activity
+    // still refreshes the tree periodically for assistive tech. The tree
+    // therefore stays fresh enough for on-demand AX queries without ever
+    // running on the per-frame hot path. Mirrors the macOS [TaoComposeSceneHost].
+    private val a11yScheduler =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "TaoA11yDebounce").apply { isDaemon = true }
+        }
+
+    @Volatile
+    private var a11yPendingBlock: (() -> Unit)? = null
+
+    @Volatile
+    private var a11yFuture: ScheduledFuture<*>? = null
+    private var a11yFirstRequestNs = 0L
 
     /**
-     * Schedules [block] to run on the render thread "soon" — at the next
-     * redraw. Used by the SemanticsObserver to coalesce per-recomposition
-     * change notifications into one snapshot push per frame.
+     * Schedules [block] (a SemanticsOwner walk + snapshot push) to run on the
+     * render thread after changes settle. Coalesces a burst of per-frame change
+     * notifications into one debounced run; see the field comment above.
      */
     fun scheduleA11ySync(block: () -> Unit) {
-        if (a11ySyncScheduled != null) return
-        val r =
-            Runnable {
-                a11ySyncScheduled = null
-                block()
-            }
-        a11ySyncScheduled = r
-        flushingDispatcher.enqueue(r)
-        window.requestRedraw()
+        a11yPendingBlock = block
+        val now = System.nanoTime()
+        if (a11yFirstRequestNs == 0L) a11yFirstRequestNs = now
+        val waitedMs = (now - a11yFirstRequestNs) / 1_000_000L
+        val delayMs = if (waitedMs >= A11Y_SYNC_MAX_WAIT_MS) 0L else A11Y_SYNC_DEBOUNCE_MS
+        a11yFuture?.cancel(false)
+        a11yFuture =
+            a11yScheduler.schedule(
+                {
+                    val b = a11yPendingBlock
+                    a11yPendingBlock = null
+                    a11yFirstRequestNs = 0L
+                    if (b != null) {
+                        // Hop to the render thread — the walk touches Compose state.
+                        flushingDispatcher.enqueue(Runnable { b() })
+                        window.requestRedraw()
+                    }
+                },
+                delayMs,
+                TimeUnit.MILLISECONDS,
+            )
     }
 
     fun detach() {
+        a11yFuture?.cancel(false)
+        a11yScheduler.shutdownNow()
         textToolbar.hide()
         // Stop the pinch idle timer; the scene is going away so no Release needed.
         pinchEndJob?.cancel()
@@ -1332,6 +1366,13 @@ internal class TaoComposeSceneHostWindows(
 
         /** Idle gap after the last tick before the synthetic pinch releases. */
         private const val PINCH_IDLE_END_MS: Long = 120L
+
+        // A11y debounce: run the SemanticsOwner walk ~this long after the last
+        // change (so a scroll's per-frame change burst collapses to one walk
+        // once it settles), but never wait longer than the max so assistive
+        // tech still sees periodic refreshes during sustained scrolling.
+        private const val A11Y_SYNC_DEBOUNCE_MS: Long = 120L
+        private const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
 
         /**
          * Live attached-host count across the JVM. When > 1, every host

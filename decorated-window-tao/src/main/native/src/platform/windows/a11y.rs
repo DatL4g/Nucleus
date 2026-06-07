@@ -45,15 +45,26 @@ struct A11yApi {
     attach: AttachFn,
     detach: DetachFn,
     apply: ApplyFn,
-    #[allow(dead_code)]
     is_active: IsActiveFn,
-    #[allow(dead_code)]
     consume_resync: ConsumeResyncFn,
     #[allow(dead_code)]
     note_pushed: NotePushedFn,
 }
 
 static API: Mutex<Option<A11yApi>> = Mutex::new(None);
+
+/// HWNDs with a live UIA projection (attached, not yet detached). The Kotlin
+/// `nativeA11yIsActive` / `nativeA11yConsumeResync` exports take no handle
+/// (mirroring macOS' process-global gate), so we keep this registry to answer
+/// "is *any* tracked window active" by polling the per-HWND state the C DLL
+/// tracks. Updated by `nativeA11yAttach` / `nativeA11yDetach`.
+static TRACKED_HWNDS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+
+/// Snapshot of the tracked HWNDs, copied out so the C-DLL FFI calls below run
+/// without holding the registry lock.
+fn tracked_hwnds() -> Vec<i64> {
+    TRACKED_HWNDS.lock().map(|g| g.clone()).unwrap_or_default()
+}
 
 extern "system" {
     fn LoadLibraryW(name: *const u16) -> *mut c_void;
@@ -280,6 +291,9 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     if hwnd == 0 { return; }
     if let Some(api) = api() {
         unsafe { (api.attach)(hwnd) };
+        if let Ok(mut g) = TRACKED_HWNDS.lock() {
+            if !g.contains(&hwnd) { g.push(hwnd); }
+        }
     }
 }
 
@@ -292,6 +306,9 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     if hwnd == 0 { return; }
     if let Some(api) = api() {
         unsafe { (api.detach)(hwnd) };
+    }
+    if let Ok(mut g) = TRACKED_HWNDS.lock() {
+        g.retain(|&h| h != hwnd);
     }
 }
 
@@ -316,26 +333,43 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     if ok != 0 { JNI_TRUE } else { JNI_FALSE }
 }
 
-/// The Kotlin bridge calls is_active without the handle (mirroring macOS).
-/// The Windows projection tracks per-HWND state but the Kotlin observer
-/// currently asks "is anyone active anywhere". We return true if any
-/// tracked window is active — since we don't have a global registry here
-/// we default to true to keep snapshots flowing while a UIA client is
-/// attached. The native side still fast-paths when no listener is bound.
+/// The Kotlin bridge calls is_active without the handle (mirroring macOS'
+/// process-global gate). The C DLL tracks per-HWND activity (a UIA client
+/// queried the projection within the last ~5 min), so we answer "is *any*
+/// tracked window active" by polling each registered HWND. Returning a real
+/// signal here lets the JVM-side observer skip the O(N) SemanticsOwner walk
+/// while no assistive tech is listening — see `TaoAccessibilityController`.
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeA11yIsActive(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
-    JNI_TRUE
+    let Some(api) = api() else { return JNI_FALSE; };
+    for hwnd in tracked_hwnds() {
+        if unsafe { (api.is_active)(hwnd) } != 0 {
+            return JNI_TRUE;
+        }
+    }
+    JNI_FALSE
 }
 
+/// Consumes the "force resync" flag the C DLL sets whenever a UIA query lands
+/// (so the next push is a full snapshot, recovering from any tree drift during
+/// an idle window when walks were skipped). Polls every tracked HWND and
+/// clears each — must not short-circuit, or a pending flag would linger.
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeA11yConsumeResync(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
-    JNI_FALSE
+    let Some(api) = api() else { return JNI_FALSE; };
+    let mut any = false;
+    for hwnd in tracked_hwnds() {
+        if unsafe { (api.consume_resync)(hwnd) } != 0 {
+            any = true;
+        }
+    }
+    if any { JNI_TRUE } else { JNI_FALSE }
 }
 
 /// No-op on Windows; per-HWND tracking lives in the C DLL.

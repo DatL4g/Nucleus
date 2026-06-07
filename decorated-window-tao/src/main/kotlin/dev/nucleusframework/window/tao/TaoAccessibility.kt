@@ -462,8 +462,7 @@ internal class TaoAccessibilityController(
      * query by then — so `nativeA11yIsActive()` is true and the tree is rebuilt
      * fresh, with no stale-tree race.
      */
-    fun shouldRunSync(): Boolean =
-        !isDisposed && (pendingForcedPush || NativeTaoBridge.nativeA11yIsActive())
+    fun shouldRunSync(): Boolean = !isDisposed && (pendingForcedPush || NativeTaoBridge.nativeA11yIsActive())
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
         if (isDisposed || nsView == 0L) return
