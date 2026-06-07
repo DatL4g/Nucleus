@@ -21,8 +21,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.render.TaoComposeSceneContext
 import dev.nucleusframework.window.tao.render.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.render.TaoPopupHost
+import dev.nucleusframework.window.tao.render.TaoRecordedSurface
 import dev.nucleusframework.window.tao.render.dispatchSyntheticKeyTyped
-import dev.nucleusframework.window.tao.render.renderMetalFrame
+import dev.nucleusframework.window.tao.render.recordSceneToPicture
 import dev.nucleusframework.window.tao.render.taoKeyEvent
 import org.jetbrains.skia.DirectContext
 import kotlin.coroutines.CoroutineContext
@@ -95,10 +96,12 @@ internal class NativeViewOverlayController(
 
             override fun registerRenderer(
                 token: Any,
-                render: () -> Unit,
-            ) = popupHost.registerRenderer(token, render)
+                record: () -> TaoRecordedSurface?,
+            ) = popupHost.registerRenderer(token, record)
 
             override fun unregisterRenderer(token: Any) = popupHost.unregisterRenderer(token)
+
+            override fun <T> runOnRenderThread(block: () -> T): T = popupHost.runOnRenderThread(block)
 
             override fun registerKeyHandler(
                 token: Any,
@@ -201,8 +204,19 @@ internal class NativeViewOverlayController(
 
     private var overlayNsView: Long = 0
     private var attachmentHandle: Long = 0
+
+    // Created on / used on / closed on the host's render thread (Skia Metal
+    // DirectContext is thread-affine). See TaoComposeSceneHost's render thread.
     private var directContext: DirectContext? = null
     private var scene: ComposeScene? = null
+
+    /**
+     * Set in [dispose] before GPU teardown; read on the render thread via
+     * [TaoRecordedSurface.isAlive] so an overlay torn down between record and
+     * replay is skipped rather than replayed against a closed context.
+     */
+    @Volatile
+    private var disposed: Boolean = false
     private val regions: MutableMap<Any, IntArray> = LinkedHashMap()
     private var pendingContent: (@Composable () -> Unit)? = null
     private var firstBoundsApplied = false
@@ -219,7 +233,7 @@ internal class NativeViewOverlayController(
         overlayNsView = NativeTaoMacOsNativeViewBridge.nativeCreateOverlay(popupHost.parentNsView)
         require(overlayNsView != 0L) { "Failed to create overlay NSView" }
         NativeTaoMacOsNativeViewBridge.nativeSetOverlayCallback(overlayNsView, OverlayCallback())
-        popupHost.registerRenderer(rendererToken) { renderFrame() }
+        popupHost.registerRenderer(rendererToken) { recordSurface() }
         // Tao intercepts key events at the application level (winit-
         // style NSEvent monitor), so they never reach our overlay's
         // `keyDown:` even though we're the first responder. Piggy-back
@@ -356,10 +370,12 @@ internal class NativeViewOverlayController(
         attachmentHandle = NativeMetalBridge.nativeAttachOverlay(overlayNsView)
         require(attachmentHandle != 0L) { "Failed to attach overlay CAMetalLayer" }
         directContext =
-            DirectContext.makeMetal(
-                NativeMetalBridge.nativeDevicePtr(attachmentHandle),
-                NativeMetalBridge.nativeQueuePtr(attachmentHandle),
-            )
+            popupHost.runOnRenderThread {
+                DirectContext.makeMetal(
+                    NativeMetalBridge.nativeDevicePtr(attachmentHandle),
+                    NativeMetalBridge.nativeQueuePtr(attachmentHandle),
+                )
+            }
         val ourPlatformContext =
             object : PlatformContext.Empty() {
                 override val windowInfo: WindowInfo get() = overlayWindowInfo
@@ -448,16 +464,22 @@ internal class NativeViewOverlayController(
         NativeTaoMacOsNativeViewBridge.nativeSetOverlayRegions(overlayNsView, flat, count)
     }
 
-    private fun renderFrame() {
-        val ctx = directContext ?: return
-        val sc = scene ?: return
-        if (widthPx == 0 || heightPx == 0) return
-        if (attachmentHandle == 0L) return
-        renderMetalFrame(
+    /**
+     * Records the overlay scene into a [TaoRecordedSurface] on the main thread;
+     * the host replays it on its render thread. Returns null to skip the frame.
+     */
+    private fun recordSurface(): TaoRecordedSurface? {
+        if (disposed) return null
+        val ctx = directContext ?: return null
+        val sc = scene ?: return null
+        if (widthPx == 0 || heightPx == 0) return null
+        if (attachmentHandle == 0L) return null
+        return TaoRecordedSurface(
             attachmentHandle = attachmentHandle,
             directContext = ctx,
-            scene = sc,
+            picture = recordSceneToPicture(sc, widthPx, heightPx),
             clearColor = 0x00000000,
+            isAlive = { !disposed },
         )
     }
 
@@ -465,12 +487,20 @@ internal class NativeViewOverlayController(
         if (overlayNsView == 0L) return
         popupHost.unregisterRenderer(rendererToken)
         popupHost.unregisterKeyHandler(rendererToken)
+        // Mark disposed before teardown so an already-recorded surface is skipped
+        // at replay time (TaoRecordedSurface.isAlive).
+        disposed = true
         scene?.close()
         scene = null
-        directContext?.close()
+        // Close the Skia context on its owning render thread. dispose() runs in
+        // the host's main-thread record pass (Compose disposal), when the render
+        // thread is idle, so this blocking hop returns immediately without racing
+        // a replay; nativeDetach / nativeReleaseOverlay stay on the main thread.
+        val ctx = directContext
         directContext = null
-        // Zero out before freeing so a render lambda still in the host's
-        // snapshot iteration bails — same hazard as TaoPopupSceneLayer.close.
+        if (ctx != null) popupHost.runOnRenderThread { ctx.close() }
+        // Zero out before freeing so a recorder still in the host's snapshot
+        // iteration bails — same hazard as TaoPopupSceneLayer.close.
         val handle = attachmentHandle
         attachmentHandle = 0
         if (handle != 0L) NativeMetalBridge.nativeDetach(handle)

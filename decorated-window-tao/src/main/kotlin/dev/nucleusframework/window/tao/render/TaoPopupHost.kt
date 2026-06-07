@@ -62,12 +62,32 @@ internal interface TaoPopupHost {
 
     fun requestRedraw()
 
+    /**
+     * Registers a per-frame recorder. The host invokes [record] on the **main
+     * thread** during its record pass; it must drive the overlay/popup scene
+     * into a [TaoRecordedSurface] (via [recordSceneToPicture]) or return `null`
+     * to skip the frame (zero-size / disposed). The host then replays the
+     * returned surface on its render thread after the main scene.
+     */
     fun registerRenderer(
         token: Any,
-        render: () -> Unit,
+        record: () -> TaoRecordedSurface?,
     )
 
     fun unregisterRenderer(token: Any)
+
+    /**
+     * Runs [block] on the host's dedicated Metal render thread and blocks until
+     * it returns. Overlay/popup surfaces must create, use, and close their Skia
+     * `DirectContext` here so Skia's Metal context thread-affinity is respected
+     * (the host's per-frame replay also runs on this thread).
+     *
+     * Safe to call (blocking) from the main thread during scene composition /
+     * disposal — at those points the render thread is idle (frames are
+     * serialized and Compose disposal runs inside the main-thread record pass),
+     * so it never deadlocks against an in-flight replay.
+     */
+    fun <T> runOnRenderThread(block: () -> T): T
 
     /**
      * Registers a key handler called from `TaoComposeSceneHost.onKeyEvent`

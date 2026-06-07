@@ -1507,46 +1507,82 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetPresentsWithTran
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativePresentWithInterop(
         JNIEnv *env, jclass clazz, jlong handle, jlong drawablePtr, jobject interopActions) {
+    (void) clazz;
     if (handle == 0 || drawablePtr == 0) return;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
 
+    // Stage 2: this is invoked from the host's background render thread (after
+    // the scene's GPU encode), but CATransaction + the explicit [drawable
+    // present] + the AppKit mutations in `interopActions` must run on the macOS
+    // main thread. We therefore dispatch the whole atomic block to the main
+    // queue. The render thread blocks (dispatch_sync) until it completes, which
+    // is safe: the main thread is never itself blocked on the render thread
+    // while a frame's replay is in flight (all main→render hops happen during
+    // the main-thread record pass, when the render thread is idle).
+    ensureMetalJVMCached(env);
+
+    // Promote the Runnable to a global ref: the local ref `interopActions` is
+    // valid only on this (render) thread's JNI frame, but the block runs on the
+    // main thread with the main thread's JNIEnv.
+    jobject interopGlobal = (interopActions != NULL)
+        ? (*env)->NewGlobalRef(env, interopActions) : NULL;
+
+    // Take ownership of the drawable (balances nativeBeginFrame's retain) and
+    // capture it + the queue in the block so ARC keeps them alive until present.
     id<CAMetalDrawable> drawable = (__bridge_transfer id<CAMetalDrawable>)
         (void *)(uintptr_t) drawablePtr;
+    id<MTLCommandQueue> queue = att->queue;
 
-    [CATransaction begin];
+    void (^work)(void) = ^{
+        [CATransaction begin];
 
-    id<MTLCommandBuffer> commandBuffer = [att->queue commandBuffer];
-    [commandBuffer commit];
-    // Block until the GPU has scheduled our work — required before an
-    // explicit [drawable present] under presentsWithTransaction = YES.
-    [commandBuffer waitUntilScheduled];
-    [drawable present];
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        [commandBuffer commit];
+        // Block until the GPU has scheduled our work — required before an
+        // explicit [drawable present] under presentsWithTransaction = YES.
+        [commandBuffer waitUntilScheduled];
+        [drawable present];
 
-    if (interopActions != NULL) {
-        // Cache Runnable.run() once. Module-local statics are fine: the
-        // method ID for java.lang.Runnable.run is stable for the JVM lifetime.
-        static jclass sRunnableClass = NULL;
-        static jmethodID sRunMethod = NULL;
-        if (sRunMethod == NULL) {
-            jclass local = (*env)->FindClass(env, "java/lang/Runnable");
-            if (local != NULL) {
-                sRunnableClass = (*env)->NewGlobalRef(env, local);
-                (*env)->DeleteLocalRef(env, local);
-                if (sRunnableClass != NULL) {
-                    sRunMethod = (*env)->GetMethodID(env, sRunnableClass, "run", "()V");
+        if (interopGlobal != NULL) {
+            // Resolve the main thread's JNIEnv (it's the JVM main thread, so
+            // already attached). Cache Runnable.run() once — stable for the
+            // JVM lifetime.
+            JNIEnv *menv = NULL;
+            jint status = sMetalJVM
+                ? (*sMetalJVM)->GetEnv(sMetalJVM, (void **)&menv, JNI_VERSION_1_8)
+                : JNI_ERR;
+            if (status == JNI_EDETACHED && sMetalJVM) {
+                (*sMetalJVM)->AttachCurrentThreadAsDaemon(sMetalJVM, (void **)&menv, NULL);
+            }
+            if (menv != NULL) {
+                static jclass sRunnableClass = NULL;
+                static jmethodID sRunMethod = NULL;
+                if (sRunMethod == NULL) {
+                    jclass local = (*menv)->FindClass(menv, "java/lang/Runnable");
+                    if (local != NULL) {
+                        sRunnableClass = (*menv)->NewGlobalRef(menv, local);
+                        (*menv)->DeleteLocalRef(menv, local);
+                        if (sRunnableClass != NULL) {
+                            sRunMethod = (*menv)->GetMethodID(menv, sRunnableClass, "run", "()V");
+                        }
+                    }
                 }
+                if (sRunMethod != NULL) {
+                    (*menv)->CallVoidMethod(menv, interopGlobal, sRunMethod);
+                    if ((*menv)->ExceptionCheck(menv)) {
+                        (*menv)->ExceptionDescribe(menv);
+                        (*menv)->ExceptionClear(menv);
+                    }
+                }
+                (*menv)->DeleteGlobalRef(menv, interopGlobal);
             }
         }
-        if (sRunMethod != NULL) {
-            (*env)->CallVoidMethod(env, interopActions, sRunMethod);
-            if ((*env)->ExceptionCheck(env)) {
-                (*env)->ExceptionDescribe(env);
-                (*env)->ExceptionClear(env);
-            }
-        }
-    }
 
-    [CATransaction commit];
+        [CATransaction commit];
+    };
+
+    if ([NSThread isMainThread]) work();
+    else                          dispatch_sync(dispatch_get_main_queue(), work);
 }
 
 // ── newFullscreenControls JNI bridge ─────────────────────────────────────

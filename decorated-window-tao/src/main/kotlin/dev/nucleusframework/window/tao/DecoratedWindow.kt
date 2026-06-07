@@ -288,7 +288,7 @@ internal fun ApplicationScope.openDecoratedWindow(
         // the zoom synchronously during build(); otherwise scale the fallback.
         val (initialW, initialH) = initialMacOsSize(window, w, h, maximized)
         host.onResized(initialW, initialH)
-        host.onRedrawRequested()
+        host.renderFrameBlocking()
         if (visible) window.show()
     }
     window.onResized { w, h ->
@@ -327,7 +327,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }
-    window.onRedrawRequested { host.onRedrawRequested() }
+    window.onRedrawRequested { host.requestFrame() }
     window.onFocusChanged { focused ->
         // When focus moves to an embedded child HWND (e.g., WebView2 on
         // Windows), Tao reports the main HWND as unfocused, but for app

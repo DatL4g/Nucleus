@@ -127,11 +127,26 @@ internal class TaoPopupSceneLayer(
                 require(it != 0L) { "Failed to attach popup CAMetalLayer" }
             }
 
+    // Created on (and only ever used / closed on) the host's render thread —
+    // Skia's Metal DirectContext is thread-affine. Safe to build here (blocking)
+    // because popup construction runs inside the host's main-thread record pass,
+    // when the render thread is idle.
     private val directContext: DirectContext =
-        DirectContext.makeMetal(
-            NativeMetalBridge.nativeDevicePtr(attachmentHandle),
-            NativeMetalBridge.nativeQueuePtr(attachmentHandle),
-        )
+        host.runOnRenderThread {
+            DirectContext.makeMetal(
+                NativeMetalBridge.nativeDevicePtr(attachmentHandle),
+                NativeMetalBridge.nativeQueuePtr(attachmentHandle),
+            )
+        }
+
+    /**
+     * Set in [close] (main thread) before the surface's GPU resources are torn
+     * down. Read on the render thread in [TaoRecordedSurface.isAlive] so a popup
+     * dismissed between record and replay is skipped rather than replayed against
+     * a closed [directContext] / freed attachment.
+     */
+    @Volatile
+    private var disposed: Boolean = false
 
     /**
      * Inner scene at screen work-area size — see "measurement chicken-
@@ -272,7 +287,7 @@ internal class TaoPopupSceneLayer(
     init {
         NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         PopupNativeBridge.nativeSetEventCallback(panelHandle, PopupEventCallback())
-        host.registerRenderer(rendererToken) { renderFrame() }
+        host.registerRenderer(rendererToken) { recordSurface() }
     }
 
     // ── ComposeSceneLayer surface ──────────────────────────────────────
@@ -348,19 +363,25 @@ internal class TaoPopupSceneLayer(
 
     override fun close() {
         host.unregisterRenderer(rendererToken)
+        // Mark disposed before any teardown so a surface already recorded this
+        // frame is skipped at replay time (TaoRecordedSurface.isAlive).
+        disposed = true
         // Drop callbacks before tearing the panel down so any in-flight
         // AppKit event doesn't deref a half-disposed scene.
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panelHandle)
         PopupNativeBridge.nativeSetEventCallback(panelHandle, null)
         host.setCursor(TaoCursorIcon.DEFAULT)
         innerScene.close()
-        directContext.close()
-        // Zero out before freeing the C struct so any pending render
-        // lambda still sitting in the host's snapshot iteration bails
-        // instead of dereferencing freed memory. Compose can dispose a
-        // sibling popup (or this very popup) as a side effect of an
-        // earlier popup's `innerScene.render`, which the host has
-        // already snapshot-captured.
+        // Close the Skia context on its owning render thread. close() runs in
+        // the host's main-thread record pass (Compose disposal), when the render
+        // thread is idle, so this blocking hop returns immediately and can't race
+        // an in-flight replay. nativeDetach / nativeRelease stay on the main
+        // thread for the same reason — no replay is using this attachment now.
+        host.runOnRenderThread { directContext.close() }
+        // Zero out before freeing the C struct so any pending recorder still in
+        // the host's snapshot iteration bails instead of dereferencing freed
+        // memory. Compose can dispose a sibling popup (or this very popup) as a
+        // side effect of an earlier popup's `innerScene.render`.
         val handle = attachmentHandle
         attachmentHandle = 0
         NativeMetalBridge.nativeDetach(handle)
@@ -412,16 +433,23 @@ internal class TaoPopupSceneLayer(
         )
     }
 
-    // ── Per-frame render — driven by host.onRedrawRequested ────────────
+    // ── Per-frame record — driven by host's record pass (main thread) ──────
 
-    private fun renderFrame() {
-        if (widthPx <= 0 || heightPx <= 0) return
-        if (attachmentHandle == 0L) return
-        renderMetalFrame(
+    /**
+     * Records the popup's inner scene into a [TaoRecordedSurface] on the main
+     * thread; the host replays it on its render thread after the main scene.
+     * Returns null to skip the frame (disposed / zero-size).
+     */
+    private fun recordSurface(): TaoRecordedSurface? {
+        if (disposed) return null
+        if (widthPx <= 0 || heightPx <= 0) return null
+        if (attachmentHandle == 0L) return null
+        return TaoRecordedSurface(
             attachmentHandle = attachmentHandle,
             directContext = directContext,
-            scene = innerScene,
+            picture = recordSceneToPicture(innerScene, widthPx, heightPx),
             clearColor = 0x00000000,
+            isAlive = { !disposed },
         )
     }
 

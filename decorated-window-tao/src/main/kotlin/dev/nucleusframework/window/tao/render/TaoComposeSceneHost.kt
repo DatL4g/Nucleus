@@ -39,11 +39,15 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.initialMacOsScaleFactor
 import dev.nucleusframework.window.tao.shouldApplyLargeCornerRadius
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jetbrains.skia.DirectContext
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -75,6 +79,7 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
  * `@InternalComposeUiApi`; we opt-in below.
  */
 @OptIn(InternalComposeUiApi::class)
+@Suppress("TooManyFunctions", "LargeClass")
 internal class TaoComposeSceneHost(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -244,7 +249,9 @@ internal class TaoComposeSceneHost(
 
         val devicePtr = NativeMetalBridge.nativeDevicePtr(handle)
         val queuePtr = NativeMetalBridge.nativeQueuePtr(handle)
-        directContext = DirectContext.makeMetal(devicePtr, queuePtr)
+        // The Skia Metal DirectContext is thread-affine: create it on the render
+        // thread that will use it for every frame's GPU encode + present.
+        directContext = runOnRenderThread { DirectContext.makeMetal(devicePtr, queuePtr) }
 
         scale = initialMacOsScaleFactor(window)
 
@@ -650,7 +657,7 @@ internal class TaoComposeSceneHost(
     // pass so each popup paints a fresh frame whenever the main scene
     // does. Keyed by an opaque token so registrations don't collapse into
     // each other when multiple popups are active.
-    private val popupRenderers: MutableMap<Any, () -> Unit> = LinkedHashMap()
+    private val popupRenderers: MutableMap<Any, () -> TaoRecordedSurface?> = LinkedHashMap()
 
     // Tao's macOS pipeline intercepts keys before AppKit's responder
     // chain, so an overlay NSView can't receive `keyDown:` natively. The
@@ -750,14 +757,16 @@ internal class TaoComposeSceneHost(
 
             override fun registerRenderer(
                 token: Any,
-                render: () -> Unit,
+                record: () -> TaoRecordedSurface?,
             ) {
-                popupRenderers[token] = render
+                popupRenderers[token] = record
             }
 
             override fun unregisterRenderer(token: Any) {
                 popupRenderers.remove(token)
             }
+
+            override fun <T> runOnRenderThread(block: () -> T): T = outer.runOnRenderThread(block)
 
             override fun registerKeyHandler(
                 token: Any,
@@ -785,94 +794,6 @@ internal class TaoComposeSceneHost(
             val dpH = (heightPx / scale)
             windowInfo.containerDpSize = DpSize(dpW.dp, dpH.dp)
         }
-    }
-
-    fun onRedrawRequested() {
-        val ctx = directContext ?: return
-        val sc = scene ?: return
-
-        // Snapshot the interop transaction state for this frame. The
-        // queue is swapped here, so any further mutation calls after
-        // this point land in the next frame's transaction.
-        val tx = retrieveTransaction()
-        val needsTransaction =
-            tx.actions.isNotEmpty() ||
-                rendererIsInteropActive != tx.isInteropActive
-        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
-            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
-            layerPresentsWithTransaction = needsTransaction
-        }
-        // Flip ON early so the layer is configured for this frame; the
-        // OFF flip happens lazily after the transaction has been drained
-        // (mirrors MetalRedrawer.ios.kt:337-339).
-        if (tx.isInteropActive) rendererIsInteropActive = true
-
-        // If the present lambda never fires (e.g. nativeBeginFrame
-        // returned null) we still need to apply the queued AppKit
-        // mutations — otherwise add/remove/setFrame would silently leak
-        // until the next successful frame.
-        var transactionDrained = false
-
-        try {
-            // CAMetalLayer drawables aren't auto-cleared between frames;
-            // on Apple Silicon an uninitialised texture surfaces as
-            // undefined memory (often magenta). Clear to the current themed
-            // fallback color, not hard-coded white, so fullscreen/title-bar
-            // animation gaps don't flash.
-            renderMetalFrame(
-                attachmentHandle = attachmentHandle,
-                directContext = ctx,
-                scene = sc,
-                clearColor = clearColorArgbState.value,
-                present = { handle, drawablePtr ->
-                    if (needsTransaction) {
-                        NativeMetalBridge.nativePresentWithInterop(
-                            handle,
-                            drawablePtr,
-                            Runnable {
-                                tx.performTransaction()
-                                transactionDrained = true
-                                if (!tx.isInteropActive) rendererIsInteropActive = false
-                            },
-                        )
-                    } else {
-                        NativeMetalBridge.nativePresent(handle, drawablePtr)
-                        transactionDrained = true
-                    }
-                },
-                // Drain Compose's async work (sendFrame continuations,
-                // recomposer steps) synchronously so their state writes
-                // happen now and trigger invalidate → next requestRedraw
-                // in the same Tao loop iteration. Without this the work
-                // would sit in TaoMainDispatcher.pending until the loop
-                // wakes again, which on macOS only reliably happens on
-                // input events. Mirrors Skiko's FrameDispatcher pattern.
-                onAfterPresent = TaoMainDispatcher::pump,
-            )
-        } finally {
-            if (!transactionDrained && tx.actions.isNotEmpty()) {
-                // Render path bailed before our present lambda fired
-                // (nativeBeginFrame returned null). Apply mutations
-                // best-effort without atomic sync so they aren't lost.
-                tx.performTransaction()
-                if (!tx.isInteropActive) rendererIsInteropActive = false
-            }
-            // Drive every registered popup's per-frame render after the
-            // main present so each popup CAMetalLayer stays in lock-step
-            // with the host. Iterate by token + look up live so that a
-            // popup disposed mid-iteration (e.g. via a sibling popup's
-            // `innerScene.render` triggering Compose state changes that
-            // dismiss this one) is skipped instead of having its lambda
-            // called on a freed attachment.
-            if (popupRenderers.isNotEmpty()) {
-                for (token in popupRenderers.keys.toList()) {
-                    popupRenderers[token]?.invoke()
-                }
-            }
-        }
-        // The render loop continues via the scene's `invalidate` →
-        // frameDispatcher.scheduleFrame() (fired by withFrameNanos animations
-        // during render), so no explicit re-arm is needed here.
     }
 
     // [aFixed] / [bFixed] are physical pixels × 1024 (see `CURSOR_FIXED_SCALE`).
@@ -1231,42 +1152,219 @@ internal class TaoComposeSceneHost(
         private const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
     }
 
+    // ── Background render thread (AWT/skiko `dispatcherToBlockOn` pattern) ──
+    //
+    // Stage 2 of the macOS scroll-fluidity work: the per-frame Skia/Metal GPU
+    // encode + present is moved off the Tao main thread. A single dedicated
+    // thread owns the Skia Metal `DirectContext` (which is thread-affine): it
+    // is created, used (nextDrawable + drawPicture + flushAndSubmit + present),
+    // and closed only here. The main thread only *records* the Compose scene
+    // into a `Picture` (CPU), then suspends while this thread replays it.
+    //
+    // Lifetime invariant that keeps overlay/popup teardown simple: the
+    // FrameDispatcher is the SINGLE render driver (every redraw funnels through
+    // `requestFrame()`), and it never starts frame N+1 until frame N's replay
+    // coroutine has resumed. So whenever the main thread is inside a record
+    // pass — which is also when Compose disposal (popup/overlay close) runs —
+    // this render thread is idle. Overlay surfaces can therefore close their
+    // `DirectContext` here (blocking) and detach natively on the main thread
+    // without racing an in-flight replay.
+    private val renderExecutor: ExecutorService =
+        Executors.newSingleThreadExecutor { r ->
+            Thread(r, "TaoMetalRender").apply { isDaemon = true }
+        }
+    private val renderDispatcher = renderExecutor.asCoroutineDispatcher()
+
+    /**
+     * Runs [block] on the render thread and blocks until it returns. Used for
+     * `DirectContext` create/use/close that must respect Skia's Metal context
+     * thread-affinity. Safe to call from the main thread during composition /
+     * disposal / lifecycle — at those points the render thread is idle (see the
+     * lifetime invariant above), so it never deadlocks against a replay.
+     */
+    fun <T> runOnRenderThread(block: () -> T): T = renderExecutor.submit(Callable { block() }).get()
+
     // ── VSync-paced render loop (AWT/skiko MetalVSyncer pattern) ──
     private var frameDispatcher: org.jetbrains.skiko.FrameDispatcher? = null
     private val renderLoopJob = kotlinx.coroutines.SupervisorJob()
 
+    /** Schedules a single coalesced frame on the render loop. The sole entry
+     *  point for "please repaint" — both Compose `invalidate` and Tao
+     *  `RedrawRequested` events funnel through here so frames stay serialized. */
+    fun requestFrame() {
+        frameDispatcher?.scheduleFrame()
+    }
+
     /**
-     * Starts the FrameDispatcher render loop. `invalidate` schedules a frame;
-     * each frame renders then waits for the next display refresh (CVDisplayLink),
-     * which suspends — keeping the Tao main loop free for input between frames.
+     * Starts the FrameDispatcher render loop. `invalidate` (and Tao redraw
+     * events) schedule a frame; each frame records the scene on the main thread,
+     * then replays + presents + waits for the next display refresh on the render
+     * thread (suspending — the Tao main loop stays free for input meanwhile).
      */
     private fun startRenderLoop(handle: Long) {
         val scope =
             kotlinx.coroutines.CoroutineScope(coroutineContext + TaoMainDispatcher + renderLoopJob)
         frameDispatcher =
             org.jetbrains.skiko.FrameDispatcher(scope) {
-                if (scene != null) onRedrawRequested()
-                if (attachmentHandle != 0L) {
-                    // Park a background thread on the vsync semaphore (suspends
-                    // this coroutine; the Tao main loop keeps pumping meanwhile).
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        NativeMetalBridge.nativeVSyncWait(handle)
-                    }
-                }
+                renderFrameSuspending(handle)
             }
+    }
+
+    /**
+     * One full frame: record on the main thread, then replay + present + pace on
+     * the render thread. The `withContext(renderDispatcher)` boundary is what
+     * frees the Tao main loop during GPU encode + present + vsync wait.
+     */
+    private suspend fun renderFrameSuspending(handle: Long) {
+        val sc = scene ?: return
+        val ctx = directContext ?: return
+        if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
+
+        // ── interop transaction snapshot (main) ──
+        val tx = retrieveTransaction()
+        val needsTransaction =
+            tx.actions.isNotEmpty() || rendererIsInteropActive != tx.isInteropActive
+        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
+            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
+            layerPresentsWithTransaction = needsTransaction
+        }
+        if (tx.isInteropActive) rendererIsInteropActive = true
+
+        // ── record (main) ──
+        // Clear to the current themed fallback color, not hard-coded white, so
+        // fullscreen/title-bar animation gaps don't flash. The clear itself runs
+        // at replay time on the recorded surface.
+        val mainClear = clearColorArgbState.value
+        val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
+        val popupSurfaces = recordPopupSurfaces()
+        // Drain Compose's async work (sendFrame continuations, recomposer steps)
+        // synchronously so their state writes happen now and trigger invalidate →
+        // next requestFrame in the same Tao loop iteration. Mirrors Skiko's
+        // FrameDispatcher pattern (previously the `onAfterPresent` hook).
+        TaoMainDispatcher.pump()
+
+        // ── replay + present + pace (render thread) ──
+        var mainPresented = false
+        withContext(renderDispatcher) {
+            try {
+                mainPresented =
+                    replayPictureToFrame(handle, ctx, mainPicture, mainClear) { h, d ->
+                        if (needsTransaction) {
+                            // nativePresentWithInterop hops to the main queue
+                            // internally for the CATransaction + AppKit mutations;
+                            // the Runnable below therefore runs on the main thread.
+                            NativeMetalBridge.nativePresentWithInterop(
+                                h,
+                                d,
+                                Runnable {
+                                    tx.performTransaction()
+                                    if (!tx.isInteropActive) rendererIsInteropActive = false
+                                },
+                            )
+                        } else {
+                            NativeMetalBridge.nativePresent(h, d)
+                        }
+                    }
+            } finally {
+                mainPicture.close()
+            }
+            replayPopups(popupSurfaces)
+            // Pace to the display: park a background thread on the vsync
+            // semaphore. Bounded native-side so a paused link can't deadlock.
+            NativeMetalBridge.nativeVSyncWait(handle)
+        }
+
+        // ── interop skip-drain (main) ──
+        // If the main frame was skipped before its present lambda fired
+        // (nativeBeginFrame returned null), the queued AppKit mutations would
+        // otherwise leak until the next successful frame. Apply best-effort.
+        if (needsTransaction && !mainPresented && tx.actions.isNotEmpty()) {
+            tx.performTransaction()
+            if (!tx.isInteropActive) rendererIsInteropActive = false
+        }
+    }
+
+    /**
+     * Records each registered overlay/popup surface into a [TaoRecordedSurface]
+     * on the main thread. Iterates by token + live lookup so a surface disposed
+     * mid-pass (e.g. via a sibling popup's record) is skipped. Disposal runs on
+     * this same main thread, so the list is stable for the rest of the pass.
+     */
+    private fun recordPopupSurfaces(): List<TaoRecordedSurface> {
+        if (popupRenderers.isEmpty()) return emptyList()
+        val out = ArrayList<TaoRecordedSurface>(popupRenderers.size)
+        for (token in popupRenderers.keys.toList()) {
+            val surface = popupRenderers[token]?.invoke()
+            if (surface != null) out += surface
+        }
+        return out
+    }
+
+    /** Replays previously-recorded overlay/popup surfaces on the render thread. */
+    private fun replayPopups(surfaces: List<TaoRecordedSurface>) {
+        for (s in surfaces) {
+            try {
+                // Re-check liveness: a surface can be disposed between record and
+                // replay (its `close()` zeroes the handle + closes its context on
+                // this thread). Skip rather than replay against a dead surface.
+                if (s.isAlive()) {
+                    replayPictureToFrame(
+                        s.attachmentHandle,
+                        s.directContext,
+                        s.picture,
+                        s.clearColor,
+                        s.present,
+                    )
+                }
+            } finally {
+                s.picture.close()
+            }
+        }
+    }
+
+    /**
+     * Renders one frame synchronously (record on main + blocking replay on the
+     * render thread). Used only for the initial paint at window build, where the
+     * render thread is idle and no interop is active; the steady-state loop uses
+     * [renderFrameSuspending].
+     */
+    fun renderFrameBlocking() {
+        val sc = scene ?: return
+        val ctx = directContext ?: return
+        if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
+        val mainClear = clearColorArgbState.value
+        val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
+        val popupSurfaces = recordPopupSurfaces()
+        TaoMainDispatcher.pump()
+        val handle = attachmentHandle
+        runOnRenderThread {
+            try {
+                replayPictureToFrame(handle, ctx, mainPicture, mainClear)
+            } finally {
+                mainPicture.close()
+            }
+            replayPopups(popupSurfaces)
+        }
     }
 
     fun detach() {
         a11yFuture?.cancel(false)
         a11yScheduler.shutdownNow()
+        // Stop driving frames first: after this no new replay is submitted.
         frameDispatcher?.cancel()
         frameDispatcher = null
         renderLoopJob.cancel()
         textToolbar.hide()
         scene?.close()
         scene = null
-        directContext?.close()
+        // Close the DirectContext on its owning thread (FIFO after any in-flight
+        // replay), then shut the render thread down.
+        val ctx = directContext
         directContext = null
+        if (ctx != null) {
+            runCatching { runOnRenderThread { ctx.close() } }
+        }
+        renderExecutor.shutdown()
         if (attachmentHandle != 0L) {
             val h = attachmentHandle
             // Stop the CVDisplayLink (synchronous: no callback in flight after
