@@ -72,6 +72,11 @@ internal class TaoSemanticsObserver(
      */
     fun syncIfDirty() {
         if (!dirty || controller.isDisposed) return
+        // Gate the walk on assistive-tech usage (checked here, when the debounce
+        // fires — see TaoAccessibilityController.shouldRunSync). No AT → skip the
+        // O(N) walk so scrolling stays smooth; keep `dirty` so the next change
+        // syncs once an AT appears.
+        if (!controller.shouldRunSync()) return
         dirty = false
         val nodes = ArrayList<TaoA11yNode>(64)
         val liveIds = HashSet<Long>()

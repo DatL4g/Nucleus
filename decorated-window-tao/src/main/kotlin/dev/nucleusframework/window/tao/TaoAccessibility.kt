@@ -452,6 +452,19 @@ internal class TaoAccessibilityController(
         NativeTaoBridge.nativeA11ySetExternalSelection(nsView, payload)
     }
 
+    /**
+     * Whether the (debounced) SemanticsOwner walk should run. Mirrors Compose
+     * Desktop's AWT `AccessibilityUsage.recentlyUsed` gate: skip the O(N) walk
+     * entirely when no assistive tech is using the app (the common case), so
+     * scrolling stays smooth. `pendingForcedPush` keeps the one-time seed at
+     * attach. Because this is checked when the debounce *fires* (≥120 ms after
+     * the change), an on-demand AX client like PopClip has already issued its
+     * query by then — so `nativeA11yIsActive()` is true and the tree is rebuilt
+     * fresh, with no stale-tree race.
+     */
+    fun shouldRunSync(): Boolean =
+        !isDisposed && (pendingForcedPush || NativeTaoBridge.nativeA11yIsActive())
+
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
         if (isDisposed || nsView == 0L) return
         // Smart gating: skip when no AX client is active AND no resync was

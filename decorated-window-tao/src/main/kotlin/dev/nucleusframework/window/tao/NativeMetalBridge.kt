@@ -62,6 +62,47 @@ internal object NativeMetalBridge {
         menuBarOffsetFlows.getOrPut(nsViewPtr) { MutableStateFlow(0f) }.value = offset
     }
 
+    // ── VSync-paced rendering (CVDisplayLink) ──
+    //
+    // A CVDisplayLink fires once per display refresh on a dedicated CoreVideo
+    // thread and calls [onDisplayLinkVsync] — but only when Compose has marked a
+    // frame pending via [nativeMarkFramePending] (the scene's `invalidate`
+    // path). The registered sink schedules the actual render onto the Tao main
+    // thread. Pacing render to the refresh gives a smooth, regularly-presented
+    // scroll. Keyed by attachment handle.
+
+    private val vsyncSinks = ConcurrentHashMap<Long, () -> Unit>()
+
+    fun registerVsyncSink(
+        handle: Long,
+        sink: () -> Unit,
+    ) {
+        if (handle != 0L) vsyncSinks[handle] = sink
+    }
+
+    fun unregisterVsyncSink(handle: Long) {
+        vsyncSinks.remove(handle)
+    }
+
+    // Called from the CVDisplayLink thread (attached to the JVM as a daemon).
+    // Must NOT render here — only schedule onto the Tao main thread.
+    @JvmStatic
+    fun onDisplayLinkVsync(handle: Long) {
+        vsyncSinks[handle]?.invoke()
+    }
+
+    /** Start the per-window CVDisplayLink that paces rendering to vsync. */
+    @JvmStatic
+    external fun nativeStartDisplayLink(handle: Long)
+
+    /** Stop and release the window's CVDisplayLink. */
+    @JvmStatic
+    external fun nativeStopDisplayLink(handle: Long)
+
+    /** Mark that Compose invalidated; the next display-link tick renders. */
+    @JvmStatic
+    external fun nativeMarkFramePending(handle: Long)
+
     /**
      * Attaches a fresh `CAMetalLayer` to the given NSView and creates a Metal
      * device + command queue. Returns an opaque attachment handle to be passed
