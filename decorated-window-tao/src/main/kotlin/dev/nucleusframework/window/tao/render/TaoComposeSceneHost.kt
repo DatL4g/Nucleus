@@ -44,6 +44,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.DirectContext
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.cos
@@ -232,6 +235,16 @@ internal class TaoComposeSceneHost(
         require(handle != 0L) { "Failed to attach CAMetalLayer to NSView" }
         attachmentHandle = handle
 
+        // VSync-paced rendering: a CVDisplayLink wakes us once per display
+        // refresh (only when `invalidate` marked a frame pending) to render one
+        // frame on the Tao main thread, present-timed to the vsync. Gives a
+        // smooth, regularly-presented scroll vs the raw event-loop redraw path.
+        NativeMetalBridge.registerVsyncSink(handle) {
+            // Runs on the CVDisplayLink thread — hop to the Tao main thread.
+            TaoMainDispatcher.dispatch(EmptyCoroutineContext) { onRedrawRequested() }
+        }
+        NativeMetalBridge.nativeStartDisplayLink(handle)
+
         val devicePtr = NativeMetalBridge.nativeDevicePtr(handle)
         val queuePtr = NativeMetalBridge.nativeQueuePtr(handle)
         directContext = DirectContext.makeMetal(devicePtr, queuePtr)
@@ -291,7 +304,9 @@ internal class TaoComposeSceneHost(
                 coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                 platformContext = taoPlatformContext,
                 invalidate = {
-                    window.requestRedraw()
+                    // Mark a frame pending; the CVDisplayLink renders it at the
+                    // next vsync (see registerVsyncSink above).
+                    NativeMetalBridge.nativeMarkFramePending(attachmentHandle)
                 },
             ).apply { compositionLocalContext = pendingCompositionLocalContext }
 
@@ -579,25 +594,54 @@ internal class TaoComposeSceneHost(
     /** Current scale factor (logical→physical multiplier). */
     fun density(): Float = scale
 
-    // Debounce a11y syncs so a burst of `onSemanticsChange` callbacks during
-    // recomposition collapses into a single push at the next render tick.
-    private var a11ySyncScheduled: Runnable? = null
+    // A11y sync is debounced on a timer rather than run once per render tick.
+    // The SemanticsOwner walk in TaoSemanticsObserver is O(N); during a scroll
+    // `onLayoutChange`/`onSemanticsChange` fire every frame, so a per-frame walk
+    // stutters scrolling — most visibly once an AX client (PopClip, VoiceOver)
+    // is attached. Debouncing collapses a burst of changes into a single walk
+    // once activity settles (trailing edge), with a max-wait so sustained
+    // activity still refreshes the tree periodically for assistive tech. The
+    // tree therefore stays fresh enough for on-demand AX queries without ever
+    // running on the per-frame hot path.
+    private val a11yScheduler =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "TaoA11yDebounce").apply { isDaemon = true }
+        }
+
+    @Volatile
+    private var a11yPendingBlock: (() -> Unit)? = null
+
+    @Volatile
+    private var a11yFuture: ScheduledFuture<*>? = null
+    private var a11yFirstRequestNs = 0L
 
     /**
-     * Schedules [block] to run on the macOS main thread "soon" — at the next
-     * redraw. Used by the SemanticsObserver to coalesce per-recomposition
-     * change notifications into one snapshot push per frame.
+     * Schedules [block] (a SemanticsOwner walk + snapshot push) to run on the
+     * macOS main thread after changes settle. Coalesces a burst of per-frame
+     * change notifications into one debounced run; see the field comment above.
      */
     fun scheduleA11ySync(block: () -> Unit) {
-        if (a11ySyncScheduled != null) return
-        val r =
-            Runnable {
-                a11ySyncScheduled = null
-                block()
-            }
-        a11ySyncScheduled = r
-        flushingDispatcher.enqueue(r)
-        window.requestRedraw()
+        a11yPendingBlock = block
+        val now = System.nanoTime()
+        if (a11yFirstRequestNs == 0L) a11yFirstRequestNs = now
+        val waitedMs = (now - a11yFirstRequestNs) / 1_000_000L
+        val delayMs = if (waitedMs >= A11Y_SYNC_MAX_WAIT_MS) 0L else A11Y_SYNC_DEBOUNCE_MS
+        a11yFuture?.cancel(false)
+        a11yFuture =
+            a11yScheduler.schedule(
+                {
+                    val b = a11yPendingBlock
+                    a11yPendingBlock = null
+                    a11yFirstRequestNs = 0L
+                    if (b != null) {
+                        // Hop to the Tao main thread — the walk touches Compose state.
+                        flushingDispatcher.enqueue(Runnable { b() })
+                        window.requestRedraw()
+                    }
+                },
+                delayMs,
+                TimeUnit.MILLISECONDS,
+            )
     }
 
     // Per-popup render callbacks invoked during this host's own redraw
@@ -823,6 +867,13 @@ internal class TaoComposeSceneHost(
                     popupRenderers[token]?.invoke()
                 }
             }
+        }
+
+        // Keep rendering at the display rate while the scene still has pending
+        // animation/invalidation work (e.g. a scroll fling): proactively re-arm
+        // the next vsync so we render every refresh instead of every other one.
+        if (attachmentHandle != 0L && scene?.hasInvalidations() == true) {
+            NativeMetalBridge.nativeMarkFramePending(attachmentHandle)
         }
     }
 
@@ -1173,16 +1224,31 @@ internal class TaoComposeSceneHost(
 
         private const val DEGREES_PER_RADIAN: Float = 180f
         private const val MIN_GESTURE_SCALE: Float = 0.05f
+
+        // A11y debounce: run the SemanticsOwner walk ~this long after the last
+        // change (so a scroll's per-frame change burst collapses to one walk
+        // once it settles), but never wait longer than the max so assistive
+        // tech still sees periodic refreshes during sustained scrolling.
+        private const val A11Y_SYNC_DEBOUNCE_MS: Long = 120L
+        private const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
     }
 
     fun detach() {
+        a11yFuture?.cancel(false)
+        a11yScheduler.shutdownNow()
         textToolbar.hide()
         scene?.close()
         scene = null
         directContext?.close()
         directContext = null
         if (attachmentHandle != 0L) {
-            NativeMetalBridge.nativeDetach(attachmentHandle)
+            val h = attachmentHandle
+            // Stop the CVDisplayLink first (synchronous: blocks until any
+            // in-flight callback returns) and drop the sink before detaching, so
+            // no vsync callback can route to a closed scene / freed attachment.
+            NativeMetalBridge.nativeStopDisplayLink(h)
+            NativeMetalBridge.unregisterVsyncSink(h)
+            NativeMetalBridge.nativeDetach(h)
             attachmentHandle = 0L
         }
         if (nsViewHandle != 0L) {

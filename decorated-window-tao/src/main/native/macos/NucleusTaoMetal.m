@@ -15,6 +15,8 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Metal/Metal.h>
+#import <CoreVideo/CoreVideo.h>
+#import <mach/mach_time.h>
 #import <objc/runtime.h>
 #import <stdatomic.h>
 #import <stdio.h>
@@ -103,6 +105,7 @@ static void removeMenuBarMonitor(NSWindow *window);
 static JavaVM *sMetalJVM = NULL;
 static jclass sMetalBridgeClass = NULL;       // global ref
 static jmethodID sMetalOnOffsetChanged = NULL;
+static jmethodID sMetalOnVsync = NULL;        // onDisplayLinkVsync(long)
 static atomic_bool sMetalCallbacksEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool sMetalShutdownInProgress = ATOMIC_VAR_INIT(false);
 
@@ -117,9 +120,35 @@ static void ensureMetalJVMCached(JNIEnv *env) {
             (*env)->DeleteLocalRef(env, local);
             sMetalOnOffsetChanged = (*env)->GetStaticMethodID(
                 env, sMetalBridgeClass, "onMenuBarOffsetChanged", "(JF)V");
+            sMetalOnVsync = (*env)->GetStaticMethodID(
+                env, sMetalBridgeClass, "onDisplayLinkVsync", "(J)V");
             atomic_store(&sMetalCallbacksEnabled, true);
         }
     });
+}
+
+// Calls NativeMetalBridge.onDisplayLinkVsync(handle) from the CoreVideo display
+// link thread. Attaches that thread to the JVM as a daemon on first call (never
+// detaches). Only invoked when a frame is pending.
+static void notifyDisplayLinkVsync(jlong handle) {
+    if (!atomic_load(&sMetalCallbacksEnabled)) return;
+    if (!sMetalJVM || !sMetalBridgeClass || !sMetalOnVsync) return;
+
+    JNIEnv *env = NULL;
+    jint status = (*sMetalJVM)->GetEnv(sMetalJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sMetalJVM)->AttachCurrentThreadAsDaemon(sMetalJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
+    }
+    if (!env || !atomic_load(&sMetalCallbacksEnabled)) return;
+
+    (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnVsync, handle);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
 }
 
 // Calls NativeMetalBridge.onMenuBarOffsetChanged(nsViewPtr, offset).
@@ -174,9 +203,49 @@ typedef struct {
     // Read by the Kotlin layer (via nativeIsFullscreen) so it can hide its
     // custom Compose title bar — AppKit auto-shows its own native one.
     atomic_int is_fullscreen;
+    // VSync-paced rendering (see Java_..._nativeStartDisplayLink). The display
+    // link fires once per refresh on a dedicated CoreVideo thread; it wakes the
+    // JVM to render ONLY when `frame_pending` is set (by nativeMarkFramePending,
+    // the Compose `invalidate` path). Pacing the render to the display refresh
+    // gives a smooth, regularly-presented scroll vs the event-loop-driven path.
+    CVDisplayLinkRef displayLink; // NULL until started
+    atomic_int frame_pending;     // 1 when Compose has invalidated since last frame
+    // Mach host-time of the next display refresh, captured by the display-link
+    // callback and consumed by nativePresent to pace the present to the
+    // upcoming vsync (presentDrawable:atTime:), so 1 present == 1 vsync.
+    _Atomic uint64_t next_present_host_time;
 } NucleusTaoMetalAttachment;
 
 #define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
+
+// Converts a CVTimeStamp mach host-time to the CACurrentMediaTime() seconds base
+// expected by -[MTLCommandBuffer presentDrawable:atTime:].
+static double hostTimeToSeconds(uint64_t hostTime) {
+    static mach_timebase_info_data_t tb;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ mach_timebase_info(&tb); });
+    if (hostTime == 0 || tb.denom == 0) return 0.0;
+    return (double) hostTime * (double) tb.numer / (double) tb.denom / 1.0e9;
+}
+
+static CVReturn taoDisplayLinkCallback(
+        CVDisplayLinkRef displayLink,
+        const CVTimeStamp *now,
+        const CVTimeStamp *outputTime,
+        CVOptionFlags flagsIn,
+        CVOptionFlags *flagsOut,
+        void *context) {
+    (void) displayLink; (void) now; (void) flagsIn; (void) flagsOut;
+    NucleusTaoMetalAttachment *att = (NucleusTaoMetalAttachment *) context;
+    if (att == NULL) return kCVReturnSuccess;
+    if (outputTime != NULL && (outputTime->flags & kCVTimeStampHostTimeValid)) {
+        atomic_store(&att->next_present_host_time, outputTime->hostTime);
+    }
+    if (atomic_exchange(&att->frame_pending, 0) == 1) {
+        notifyDisplayLinkVsync((jlong)(uintptr_t) att);
+    }
+    return kCVReturnSuccess;
+}
 
 static NSColor *colorFromArgb(jint argb) {
     uint32_t v = (uint32_t)argb;
@@ -1237,6 +1306,15 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeDetach(
         JNIEnv *env, jclass clazz, jlong handle) {
     if (handle == 0) return;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    // Stop the display link before freeing `att`: CVDisplayLinkStop is
+    // synchronous (blocks until any in-flight callback returns), so the
+    // callback can never run against the freed attachment.
+    if (att->displayLink != NULL) {
+        CVDisplayLinkRef link = att->displayLink;
+        att->displayLink = NULL;
+        CVDisplayLinkStop(link);
+        CVDisplayLinkRelease(link);
+    }
     NSWindow *win = att->view.window;
     att->layer  = nil;
     att->device = nil;
@@ -1340,8 +1418,57 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativePresent(
         (void *)(uintptr_t) drawablePtr;
 
     id<MTLCommandBuffer> commandBuffer = [att->queue commandBuffer];
-    [commandBuffer presentDrawable:drawable];
+    // Pace the present to the upcoming vsync recorded by the display-link
+    // callback so exactly one present lands per refresh. Falls back to an
+    // untimed present if the display link isn't running yet (first frame / resize).
+    double presentTime = hostTimeToSeconds(atomic_load(&att->next_present_host_time));
+    if (presentTime > 0.0) {
+        [commandBuffer presentDrawable:drawable atTime:presentTime];
+    } else {
+        [commandBuffer presentDrawable:drawable];
+    }
     [commandBuffer commit];
+}
+
+// ── VSync-paced rendering via CVDisplayLink ──────────────────────────────
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeMarkFramePending(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    (void) env; (void) clazz;
+    if (handle == 0) return;
+    atomic_store(&HANDLE_OF(handle)->frame_pending, 1);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeStartDisplayLink(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    (void) clazz;
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    if (att->displayLink != NULL) return; // already running
+    ensureMetalJVMCached(env);
+
+    CVDisplayLinkRef link = NULL;
+    if (CVDisplayLinkCreateWithActiveCGDisplays(&link) != kCVReturnSuccess || link == NULL) {
+        return;
+    }
+    CVDisplayLinkSetOutputCallback(link, taoDisplayLinkCallback, att);
+    att->displayLink = link;
+    CVDisplayLinkStart(link);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeStopDisplayLink(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    (void) env; (void) clazz;
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    CVDisplayLinkRef link = att->displayLink;
+    if (link == NULL) return;
+    att->displayLink = NULL;
+    CVDisplayLinkStop(link);
+    CVDisplayLinkRelease(link);
 }
 
 /* Toggles CAMetalLayer.presentsWithTransaction. With the flag ON, the

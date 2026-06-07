@@ -63,6 +63,7 @@ COMMON_FLAGS=(
     -framework Cocoa
     -framework QuartzCore
     -framework Metal
+    -framework CoreVideo
     -mmacosx-version-min=10.15
     -fobjc-arc
     -Oz
