@@ -208,11 +208,21 @@ typedef struct {
     // JVM to render ONLY when `frame_pending` is set (by nativeMarkFramePending,
     // the Compose `invalidate` path). Pacing the render to the display refresh
     // gives a smooth, regularly-presented scroll vs the event-loop-driven path.
-    CVDisplayLinkRef displayLink; // NULL until started
+    //
+    // Threading discipline: `displayLink` is created/started/stopped/released
+    // ONLY on the Tao main thread (nativeStartDisplayLink / nativeStopDisplayLink
+    // / nativeDetach — all called from the Kotlin host, which runs on that
+    // thread), so it needs no atomic/lock. The CoreVideo callback runs on its
+    // own thread and must touch ONLY the atomic fields below — never
+    // `displayLink` (CVDisplayLinkStop is synchronous, so no callback is in
+    // flight once stop returns).
+    CVDisplayLinkRef displayLink; // NULL until started — main-thread access only
     atomic_int frame_pending;     // 1 when Compose has invalidated since last frame
-    // Mach host-time of the next display refresh, captured by the display-link
-    // callback and consumed by nativePresent to pace the present to the
-    // upcoming vsync (presentDrawable:atTime:), so 1 present == 1 vsync.
+    // Mach host-time of the display refresh this frame targets, captured by the
+    // display-link callback and consumed by nativePresent to pace the present
+    // (presentDrawable:atTime:). It's the predicted *next* vsync, so normally
+    // accurate; if render + the main-thread hop overruns a refresh it ends up in
+    // the past and Metal presents immediately (graceful — not a hard 1:1 vsync).
     _Atomic uint64_t next_present_host_time;
 } NucleusTaoMetalAttachment;
 
