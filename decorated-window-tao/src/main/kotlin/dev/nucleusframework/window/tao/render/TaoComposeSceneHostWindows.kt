@@ -1273,6 +1273,7 @@ internal class TaoComposeSceneHostWindows(
      * notifications into one debounced run; see the field comment above.
      */
     fun scheduleA11ySync(block: () -> Unit) {
+        if (a11yScheduler.isShutdown) return
         a11yPendingBlock = block
         val now = System.nanoTime()
         if (a11yFirstRequestNs == 0L) a11yFirstRequestNs = now
@@ -1280,20 +1281,24 @@ internal class TaoComposeSceneHostWindows(
         val delayMs = if (waitedMs >= A11Y_SYNC_MAX_WAIT_MS) 0L else A11Y_SYNC_DEBOUNCE_MS
         a11yFuture?.cancel(false)
         a11yFuture =
-            a11yScheduler.schedule(
-                {
-                    val b = a11yPendingBlock
-                    a11yPendingBlock = null
-                    a11yFirstRequestNs = 0L
-                    if (b != null) {
-                        // Hop to the render thread — the walk touches Compose state.
-                        flushingDispatcher.enqueue(Runnable { b() })
-                        window.requestRedraw()
-                    }
-                },
-                delayMs,
-                TimeUnit.MILLISECONDS,
-            )
+            try {
+                a11yScheduler.schedule(
+                    {
+                        val b = a11yPendingBlock
+                        a11yPendingBlock = null
+                        a11yFirstRequestNs = 0L
+                        if (b != null) {
+                            // Hop to the render thread — the walk touches Compose state.
+                            flushingDispatcher.enqueue(Runnable { b() })
+                            window.requestRedraw()
+                        }
+                    },
+                    delayMs,
+                    TimeUnit.MILLISECONDS,
+                )
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                null
+            }
     }
 
     fun detach() {
