@@ -494,10 +494,11 @@ internal class TaoComposeSceneHostWindows(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
 
         val value = valueFixed / TRACKPAD_VALUE_SCALE
-        // Wheel notches are coarse (≈±1.0); precision-touchpad ticks are small
-        // fractions. A fixed sensitivity maps both onto a smooth per-tick step;
-        // continuous accumulation across ticks is what crosses the touch slop.
-        val step = (1f + value * PINCH_WHEEL_SENSITIVITY).coerceAtLeast(MIN_PINCH_STEP)
+        // Precision touchpads can deliver many fractional deltas; map the
+        // WHEEL_DELTA-normalized value through a multiplicative curve so small
+        // ticks accumulate smoothly without each message behaving like a large
+        // zoom step.
+        val step = TaoWindowsPinchZoom.stepFromWheelDelta(value)
 
         if (!pinchActive) {
             pinchActive = true
@@ -1321,16 +1322,6 @@ internal class TaoComposeSceneHostWindows(
          * `TRACKPAD_VALUE_FIXED_SCALE` in `events.rs`.
          */
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
-
-        /**
-         * Per-tick zoom step = `1 + delta × sensitivity`. A full mouse notch
-         * (delta ≈ 1) yields ≈1.15× per notch; precision-touchpad ticks send
-         * small deltas that accumulate continuously into a smooth zoom.
-         */
-        private const val PINCH_WHEEL_SENSITIVITY: Float = 0.15f
-
-        /** Floor on the per-tick step so a hard pinch-out can't invert it. */
-        private const val MIN_PINCH_STEP: Float = 0.05f
 
         /** Half-distance of the synthetic two-finger pair at scale 1.0. */
         private const val PINCH_BASE_RADIUS_PX: Float = 120f
