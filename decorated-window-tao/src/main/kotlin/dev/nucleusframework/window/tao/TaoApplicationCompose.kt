@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composition
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.runtime.Recomposer
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -14,8 +15,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.yield
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.system.exitProcess
 
@@ -80,7 +81,12 @@ fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
                         if (scope.isOpen) scope.content()
                     }
                 }
-                while (scope.isOpen) yield()
+                // Suspend until exitApplication() flips isOpen → false. A busy
+                // `while (scope.isOpen) yield()` here re-dispatches this coroutine
+                // onto TaoMainDispatcher every frame, so the pump queue is never
+                // empty and the event loop spins (runaway re-dispatch). snapshotFlow
+                // observes the snapshot-state write and resumes exactly once.
+                snapshotFlow { scope.isOpen }.first { !it }
                 recomposer.close()
                 recomposer.join()
             } finally {

@@ -17,7 +17,5 @@ object TaoDnDDiagnostics {
 
     fun log(msg: String) {
         lastMessage.value = msg
-        System.err.println("[TaoDnD] $msg")
-        System.err.flush()
     }
 }

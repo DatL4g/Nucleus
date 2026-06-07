@@ -115,11 +115,6 @@ internal class TaoComposeSceneHostWindows(
     private val frameClock = BroadcastFrameClock()
     private val flushingDispatcher = FlushingMainDispatcher()
 
-    // Frame-cadence tracing (diagnostic, off by default). Enable with
-    // -Dnucleus.tao.frametrace=true; see [FrameTracer].
-    private val frameTrace = System.getProperty("nucleus.tao.frametrace") == "true"
-    private val frameTracer = FrameTracer()
-
     /**
      * Scope for host-owned timers (currently only the trackpad-pinch idle-end
      * debounce). Runs on [flushingDispatcher] so resumed continuations land on
@@ -246,15 +241,23 @@ internal class TaoComposeSceneHostWindows(
         attachmentHandle = handle
         directContext = ctx ?: error("Failed to create DirectContext for HWND")
         backendIsEgl = NativeTaoGlBridge.nativeBackend(handle) == BACKEND_EGL
-        // One-line diagnostic so the active render path is unambiguous (an EGL
-        // attachment that fell back to WGL would otherwise look identical).
-        System.err.println("[TaoGL] render backend: " + if (backendIsEgl) "ANGLE (Direct3D 11)" else "WGL")
         attachedHostCount.incrementAndGet()
 
-        // Start the presenter. It parks until the first frame's `requestSwap`,
-        // so it never touches the context before the event-loop thread has
-        // released it.
-        swapThread = SwapThread(attachmentHandle).also { it.start() }
+        // Start the presenter — WGL only. It parks until the first frame's
+        // `requestSwap`, so it never touches the context before the event-loop
+        // thread has released it.
+        //
+        // ANGLE/EGL deliberately gets NO swap thread: a cross-thread present on
+        // ANGLE's shared per-display D3D11 device deadlocks the global display
+        // lock — the swap thread blocks inside `eglSwapBuffers` holding the lock
+        // while the event-loop thread's next `eglMakeCurrent` waits on it,
+        // freezing the whole app (seen when a sibling host such as a
+        // DecoratedDialog detaches). With no swap thread, every present runs
+        // inline on the event-loop thread, fully serialised. The off-thread
+        // present only ever mattered for WGL's vsync-blocking `SwapBuffers`
+        // (touchpad-scroll smoothness); ANGLE's `eglSwapBuffers` paces fine
+        // inline.
+        swapThread = if (backendIsEgl) null else SwapThread(attachmentHandle).also { it.start() }
 
         @OptIn(ExperimentalComposeUiApi::class)
         val dndManager =
@@ -844,9 +847,7 @@ internal class TaoComposeSceneHostWindows(
         // still in flight past the timeout (minimised/occluded window), skip
         // this frame; Compose re-arms a redraw on the next invalidation.
         val st = swapThread
-        val waitStart = if (frameTrace) System.nanoTime() else 0L
         if (st != null && !st.waitForIdle()) return
-        val swapWaitNs = if (frameTrace) System.nanoTime() - waitStart else 0L
 
         val ctx = directContext ?: return
         val sc = scene ?: return
@@ -953,24 +954,15 @@ internal class TaoComposeSceneHostWindows(
         // `nativeMakeCurrent`. This thread then returns to the event loop and
         // keeps processing input while the present blocks for the refresh.
         //
-        // EXCEPTION — EGL/ANGLE with a sibling host (e.g. a DecoratedDialog over
-        // the main window): both contexts share one EGLDisplay / D3D11 device.
-        // Presenting host A from its swap thread while the event loop renders
-        // host B makes ANGLE touch that shared device from two threads at once
-        // → a NULL current-context deref inside `flushAndSubmit`. Present inline
-        // in that case so every EGL call stays serialised on the event-loop
-        // thread (Skiko's ANGLE backend likewise never presents off-thread).
-        // Single-host ANGLE keeps the swap thread (smooth-scroll pacing); WGL is
-        // unaffected.
-        if (st != null && !(backendIsEgl && attachedHostCount.get() > 1)) {
+        // ANGLE/EGL has no swap thread (see `attach`), so `st` is null and the
+        // present runs inline below. WGL hands off to the swap thread for the
+        // vsync-blocking `SwapBuffers`.
+        if (st != null) {
             NativeTaoGlBridge.nativeReleaseCurrent(attachmentHandle)
             st.requestSwap()
         } else {
-            // Inline present: swap thread absent, or EGL multi-host (above).
             NativeTaoGlBridge.nativePresent(attachmentHandle)
         }
-
-        if (frameTrace) frameTracer.record(now, swapWaitNs, frameClock.hasAwaiters)
     }
 
     fun onPointerMove(
@@ -1366,65 +1358,6 @@ internal class TaoComposeSceneHostWindows(
                 .concurrent
                 .atomic
                 .AtomicInteger(0)
-    }
-
-    /**
-     * Diagnostic frame-cadence logger (enabled by `-Dnucleus.tao.frametrace=
-     * true`). Logs once per second the real frame interval and the time the
-     * render thread blocks waiting for the previous frame's off-thread
-     * `SwapBuffers` (`swapWait`). A steady fps with near-zero hitches confirms
-     * the smooth-scroll animation is locked to vsync instead of dropping
-     * frames under a touchpad's WM_MOUSEWHEEL flood.
-     */
-    private class FrameTracer {
-        private var lastFrameNanos = 0L
-        private var windowStartNanos = 0L
-        private var frames = 0
-        private var hitches = 0
-        private var intervalMaxNs = 0L
-        private var swapWaitMaxNs = 0L
-        private var swapWaitSumNs = 0L
-
-        fun record(
-            entryNanos: Long,
-            swapWaitNs: Long,
-            animActive: Boolean,
-        ) {
-            if (lastFrameNanos != 0L) {
-                val interval = entryNanos - lastFrameNanos
-                if (interval > intervalMaxNs) intervalMaxNs = interval
-                // Hitch = gap beyond ~1.5 vsync periods at 60 Hz (dropped frame).
-                if (interval > 25_000_000L) hitches++
-                frames++
-                swapWaitSumNs += swapWaitNs
-                if (swapWaitNs > swapWaitMaxNs) swapWaitMaxNs = swapWaitNs
-            }
-            lastFrameNanos = entryNanos
-            if (windowStartNanos == 0L) windowStartNanos = entryNanos
-            val elapsed = entryNanos - windowStartNanos
-            if (elapsed < 1_000_000_000L || frames == 0) return
-            val fps = frames * 1e9 / elapsed
-            val msg =
-                (
-                    "[tao-frametrace] fps=%.1f frames=%d hitches=%d maxGap=%.1fms " +
-                        "swapWait(avg/max)=%.2f/%.2fms animActive=%b"
-                ).format(
-                    fps,
-                    frames,
-                    hitches,
-                    intervalMaxNs / 1e6,
-                    (swapWaitSumNs.toDouble() / frames) / 1e6,
-                    swapWaitMaxNs / 1e6,
-                    animActive,
-                )
-            println(msg)
-            windowStartNanos = entryNanos
-            frames = 0
-            hitches = 0
-            intervalMaxNs = 0L
-            swapWaitMaxNs = 0L
-            swapWaitSumNs = 0L
-        }
     }
 
     /**

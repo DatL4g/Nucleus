@@ -613,7 +613,19 @@ class TaoWindow internal constructor(
                     setStartupBackgroundEraseEnabled(false)
                 }
             }
-            TaoEventCode.FOCUSED -> focusListeners.forEach { it.invoke(true) }
+            TaoEventCode.FOCUSED -> {
+                // A redraw request issued while this window was occluded by a
+                // modal child (e.g. a DecoratedDialog) can be dropped by the OS
+                // with no matching REDRAW_REQUESTED, latching `redrawPending`
+                // true and silently suppressing every future frame until a
+                // manual resize. Regaining focus means we are foreground again:
+                // clear the latch and re-issue so a lost frame can't wedge
+                // rendering. No frame is lost — a genuinely in-flight redraw
+                // just yields one extra, idempotent request.
+                redrawPending.set(false)
+                requestRedraw()
+                focusListeners.forEach { it.invoke(true) }
+            }
             TaoEventCode.UNFOCUSED -> focusListeners.forEach { it.invoke(false) }
             TaoEventCode.MINIMIZED -> {
                 val minimized = a != 0
