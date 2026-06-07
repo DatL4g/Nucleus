@@ -9,12 +9,14 @@ import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import java.awt.Component
 import java.awt.event.InputEvent
 import java.awt.event.MouseWheelEvent
-import javax.swing.JPanel
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal object TaoSyntheticMouseWheelEvent {
-    private val source: Component = JPanel()
+    // Bare Component, never a Swing component: this `val` initialises on the first
+    // scroll ON THE TAO MAIN THREAD (GTK/GLX loop). A `JPanel` would run the Swing
+    // L&F / toolkit init there and deadlock the app. See [TaoSyntheticKey].
+    private val source: Component = object : Component() {}
 
     fun create(
         event: TaoPointerScrollEvent,

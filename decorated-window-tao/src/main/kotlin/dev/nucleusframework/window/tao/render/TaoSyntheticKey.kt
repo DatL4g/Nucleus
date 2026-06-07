@@ -9,7 +9,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.scene.ComposeScene
 import java.awt.Component
 import java.awt.event.InputEvent
-import javax.swing.JPanel
 
 /**
  * Builds the Compose [KeyEvent] for a physical key press/release.
@@ -133,5 +132,15 @@ internal fun Int.isPrintableTextInput(
  * AWT requires a non-null `Component` as the source of every key event.
  * The instance is never shown and never receives the event back — it's
  * a placeholder so the constructor doesn't NPE.
+ *
+ * MUST be a bare [Component], NOT a Swing component (e.g. `JPanel`). This `val`
+ * is initialised lazily on the first key event, ON THE TAO MAIN THREAD that owns
+ * the GTK/GLX event loop. A `JPanel` runs `JComponent.updateUI()` → the GTK Swing
+ * Look&Feel (`GTKStyle.nativeGetXThickness`, a GTK/Xlib call) — or, under
+ * native-image with the Metal L&F, the `Toolkit`/fontmanager init — re-entering
+ * GTK/AWT on the loop thread and DEADLOCKING the whole app on the first keystroke.
+ * A bare `Component` has no UI delegate and touches neither the L&F nor the
+ * toolkit. See [dev.nucleusframework.window.tao.TaoLinuxUriHandler] for the same
+ * "AWT init deadlocks the Tao loop" hazard.
  */
-internal val SyntheticAwtKeyEventSource: Component = JPanel()
+internal val SyntheticAwtKeyEventSource: Component = object : Component() {}

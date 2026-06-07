@@ -7,7 +7,6 @@ import java.awt.dnd.DropTarget
 import java.awt.dnd.DropTargetContext
 import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
-import javax.swing.JPanel
 
 /**
  * Synthetic AWT drag-and-drop events for the Tao backend.
@@ -28,16 +27,20 @@ import javax.swing.JPanel
  * [DropTargetDropEvent] subclass whose [getTransferable] is overridden to
  * return our [TaoFilesTransferable] adapter. AWT's class hierarchy requires a
  * real [DropTargetContext] in the constructor — we pin a single shadow
- * `JPanel`/`DropTarget` pair that is never displayed, mirroring the pattern
+ * `Component`/`DropTarget` pair that is never displayed, mirroring the pattern
  * already used elsewhere in the backend (e.g. the `KEY_TYPED` synthetic
  * `KeyEvent` source).
+ *
+ * The shadow MUST be a bare [java.awt.Component], never a Swing component: it is
+ * created lazily on the first drag ON THE TAO MAIN THREAD (GTK/GLX loop), where a
+ * `JPanel`'s Swing L&F / toolkit init would deadlock the app. See [TaoSyntheticKey].
  *
  * The synthetic events also carry the [TaoDragAndDropPayload] directly via
  * [TaoSyntheticDropEvent.payload] / [TaoSyntheticDragEvent.payload] so a
  * non-AWT consumer can pattern-match without invoking the toolkit at all.
  */
 internal object TaoSyntheticDropContext {
-    private val shadowComponent: java.awt.Component = JPanel()
+    private val shadowComponent: java.awt.Component = object : java.awt.Component() {}
     private val shadowDropTarget: DropTarget =
         DropTarget(
             shadowComponent,
