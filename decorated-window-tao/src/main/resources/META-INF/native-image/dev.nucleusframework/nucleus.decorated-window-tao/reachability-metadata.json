@@ -137,12 +137,6 @@
                         "long",
                         "float"
                     ]
-                },
-                {
-                    "name": "onDisplayLinkVsync",
-                    "parameterTypes": [
-                        "long"
-                    ]
                 }
             ]
         },

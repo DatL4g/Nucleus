@@ -235,15 +235,12 @@ internal class TaoComposeSceneHost(
         require(handle != 0L) { "Failed to attach CAMetalLayer to NSView" }
         attachmentHandle = handle
 
-        // VSync-paced rendering: a CVDisplayLink wakes us once per display
-        // refresh (only when `invalidate` marked a frame pending) to render one
-        // frame on the Tao main thread, present-timed to the vsync. Gives a
-        // smooth, regularly-presented scroll vs the raw event-loop redraw path.
-        NativeMetalBridge.registerVsyncSink(handle) {
-            // Runs on the CVDisplayLink thread — hop to the Tao main thread.
-            TaoMainDispatcher.dispatch(EmptyCoroutineContext) { onRedrawRequested() }
-        }
+        // Render loop, AWT/skiko MetalVSyncer pattern: a FrameDispatcher
+        // (coalescing) drives one frame per `invalidate`; each frame renders then
+        // `waitForVSync()` (CVDisplayLink-backed, suspends — Tao loop stays free)
+        // to pace to the display. Replaces the push-triggered display-link model.
         NativeMetalBridge.nativeStartDisplayLink(handle)
+        startRenderLoop(handle)
 
         val devicePtr = NativeMetalBridge.nativeDevicePtr(handle)
         val queuePtr = NativeMetalBridge.nativeQueuePtr(handle)
@@ -304,9 +301,9 @@ internal class TaoComposeSceneHost(
                 coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                 platformContext = taoPlatformContext,
                 invalidate = {
-                    // Mark a frame pending; the CVDisplayLink renders it at the
-                    // next vsync (see registerVsyncSink above).
-                    NativeMetalBridge.nativeMarkFramePending(attachmentHandle)
+                    // Schedule a frame on the render loop (coalesced); it renders
+                    // then waits for the next vsync. See startRenderLoop.
+                    frameDispatcher?.scheduleFrame()
                 },
             ).apply { compositionLocalContext = pendingCompositionLocalContext }
 
@@ -868,13 +865,9 @@ internal class TaoComposeSceneHost(
                 }
             }
         }
-
-        // Keep rendering at the display rate while the scene still has pending
-        // animation/invalidation work (e.g. a scroll fling): proactively re-arm
-        // the next vsync so we render every refresh instead of every other one.
-        if (attachmentHandle != 0L && scene?.hasInvalidations() == true) {
-            NativeMetalBridge.nativeMarkFramePending(attachmentHandle)
-        }
+        // The render loop continues via the scene's `invalidate` →
+        // frameDispatcher.scheduleFrame() (fired by withFrameNanos animations
+        // during render), so no explicit re-arm is needed here.
     }
 
     // [aFixed] / [bFixed] are physical pixels × 1024 (see `CURSOR_FIXED_SCALE`).
@@ -1233,9 +1226,37 @@ internal class TaoComposeSceneHost(
         private const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
     }
 
+    // ── VSync-paced render loop (AWT/skiko MetalVSyncer pattern) ──
+    private var frameDispatcher: org.jetbrains.skiko.FrameDispatcher? = null
+    private val renderLoopJob = kotlinx.coroutines.SupervisorJob()
+
+    /**
+     * Starts the FrameDispatcher render loop. `invalidate` schedules a frame;
+     * each frame renders then waits for the next display refresh (CVDisplayLink),
+     * which suspends — keeping the Tao main loop free for input between frames.
+     */
+    private fun startRenderLoop(handle: Long) {
+        val scope =
+            kotlinx.coroutines.CoroutineScope(coroutineContext + TaoMainDispatcher + renderLoopJob)
+        frameDispatcher =
+            org.jetbrains.skiko.FrameDispatcher(scope) {
+                if (scene != null) onRedrawRequested()
+                if (attachmentHandle != 0L) {
+                    // Park a background thread on the vsync semaphore (suspends
+                    // this coroutine; the Tao main loop keeps pumping meanwhile).
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        NativeMetalBridge.nativeVSyncWait(handle)
+                    }
+                }
+            }
+    }
+
     fun detach() {
         a11yFuture?.cancel(false)
         a11yScheduler.shutdownNow()
+        frameDispatcher?.cancel()
+        frameDispatcher = null
+        renderLoopJob.cancel()
         textToolbar.hide()
         scene?.close()
         scene = null
@@ -1243,11 +1264,9 @@ internal class TaoComposeSceneHost(
         directContext = null
         if (attachmentHandle != 0L) {
             val h = attachmentHandle
-            // Stop the CVDisplayLink first (synchronous: blocks until any
-            // in-flight callback returns) and drop the sink before detaching, so
-            // no vsync callback can route to a closed scene / freed attachment.
+            // Stop the CVDisplayLink (synchronous: no callback in flight after
+            // this; also wakes any parked waitForVSync) before detaching.
             NativeMetalBridge.nativeStopDisplayLink(h)
-            NativeMetalBridge.unregisterVsyncSink(h)
             NativeMetalBridge.nativeDetach(h)
             attachmentHandle = 0L
         }

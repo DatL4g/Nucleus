@@ -105,7 +105,6 @@ static void removeMenuBarMonitor(NSWindow *window);
 static JavaVM *sMetalJVM = NULL;
 static jclass sMetalBridgeClass = NULL;       // global ref
 static jmethodID sMetalOnOffsetChanged = NULL;
-static jmethodID sMetalOnVsync = NULL;        // onDisplayLinkVsync(long)
 static atomic_bool sMetalCallbacksEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool sMetalShutdownInProgress = ATOMIC_VAR_INIT(false);
 
@@ -120,35 +119,9 @@ static void ensureMetalJVMCached(JNIEnv *env) {
             (*env)->DeleteLocalRef(env, local);
             sMetalOnOffsetChanged = (*env)->GetStaticMethodID(
                 env, sMetalBridgeClass, "onMenuBarOffsetChanged", "(JF)V");
-            sMetalOnVsync = (*env)->GetStaticMethodID(
-                env, sMetalBridgeClass, "onDisplayLinkVsync", "(J)V");
             atomic_store(&sMetalCallbacksEnabled, true);
         }
     });
-}
-
-// Calls NativeMetalBridge.onDisplayLinkVsync(handle) from the CoreVideo display
-// link thread. Attaches that thread to the JVM as a daemon on first call (never
-// detaches). Only invoked when a frame is pending.
-static void notifyDisplayLinkVsync(jlong handle) {
-    if (!atomic_load(&sMetalCallbacksEnabled)) return;
-    if (!sMetalJVM || !sMetalBridgeClass || !sMetalOnVsync) return;
-
-    JNIEnv *env = NULL;
-    jint status = (*sMetalJVM)->GetEnv(sMetalJVM, (void **)&env, JNI_VERSION_1_8);
-    if (status == JNI_EDETACHED) {
-        if ((*sMetalJVM)->AttachCurrentThreadAsDaemon(sMetalJVM, (void **)&env, NULL) != JNI_OK) {
-            return;
-        }
-    } else if (status != JNI_OK) {
-        return;
-    }
-    if (!env || !atomic_load(&sMetalCallbacksEnabled)) return;
-
-    (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnVsync, handle);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
 }
 
 // Calls NativeMetalBridge.onMenuBarOffsetChanged(nsViewPtr, offset).
@@ -203,26 +176,27 @@ typedef struct {
     // Read by the Kotlin layer (via nativeIsFullscreen) so it can hide its
     // custom Compose title bar — AppKit auto-shows its own native one.
     atomic_int is_fullscreen;
-    // VSync-paced rendering (see Java_..._nativeStartDisplayLink). The display
-    // link fires once per refresh on a dedicated CoreVideo thread; it wakes the
-    // JVM to render ONLY when `frame_pending` is set (by nativeMarkFramePending,
-    // the Compose `invalidate` path). Pacing the render to the display refresh
-    // gives a smooth, regularly-presented scroll vs the event-loop-driven path.
+    // VSync pacing — the AWT/skiko MetalVSyncer pattern. A CVDisplayLink runs
+    // continuously and, on each refresh, signals `vsyncSem` IF a waiter armed
+    // `vsyncWaiting`. `nativeVSyncWait` arms the flag then blocks on the
+    // semaphore, so it returns on the *next* refresh after the call (not a
+    // queued/stale one). The render loop (Kotlin FrameDispatcher) calls
+    // waitForVSync after presenting to pace itself to the display.
     //
-    // Threading discipline: `displayLink` is created/started/stopped/released
-    // ONLY on the Tao main thread (nativeStartDisplayLink / nativeStopDisplayLink
-    // / nativeDetach — all called from the Kotlin host, which runs on that
-    // thread), so it needs no atomic/lock. The CoreVideo callback runs on its
-    // own thread and must touch ONLY the atomic fields below — never
-    // `displayLink` (CVDisplayLinkStop is synchronous, so no callback is in
-    // flight once stop returns).
-    CVDisplayLinkRef displayLink; // NULL until started — main-thread access only
-    atomic_int frame_pending;     // 1 when Compose has invalidated since last frame
+    // Threading discipline: `displayLink`/`vsyncSem` are created/destroyed ONLY
+    // on the Tao main thread (nativeStartDisplayLink / nativeStopDisplayLink /
+    // nativeDetach). The CoreVideo callback runs on its own thread and touches
+    // ONLY the atomics + signals the semaphore — never `displayLink`
+    // (CVDisplayLinkStop is synchronous, so no callback is in flight once it
+    // returns). `nativeVSyncWait` may be called from any (background) thread.
+    CVDisplayLinkRef displayLink;     // NULL until started — main-thread lifecycle only
+    dispatch_semaphore_t vsyncSem;    // signaled by the CV callback when armed
+    atomic_bool vsyncWaiting;         // a waiter is parked in nativeVSyncWait
     // Mach host-time of the display refresh this frame targets, captured by the
     // display-link callback and consumed by nativePresent to pace the present
     // (presentDrawable:atTime:). It's the predicted *next* vsync, so normally
-    // accurate; if render + the main-thread hop overruns a refresh it ends up in
-    // the past and Metal presents immediately (graceful — not a hard 1:1 vsync).
+    // accurate; if render + present overruns a refresh it ends up in the past
+    // and Metal presents immediately (graceful — not a hard 1:1 vsync).
     _Atomic uint64_t next_present_host_time;
 } NucleusTaoMetalAttachment;
 
@@ -251,8 +225,10 @@ static CVReturn taoDisplayLinkCallback(
     if (outputTime != NULL && (outputTime->flags & kCVTimeStampHostTimeValid)) {
         atomic_store(&att->next_present_host_time, outputTime->hostTime);
     }
-    if (atomic_exchange(&att->frame_pending, 0) == 1) {
-        notifyDisplayLinkVsync((jlong)(uintptr_t) att);
+    // Wake a parked waitForVSync, if any. Disarm first so we signal at most once
+    // per arm (waitForVSync re-arms on its next call).
+    if (atomic_exchange(&att->vsyncWaiting, false)) {
+        if (att->vsyncSem != NULL) dispatch_semaphore_signal(att->vsyncSem);
     }
     return kCVReturnSuccess;
 }
@@ -1325,6 +1301,13 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeDetach(
         CVDisplayLinkStop(link);
         CVDisplayLinkRelease(link);
     }
+    // Wake any parked vsync waiter and release the semaphore (ARC frees the
+    // dispatch object when the strong field is cleared).
+    if (att->vsyncSem != NULL) {
+        atomic_store(&att->vsyncWaiting, false);
+        dispatch_semaphore_signal(att->vsyncSem);
+        att->vsyncSem = NULL;
+    }
     NSWindow *win = att->view.window;
     att->layer  = nil;
     att->device = nil;
@@ -1442,27 +1425,37 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativePresent(
 
 // ── VSync-paced rendering via CVDisplayLink ──────────────────────────────
 
+// Blocks the calling (background) thread until the NEXT display refresh after
+// this call. The AWT/skiko MetalVSyncer pattern: arm the flag, then park on the
+// semaphore; the CVDisplayLink callback disarms + signals on the next refresh.
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeMarkFramePending(
+Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeVSyncWait(
         JNIEnv *env, jclass clazz, jlong handle) {
     (void) env; (void) clazz;
     if (handle == 0) return;
-    atomic_store(&HANDLE_OF(handle)->frame_pending, 1);
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    if (att->displayLink == NULL || att->vsyncSem == NULL) return; // not running → don't block
+    atomic_store(&att->vsyncWaiting, true);
+    // Bounded wait (2 refreshes @ ~16.7ms) so a paused link (occluded/minimised
+    // window stops firing) can't deadlock the render loop.
+    dispatch_semaphore_wait(att->vsyncSem,
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(34 * NSEC_PER_MSEC)));
+    atomic_store(&att->vsyncWaiting, false);
 }
 
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeStartDisplayLink(
         JNIEnv *env, jclass clazz, jlong handle) {
-    (void) clazz;
+    (void) env; (void) clazz;
     if (handle == 0) return;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
     if (att->displayLink != NULL) return; // already running
-    ensureMetalJVMCached(env);
 
     CVDisplayLinkRef link = NULL;
     if (CVDisplayLinkCreateWithActiveCGDisplays(&link) != kCVReturnSuccess || link == NULL) {
         return;
     }
+    if (att->vsyncSem == NULL) att->vsyncSem = dispatch_semaphore_create(0);
     CVDisplayLinkSetOutputCallback(link, taoDisplayLinkCallback, att);
     att->displayLink = link;
     CVDisplayLinkStart(link);
@@ -1477,8 +1470,14 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeStopDisplayLink(
     CVDisplayLinkRef link = att->displayLink;
     if (link == NULL) return;
     att->displayLink = NULL;
-    CVDisplayLinkStop(link);
+    CVDisplayLinkStop(link);   // synchronous: no callback in flight after this
     CVDisplayLinkRelease(link);
+    // Wake any parked waiter so it doesn't hang on the now-dead link.
+    if (att->vsyncSem != NULL) {
+        atomic_store(&att->vsyncWaiting, false);
+        dispatch_semaphore_signal(att->vsyncSem);
+        att->vsyncSem = NULL;
+    }
 }
 
 /* Toggles CAMetalLayer.presentsWithTransaction. With the flag ON, the

@@ -62,46 +62,28 @@ internal object NativeMetalBridge {
         menuBarOffsetFlows.getOrPut(nsViewPtr) { MutableStateFlow(0f) }.value = offset
     }
 
-    // ── VSync-paced rendering (CVDisplayLink) ──
+    // ── VSync pacing (CVDisplayLink, AWT/skiko MetalVSyncer pattern) ──
     //
-    // A CVDisplayLink fires once per display refresh on a dedicated CoreVideo
-    // thread and calls [onDisplayLinkVsync] — but only when Compose has marked a
-    // frame pending via [nativeMarkFramePending] (the scene's `invalidate`
-    // path). The registered sink schedules the actual render onto the Tao main
-    // thread. Pacing render to the refresh gives a smooth, regularly-presented
-    // scroll. Keyed by attachment handle.
+    // A CVDisplayLink runs continuously; [nativeVSyncWait] blocks the calling
+    // (background) thread until the next refresh. The render loop's
+    // [MetalVSyncer.waitForVSync] calls it after presenting to pace itself to
+    // the display — instead of being push-triggered by the link.
 
-    private val vsyncSinks = ConcurrentHashMap<Long, () -> Unit>()
-
-    fun registerVsyncSink(
-        handle: Long,
-        sink: () -> Unit,
-    ) {
-        if (handle != 0L) vsyncSinks[handle] = sink
-    }
-
-    fun unregisterVsyncSink(handle: Long) {
-        vsyncSinks.remove(handle)
-    }
-
-    // Called from the CVDisplayLink thread (attached to the JVM as a daemon).
-    // Must NOT render here — only schedule onto the Tao main thread.
-    @JvmStatic
-    fun onDisplayLinkVsync(handle: Long) {
-        vsyncSinks[handle]?.invoke()
-    }
-
-    /** Start the per-window CVDisplayLink that paces rendering to vsync. */
+    /** Start the per-window CVDisplayLink + its vsync semaphore. */
     @JvmStatic
     external fun nativeStartDisplayLink(handle: Long)
 
-    /** Stop and release the window's CVDisplayLink. */
+    /** Stop and release the window's CVDisplayLink + semaphore. */
     @JvmStatic
     external fun nativeStopDisplayLink(handle: Long)
 
-    /** Mark that Compose invalidated; the next display-link tick renders. */
+    /**
+     * Block until the next display refresh after this call. Must be invoked off
+     * the Tao main thread (it parks the thread). Bounded (~2 refreshes) so a
+     * paused link can't deadlock the loop.
+     */
     @JvmStatic
-    external fun nativeMarkFramePending(handle: Long)
+    external fun nativeVSyncWait(handle: Long)
 
     /**
      * Attaches a fresh `CAMetalLayer` to the given NSView and creates a Metal
