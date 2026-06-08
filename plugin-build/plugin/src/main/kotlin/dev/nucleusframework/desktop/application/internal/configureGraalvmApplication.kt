@@ -638,6 +638,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedMarch = graalvm.march.get()
             val resolvedImageName = imageName.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
+            val resolvedMacOsMinVersion =
+                if (currentOS == OS.MacOS) graalvm.macOS.minimumSystemVersion.get() else null
             val resolvedStubObj =
                 if (currentOS == OS.MacOS && compileStubs != null) {
                     appTmpDir
@@ -669,6 +671,23 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         add("-o")
                         add(File(outputDir, resolvedImageName).absolutePath)
                         add("-march=$resolvedMarch")
+
+                        // macOS: force the link-time deployment target. native-image does NOT
+                        // propagate MACOSX_DEPLOYMENT_TARGET to its internal linker, so the link
+                        // otherwise defaults to the build SDK (e.g. 26.0). The static linker uses
+                        // that target to resolve `$ld$previous$` symbols — classes Apple moved
+                        // between dylibs across OS versions. `_OBJC_CLASS_$_NSPort` moved
+                        // Foundation→CoreFoundation at macOS 13.0, so a ≥13.0 link binds it to
+                        // CoreFoundation. vtool later patches minos down to this value, producing a
+                        // binary that claims minos 12.0 but whose symbols resolve for ≥13.0 — it
+                        // crashes on macOS 12.x with:
+                        //   dyld: Symbol not found: _OBJC_CLASS_$_NSPort  Expected in: CoreFoundation
+                        // Pinning the link target to minimumSystemVersion keeps symbol bindings in
+                        // sync with the advertised minimum. (Liquid Glass is unaffected: the sdk
+                        // field is set separately by the vtool patch.)
+                        if (resolvedMacOsMinVersion != null) {
+                            add("-H:NativeLinkerOption=-mmacosx-version-min=$resolvedMacOsMinVersion")
+                        }
 
                         // macOS: link C stubs
                         if (resolvedStubObj != null) {
