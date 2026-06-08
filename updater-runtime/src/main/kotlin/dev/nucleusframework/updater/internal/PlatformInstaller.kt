@@ -1,6 +1,5 @@
 package dev.nucleusframework.updater.internal
 
-import dev.nucleusframework.core.runtime.AppRestarter
 import dev.nucleusframework.core.runtime.Platform
 import java.io.File
 import kotlin.system.exitProcess
@@ -109,7 +108,7 @@ internal object PlatformInstaller {
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher =
-            AppRestarter.linuxLauncher()
+            resolveLinuxLauncher()
                 ?: error("Cannot resolve application launcher from java.home")
 
         val installCmd =
@@ -165,6 +164,19 @@ internal object PlatformInstaller {
             .start()
     }
 
+    /**
+     * Resolves the jpackage launcher on Linux.
+     * jpackage structure: /opt/<app>/bin/<Launcher> with java.home = /opt/<app>/lib/runtime
+     */
+    private fun resolveLinuxLauncher(): File? {
+        val javaHome = System.getProperty("java.home") ?: return null
+        // java.home = /opt/<app>/lib/runtime → parent = lib → parent = /opt/<app>
+        val appRoot = File(javaHome).parentFile?.parentFile ?: return null
+        val binDir = File(appRoot, "bin")
+        if (!binDir.isDirectory) return null
+        return binDir.listFiles()?.firstOrNull { it.canExecute() }
+    }
+
     private fun buildMacInstaller(file: File): ProcessBuilder = ProcessBuilder("open", file.absolutePath)
 
     private fun installMacZip(
@@ -172,7 +184,7 @@ internal object PlatformInstaller {
         restart: Boolean,
     ) {
         val appBundle =
-            AppRestarter.macAppBundle()
+            resolveCurrentAppBundle()
                 ?: error("Cannot resolve current .app bundle from java.home")
         val installDir = appBundle.parentFile
         val appName = appBundle.name
@@ -233,13 +245,23 @@ internal object PlatformInstaller {
         // exitProcess(0) is called by install() right after this returns
     }
 
+    private fun resolveCurrentAppBundle(): File? {
+        val javaHome = System.getProperty("java.home") ?: return null
+        var dir = File(javaHome)
+        while (dir.parentFile != null) {
+            if (dir.name.endsWith(".app")) return dir
+            dir = dir.parentFile
+        }
+        return null
+    }
+
     private fun installWindows(
         file: File,
         extension: String,
         restart: Boolean,
     ) {
         val pid = ProcessHandle.current().pid()
-        val launcher = AppRestarter.windowsLauncher()
+        val launcher = resolveWindowsLauncher()
         val installerCmd =
             when (extension) {
                 "msi" -> "Start-Process msiexec -ArgumentList '/i', '\"${file.absolutePath}\"', '/passive' -Wait"
@@ -281,5 +303,17 @@ internal object PlatformInstaller {
         ).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
+    }
+
+    /**
+     * Resolves the jpackage launcher on Windows.
+     * jpackage structure: C:\...\<AppName>\<AppName>.exe with java.home = C:\...\<AppName>\runtime
+     */
+    private fun resolveWindowsLauncher(): File? {
+        val javaHome = System.getProperty("java.home") ?: return null
+        // java.home = <install-dir>\runtime → parent = <install-dir>
+        val appRoot = File(javaHome).parentFile ?: return null
+        if (!appRoot.isDirectory) return null
+        return appRoot.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".exe") }
     }
 }
