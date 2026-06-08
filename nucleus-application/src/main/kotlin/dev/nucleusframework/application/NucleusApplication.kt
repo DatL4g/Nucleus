@@ -5,6 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.window.application
 import dev.nucleusframework.application.internal.TaoLauncher
 import dev.nucleusframework.graalvm.GraalVmInitializer
+import java.util.Locale
 
 /**
  * Single entry point for a Nucleus desktop application.
@@ -38,9 +39,27 @@ fun nucleusApplication(
     args: Array<String> = emptyArray(),
     backend: NucleusBackend = NucleusBackend.Auto,
     enableSingleInstance: Boolean = true,
+    defaultLocale: Locale? = null,
     content: @Composable NucleusApplicationScope.() -> Unit,
 ) {
     GraalVmInitializer.initialize()
+
+    // Apply the app-forced locale AFTER initialize(). On native-image macOS,
+    // initialize() recovers the OS UI language into Locale.getDefault() (see
+    // GraalVmInitializer.applyMacOsLocale); applying the app's choice here
+    // guarantees it wins regardless of where the app sat in main(). Compose's
+    // platform text menu (copy/cut/paste/select-all) reads Locale.getDefault()
+    // lazily at first composition, so this must run before any UI is built.
+    if (defaultLocale != null) {
+        Locale.setDefault(defaultLocale)
+        System.setProperty("user.language", defaultLocale.language)
+        if (defaultLocale.country.isNotBlank()) {
+            System.setProperty("user.country", defaultLocale.country)
+        }
+        if (defaultLocale.script.isNotBlank()) {
+            System.setProperty("user.script", defaultLocale.script)
+        }
+    }
 
     if (enableSingleInstance) {
         acquireSingleInstanceLock(args)
