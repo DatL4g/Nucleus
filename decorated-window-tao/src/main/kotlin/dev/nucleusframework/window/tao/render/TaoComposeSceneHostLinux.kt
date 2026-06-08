@@ -142,9 +142,11 @@ internal class TaoComposeSceneHostLinux(
      * that unblocks the swap can actually arrive. Swapping on the GTK
      * thread (the original implementation) deadlocks Mesa on Wayland.
      *
-     * Pacing is intrinsic: the main thread issues a render only after
-     * `swapThread.waitForIdle()` returns, which happens at the display's
-     * refresh rate. No software cap, no scheduled wake — the OS does it.
+     * Pacing is intrinsic but *non-blocking*: the main thread renders only when
+     * the swap is idle ([SwapThread.tryBeginRenderOrMarkOwed]); if a swap is in
+     * flight it bails without waiting and the swap thread re-arms the redraw on
+     * completion. So pacing still tracks the display refresh rate, but the
+     * event-loop/input thread is never stalled on the swap.
      */
     private var swapThread: SwapThread? = null
 
@@ -984,10 +986,19 @@ internal class TaoComposeSceneHostLinux(
         // During active resize use a very short idle-wait timeout. The swap
         // thread is doing eglSwapBuffers (which on EGL/Wayland blocks for the
         // compositor's frame callback ~16ms). Waiting the full 100ms makes the
+        // Non-blocking pacing: if the previous frame's swap is still in flight,
+        // do NOT stall this thread — it is the Tao event-loop thread and also
+        // dispatches all input. Record that a render is owed and return
+        // immediately; the swap thread re-arms the redraw the instant it
+        // finishes presenting, so the frame lands on the next tick without ever
+        // freezing input. (Blocking here on the swap is what made a
+        // subsurface-backed dialog feel unresponsive while its parent kept
+        // rendering — the parent's swap latency was paid on the input thread.)
         val st = swapThread
-        if (st != null && !st.waitForIdle()) {
+        if (st != null && !st.tryBeginRenderOrMarkOwed()) {
             return
         }
+
         val ctx = directContext ?: return
         val sc = scene ?: return
         if (widthPx <= 0 || heightPx <= 0) return
@@ -1493,9 +1504,10 @@ internal class TaoComposeSceneHostLinux(
      * [NativeTaoEglBridge.nativeReleaseCurrent] before signalling
      * [requestSwap]; the swap thread then re-binds via `nativeMakeCurrent`,
      * presents (blocking on the compositor's vsync), and releases the
-     * context again. The render thread synchronises through
-     * [waitForIdle] before its next render — that's what gives us
-     * hardware-vsync pacing for free.
+     * context again. The render thread gates on [tryBeginRenderOrMarkOwed]
+     * (non-blocking) before its next render; the swap thread re-arms a skipped
+     * frame on completion — that's what gives us hardware-vsync pacing without
+     * ever stalling the event-loop thread.
      *
      * The two threads never hold the context simultaneously: the render
      * thread always releases before `requestSwap`, the swap thread waits
@@ -1506,10 +1518,16 @@ internal class TaoComposeSceneHostLinux(
     ) : Thread("TaoSwapThread-${java.lang.Long.toHexString(handle)}") {
         private val lock = ReentrantLock()
         private val workCond = lock.newCondition()
-        private val idleCond = lock.newCondition()
         private var swapPending = false
         private var swapping = false
         private var shutdown = false
+
+        // Set (under [lock]) when [tryBeginRenderOrMarkOwed] finds a swap in
+        // flight and the render thread bails instead of blocking. The swap
+        // thread re-arms exactly one redraw when it finishes presenting, so the
+        // skipped frame lands on the next event-loop tick without the render
+        // (= input) thread ever having stalled on the swap.
+        private var renderOwed = false
 
         init {
             isDaemon = true
@@ -1524,33 +1542,23 @@ internal class TaoComposeSceneHostLinux(
         }
 
         /**
-         * Called on the GTK main thread at the start of the next render
-         * cycle. Blocks until the swap thread has finished any in-flight
-         * `eglSwapBuffers` and released the EGL context, or the timeout
-         * elapses. Returns `true` if the context is free to bind, `false`
-         * if the swap is still in flight after the timeout (the caller
-         * must then *skip* binding to avoid two threads holding the EGL
-         * context simultaneously — undefined behaviour on every driver).
-         *
-         * The timeout matters in practice: when a Wayland window is
-         * occluded or minimised, the compositor stops sending frame
-         * callbacks and `eglSwapBuffers` parks indefinitely. Without a
-         * timeout the GTK main thread would freeze, taking input handling
-         * with it. 100 ms = ~6 vsync periods at 60 Hz, comfortably above
-         * any plausible normal swap latency.
+         * Non-blocking render gate for [onRedrawRequested]. Returns `true` when
+         * the EGL context is free and the caller may render now. Returns `false`
+         * when a swap is still in flight — and atomically records that a render
+         * is owed, so [run]'s swap-completion path re-arms the redraw. Never
+         * blocks the calling (event-loop / input) thread, which is the whole
+         * point: blocking here previously stalled input for the full swap
+         * latency, making a subsurface-backed dialog feel unresponsive.
          */
-        fun waitForIdle(timeoutMs: Long = 100): Boolean {
+        fun tryBeginRenderOrMarkOwed(): Boolean =
             lock.withLock {
-                if (!swapPending && !swapping) return true
-                val deadline = System.nanoTime() + timeoutMs * 1_000_000
-                while (swapPending || swapping) {
-                    val remaining = deadline - System.nanoTime()
-                    if (remaining <= 0) return false
-                    idleCond.awaitNanos(remaining)
+                if (swapPending || swapping) {
+                    renderOwed = true
+                    false
+                } else {
+                    true
                 }
-                return true
             }
-        }
 
         fun shutdownAndJoin() {
             lock.withLock {
@@ -1591,10 +1599,19 @@ internal class TaoComposeSceneHostLinux(
                                 // Detached underneath us; the host's
                                 // detach() handles cleanup.
                             }
-                            lock.withLock {
-                                swapping = false
-                                idleCond.signalAll()
-                            }
+                            val rearm =
+                                lock.withLock {
+                                    swapping = false
+                                    // Decoupled pacing: hand the owed frame back
+                                    // to the render thread now that the context
+                                    // is free. Checked + cleared under the same
+                                    // lock as the render thread's mark, so there
+                                    // is no lost-wakeup window.
+                                    val owed = renderOwed
+                                    renderOwed = false
+                                    owed
+                                }
+                            if (rearm) requestRedrawCoalesced()
                         }
                     }
                 }
