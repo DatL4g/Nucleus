@@ -195,6 +195,10 @@ nucleus.application {
             rpmRequires = listOf("gtk3", "libX11")
             rpmPackageVersion = nativePackageVersion
 
+            // --- Pacman package ---
+            pacmanDepends = listOf("gtk3", "libx11")
+            pacmanPackageVersion = nativePackageVersion
+
             // --- AppImage (NEW) ---
             // MimeType is auto-injected from fileAssociation() and protocol() definitions above.
             // No manual desktopEntries override needed for MimeType.
