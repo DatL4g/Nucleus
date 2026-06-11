@@ -10,6 +10,7 @@ class TargetFormatFileExtTest {
         assertEquals(".dmg", TargetFormat.Dmg.fileExt)
         assertEquals(".tar.gz", TargetFormat.Tar.fileExt)
         assertEquals(".7z", TargetFormat.SevenZ.fileExt)
+        assertEquals(".pacman", TargetFormat.Pacman.fileExt)
     }
 
     @Test

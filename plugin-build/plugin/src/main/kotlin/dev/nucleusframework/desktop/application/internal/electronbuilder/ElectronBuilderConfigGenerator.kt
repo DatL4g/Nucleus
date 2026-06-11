@@ -556,6 +556,16 @@ internal class ElectronBuilderConfigGenerator {
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
             }
+            TargetFormat.Pacman -> {
+                yaml.appendLine("pacman:")
+                if (distributions.linux.pacmanDepends.isNotEmpty()) {
+                    yaml.appendLine("  depends:")
+                    for (dep in distributions.linux.pacmanDepends) {
+                        yaml.appendLine("    - \"$dep\"")
+                    }
+                }
+                appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
+            }
             TargetFormat.Snap -> generateSnapConfig(yaml, distributions.linux.snap)
             TargetFormat.Flatpak -> generateFlatpakConfig(yaml, distributions.linux.flatpak)
             else -> {}

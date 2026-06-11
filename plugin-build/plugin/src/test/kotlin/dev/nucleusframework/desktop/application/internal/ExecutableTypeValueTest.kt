@@ -11,5 +11,6 @@ class ExecutableTypeValueTest {
         assertEquals("nsis-web", TargetFormat.NsisWeb.executableTypeValue)
         assertEquals("7z", TargetFormat.SevenZ.executableTypeValue)
         assertEquals(EXECUTABLE_TYPE_DEV, TargetFormat.RawAppImage.executableTypeValue)
+        assertEquals("pacman", TargetFormat.Pacman.executableTypeValue)
     }
 }

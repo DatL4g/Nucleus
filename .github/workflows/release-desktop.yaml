@@ -115,6 +115,7 @@ jobs:
           path: |
             example/build/compose/binaries/**/*.deb
             example/build/compose/binaries/**/*.rpm
+            example/build/compose/binaries/**/*.pacman
             example/build/compose/binaries/**/*.snap
             example/build/compose/binaries/**/*.flatpak
             example/build/compose/binaries/**/*.AppImage

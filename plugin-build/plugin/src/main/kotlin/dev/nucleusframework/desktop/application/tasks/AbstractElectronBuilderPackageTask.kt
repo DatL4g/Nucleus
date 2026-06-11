@@ -1054,7 +1054,12 @@ abstract class AbstractElectronBuilderPackageTask
 
         private fun prepareLinuxAfterInstallTemplate(outputDir: File): File? {
             if (currentOS != OS.Linux) return null
-            if (targetFormat != TargetFormat.Deb && targetFormat != TargetFormat.Rpm) return null
+            if (targetFormat != TargetFormat.Deb &&
+                targetFormat != TargetFormat.Rpm &&
+                targetFormat != TargetFormat.Pacman
+            ) {
+                return null
+            }
 
             val templateFile = outputDir.resolve("after-install-nucleus.tpl")
             val script =

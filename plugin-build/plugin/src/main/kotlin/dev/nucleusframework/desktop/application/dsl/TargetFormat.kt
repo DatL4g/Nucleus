@@ -38,6 +38,7 @@ enum class TargetFormat(
     Portable("portable", OS.Windows, PackagingBackend.ELECTRON_BUILDER),
     AppX("appx", OS.Windows, PackagingBackend.ELECTRON_BUILDER),
     AppImage("AppImage", OS.Linux, PackagingBackend.ELECTRON_BUILDER),
+    Pacman("pacman", OS.Linux, PackagingBackend.ELECTRON_BUILDER),
     Snap("snap", OS.Linux, PackagingBackend.ELECTRON_BUILDER),
     Flatpak("flatpak", OS.Linux, PackagingBackend.ELECTRON_BUILDER),
     Zip("zip", currentOS, PackagingBackend.ELECTRON_BUILDER),

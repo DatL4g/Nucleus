@@ -10,6 +10,7 @@ class TargetFormatElectronBuilderTargetTest {
         assertEquals("nsis", TargetFormat.Exe.electronBuilderTarget)
         assertEquals("nsis-web", TargetFormat.NsisWeb.electronBuilderTarget)
         assertEquals("tar.gz", TargetFormat.Tar.electronBuilderTarget)
+        assertEquals("pacman", TargetFormat.Pacman.electronBuilderTarget)
     }
 
     @Test

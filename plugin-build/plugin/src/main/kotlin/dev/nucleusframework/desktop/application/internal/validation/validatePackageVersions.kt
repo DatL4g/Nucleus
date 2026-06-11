@@ -21,6 +21,7 @@ internal fun JvmApplicationContext.validatePackageVersions() {
                 TargetFormat.RawAppImage -> null
                 TargetFormat.Deb -> DebVersionChecker
                 TargetFormat.Rpm -> RpmVersionChecker
+                TargetFormat.Pacman -> PacmanVersionChecker
                 TargetFormat.Msi, TargetFormat.Exe -> WindowsVersionChecker
                 TargetFormat.Dmg, TargetFormat.Pkg -> MacVersionChecker
                 TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Portable,
@@ -107,6 +108,7 @@ private fun dslPropertiesFor(targetFormat: TargetFormat): List<String> {
             TargetFormat.RawAppImage -> null
             TargetFormat.Deb -> "$linux.debPackageVersion"
             TargetFormat.Rpm -> "$linux.rpmPackageVersion"
+            TargetFormat.Pacman -> "$linux.pacmanPackageVersion"
             TargetFormat.Dmg -> "$macOS.dmgPackageVersion"
             TargetFormat.Pkg -> "$macOS.pkgPackageVersion"
             TargetFormat.Exe -> "$windows.exePackageVersion"
@@ -163,6 +165,12 @@ private object RpmVersionChecker : VersionChecker {
     override val correctFormat = "rpm package version must not contain a dash '-'"
 
     override fun isValid(version: String): Boolean = !version.contains("-")
+}
+
+private object PacmanVersionChecker : VersionChecker {
+    override val correctFormat = "pacman package version (pkgver) must not contain a dash '-' or colon ':'"
+
+    override fun isValid(version: String): Boolean = !version.contains("-") && !version.contains(":")
 }
 
 private object WindowsVersionChecker : VersionChecker {

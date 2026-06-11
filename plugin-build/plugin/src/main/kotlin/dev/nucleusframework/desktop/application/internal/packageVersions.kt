@@ -24,6 +24,7 @@ private fun JvmApplicationDistributions.packageVersionFor(targetFormat: TargetFo
             TargetFormat.RawAppImage -> null
             TargetFormat.Deb -> linux.debPackageVersion
             TargetFormat.Rpm -> linux.rpmPackageVersion
+            TargetFormat.Pacman -> linux.pacmanPackageVersion
             TargetFormat.Dmg -> macOS.dmgPackageVersion
             TargetFormat.Pkg -> macOS.pkgPackageVersion
             TargetFormat.Exe -> windows.exePackageVersion

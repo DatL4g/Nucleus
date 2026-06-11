@@ -160,12 +160,16 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     var rpmLicenseType: String? = null
     var debPackageVersion: String? = null
     var rpmPackageVersion: String? = null
+    var pacmanPackageVersion: String? = null
 
     /** Additional Debian dependencies for .deb packages. */
     var debDepends: List<String> = emptyList()
 
     /** Additional RPM requires for .rpm packages. */
     var rpmRequires: List<String> = emptyList()
+
+    /** Additional pacman dependencies for .pacman packages. */
+    var pacmanDepends: List<String> = emptyList()
 
     val snap: SnapSettings = objects.newInstance(SnapSettings::class.java)
 

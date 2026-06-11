@@ -27,6 +27,7 @@ internal val TargetFormat.executableTypeValue: String
             TargetFormat.Rpm -> "rpm"
             TargetFormat.RawAppImage -> EXECUTABLE_TYPE_DEV
             TargetFormat.AppImage -> "appimage"
+            TargetFormat.Pacman -> "pacman"
             TargetFormat.Nsis -> "nsis"
             TargetFormat.NsisWeb -> "nsis-web"
             TargetFormat.Portable -> "portable"

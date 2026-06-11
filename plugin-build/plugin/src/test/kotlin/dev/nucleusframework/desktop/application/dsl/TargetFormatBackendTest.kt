@@ -14,5 +14,6 @@ class TargetFormatBackendTest {
         assertEquals(PackagingBackend.ELECTRON_BUILDER, TargetFormat.Dmg.backend)
         assertEquals(PackagingBackend.ELECTRON_BUILDER, TargetFormat.Msi.backend)
         assertEquals(PackagingBackend.ELECTRON_BUILDER, TargetFormat.AppImage.backend)
+        assertEquals(PackagingBackend.ELECTRON_BUILDER, TargetFormat.Pacman.backend)
     }
 }

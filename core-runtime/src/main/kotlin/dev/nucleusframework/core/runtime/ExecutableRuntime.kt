@@ -21,6 +21,7 @@ public enum class ExecutableType {
     SNAP,
     FLATPAK,
     APPIMAGE,
+    PACMAN,
 
     // Archives
     ZIP,
@@ -86,6 +87,9 @@ public object ExecutableRuntime {
     public fun isAppImage(): Boolean = type() == ExecutableType.APPIMAGE
 
     @JvmStatic
+    public fun isPacman(): Boolean = type() == ExecutableType.PACMAN
+
+    @JvmStatic
     public fun isZip(): Boolean = type() == ExecutableType.ZIP
 
     @JvmStatic
@@ -119,6 +123,7 @@ public object ExecutableRuntime {
             "snap", ".snap" -> ExecutableType.SNAP
             "flatpak", ".flatpak" -> ExecutableType.FLATPAK
             "appimage", ".appimage" -> ExecutableType.APPIMAGE
+            "pacman", ".pacman", ".pkg.tar.zst" -> ExecutableType.PACMAN
             // Archives
             "zip", ".zip" -> ExecutableType.ZIP
             "tar", "tar.gz", ".tar.gz" -> ExecutableType.TAR
