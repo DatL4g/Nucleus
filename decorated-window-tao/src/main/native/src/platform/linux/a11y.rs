@@ -125,13 +125,10 @@ struct WindowState {
     /// the next observer tick to send a full snapshot, which refreshes
     /// `last_tree` for any subsequent activation request.
     last_tree: Option<TreeUpdate>,
-    /// Currently-focused node id. Tracked separately so partial updates
-    /// that don't carry a focus token can reuse the previous one (an
-    /// AccessKit `TreeUpdate.focus` is required and must point to a node
-    /// AccessKit already knows about).
-    last_focus: Option<NodeId>,
-    /// Root node id, captured on the first full push. Partial updates
-    /// never re-emit the root, so we cache it here for focus fallback.
+    /// Root node id, captured on the first full push. Partial updates never
+    /// re-emit the root, so we cache it here as the focus fallback when a
+    /// partial reports "nothing focused" — the root is the only node we can
+    /// guarantee is still live in AccessKit's tree.
     root: Option<NodeId>,
     /// NodeId → metadata used to interpret AccessKit-side action requests.
     /// Custom-action dispatch uses the index inside `custom_action_count` to
@@ -916,7 +913,6 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     }
     let state = Arc::new(Mutex::new(WindowState {
         last_tree: None,
-        last_focus: None,
         root: None,
         nodes: HashMap::new(),
         handle,
@@ -1021,20 +1017,30 @@ fn apply_parsed(handle: i64, parsed: ParsedSnapshot, partial: bool) -> jboolean 
             for (id, m) in metas {
                 st.nodes.insert(id, m);
             }
-            // Reuse the previous focus when this partial doesn't carry one
-            // — TreeUpdate.focus must point to a node AccessKit knows.
+            // Focus handling. The Kotlin encoder always writes the
+            // authoritative focus into the partial header: a non-zero id is
+            // the currently-focused node — guaranteed live, since it is read
+            // from the full new semantic tree and, when newly focused, is
+            // itself carried in this partial. A zero means "nothing focused".
+            //
+            // We must NOT fall back to the previous focus here. A partial that
+            // drops the focused node (e.g. it scrolled out of a LazyColumn and
+            // Compose disposed it) arrives with focus == 0 and a re-emitted
+            // parent whose children list no longer references it; AccessKit
+            // then prunes that node as unreachable. Reusing the stale
+            // `last_focus` would leave `TreeUpdate.focus` pointing at a removed
+            // node, and accesskit_consumer panics ("Focused ID … is not in the
+            // node list") — which under `panic = "abort"` takes down the JVM.
+            // The root is always live, so it's the safe "no focus" target.
             if update.focus.0 == 0 {
-                if let Some(prev) = st.last_focus.or(st.root) {
-                    update.focus = prev;
+                if let Some(root) = st.root {
+                    update.focus = root;
                 }
-            } else {
-                st.last_focus = Some(update.focus);
             }
         } else {
             st.last_tree = Some(update.clone());
             st.nodes = metas;
             st.root = root_id;
-            st.last_focus = Some(update.focus);
         }
     }
     entry.adapter.update_if_active(|| update);
