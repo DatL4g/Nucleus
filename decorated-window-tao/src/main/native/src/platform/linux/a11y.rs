@@ -28,7 +28,7 @@
 // Without it, `Message::RegisterInterfaces` payloads are silently dropped on
 // the executor thread (`accesskit_unix-0.17.2/src/context.rs:220`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -135,6 +135,14 @@ struct WindowState {
     /// look up the Kotlin-side handler position. Full snapshots replace
     /// this map; partial snapshots merge into it.
     nodes: HashMap<NodeId, NodeMeta>,
+    /// NodeId → its direct children, mirroring AccessKit's own tree topology.
+    /// Full snapshots reset it; partial snapshots merge the re-emitted nodes.
+    /// We replay the consumer's reachability over this map after every update
+    /// so we know the exact set of nodes AccessKit currently holds — and can
+    /// clamp `TreeUpdate.focus` to a live node before dispatch. A focus that
+    /// points at a pruned node makes accesskit_consumer panic, and with
+    /// `panic = "abort"` that takes down the whole JVM.
+    child_map: HashMap<NodeId, Vec<NodeId>>,
     /// X11 Window XID — opaque "view handle" passed back to Kotlin on every
     /// upcall. Mirrors NSView on macOS / HWND on Windows.
     handle: i64,
@@ -915,6 +923,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
         last_tree: None,
         root: None,
         nodes: HashMap::new(),
+        child_map: HashMap::new(),
         handle,
         has_been_activated: false,
     }));
@@ -1017,34 +1026,66 @@ fn apply_parsed(handle: i64, parsed: ParsedSnapshot, partial: bool) -> jboolean 
             for (id, m) in metas {
                 st.nodes.insert(id, m);
             }
-            // Focus handling. The Kotlin encoder always writes the
-            // authoritative focus into the partial header: a non-zero id is
-            // the currently-focused node — guaranteed live, since it is read
-            // from the full new semantic tree and, when newly focused, is
-            // itself carried in this partial. A zero means "nothing focused".
-            //
-            // We must NOT fall back to the previous focus here. A partial that
-            // drops the focused node (e.g. it scrolled out of a LazyColumn and
-            // Compose disposed it) arrives with focus == 0 and a re-emitted
-            // parent whose children list no longer references it; AccessKit
-            // then prunes that node as unreachable. Reusing the stale
-            // `last_focus` would leave `TreeUpdate.focus` pointing at a removed
-            // node, and accesskit_consumer panics ("Focused ID … is not in the
-            // node list") — which under `panic = "abort"` takes down the JVM.
-            // The root is always live, so it's the safe "no focus" target.
-            if update.focus.0 == 0 {
-                if let Some(root) = st.root {
-                    update.focus = root;
-                }
-            }
         } else {
-            st.last_tree = Some(update.clone());
             st.nodes = metas;
             st.root = root_id;
+            // A full snapshot is the complete tree — drop the previous
+            // topology before remirroring it below.
+            st.child_map.clear();
+        }
+
+        // Mirror AccessKit's tree topology, then clamp the focus so we never
+        // hand the consumer a `TreeUpdate.focus` pointing at a node it doesn't
+        // hold — that panics inside accesskit_consumer, and `panic = "abort"`
+        // turns it into a JVM-wide crash. Both update kinds funnel through
+        // here so full snapshots, partials and the cached `last_tree` (replayed
+        // on AT reconnection) are all protected.
+        for (id, node) in &update.nodes {
+            st.child_map.insert(*id, node.children().to_vec());
+        }
+        let live = reachable_nodes(st.root, &st.child_map);
+        // Prune nodes AccessKit will have dropped as unreachable, keeping our
+        // mirror in lockstep with the consumer's node set.
+        st.child_map.retain(|id, _| live.contains(id));
+        if !live.contains(&update.focus) {
+            if let Some(root) = st.root {
+                update.focus = root;
+            }
+        }
+        // Cache the (clamped) tree for the eventual `request_initial_tree`.
+        if !partial {
+            st.last_tree = Some(update.clone());
         }
     }
     entry.adapter.update_if_active(|| update);
     JNI_TRUE
+}
+
+/// Replays AccessKit's reachability rule over [`WindowState::child_map`]: a
+/// node is live iff it was sent (present as a key) and is reachable from the
+/// root by following children. The returned set is exactly the node set the
+/// consumer holds after the update, so membership is a safe focus predicate.
+fn reachable_nodes(
+    root: Option<NodeId>,
+    child_map: &HashMap<NodeId, Vec<NodeId>>,
+) -> HashSet<NodeId> {
+    let mut live = HashSet::new();
+    let Some(root) = root else {
+        return live;
+    };
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        // Skip ids referenced as children but never sent — the consumer keeps
+        // them pending, not in its node set.
+        let Some(kids) = child_map.get(&id) else {
+            continue;
+        };
+        if !live.insert(id) {
+            continue;
+        }
+        stack.extend(kids.iter().copied());
+    }
+    live
 }
 
 #[no_mangle]
@@ -1172,14 +1213,26 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     let Some(entry) = map.get_mut(&handle) else {
         return;
     };
-    let cached_tree = {
+    let requested = NodeId(node_id as u64);
+    let (cached_tree, target) = {
         let st = match entry.state.lock() {
             Ok(s) => s,
             Err(_) => return,
         };
-        st.last_tree.as_ref().and_then(|u| u.tree.clone())
+        let tree = st.last_tree.as_ref().and_then(|u| u.tree.clone());
+        // This update carries no nodes, so `requested` must already be live in
+        // AccessKit's tree — otherwise the consumer panics (JVM abort). Fall
+        // back to the root when it isn't a node we currently hold.
+        let target = if st.child_map.contains_key(&requested) {
+            requested
+        } else {
+            match st.root {
+                Some(root) => root,
+                None => return,
+            }
+        };
+        (tree, target)
     };
-    let target = NodeId(node_id as u64);
     entry.adapter.update_if_active(|| TreeUpdate {
         nodes: Vec::new(),
         tree: cached_tree,
