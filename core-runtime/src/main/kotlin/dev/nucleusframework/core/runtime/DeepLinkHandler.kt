@@ -29,6 +29,15 @@ object DeepLinkHandler {
     private var onDeepLink: ((URI) -> Unit)? = null
 
     /**
+     * Guards [setHandler] against re-delivering the cold-start CLI URI. A handler
+     * registered from a Composable scope (`nucleusApplication { onDeepLink { … } }`)
+     * re-runs on every recomposition; without this flag, each call would re-parse the
+     * launch args and fire the same URI again — opening duplicate tabs/windows.
+     */
+    @Volatile
+    private var coldStartArgsDelivered = false
+
+    /**
      * Registers deep link handling for the application.
      *
      * **AWT-bound.** This call touches `java.awt.Desktop` to install the macOS
@@ -66,7 +75,15 @@ object DeepLinkHandler {
         onDeepLink: (URI) -> Unit,
     ) {
         this.onDeepLink = onDeepLink
-        parseUriFromArgs(args)
+        // Deliver the cold-start CLI URI to a handler exactly once over the process
+        // lifetime. setHandler may be called repeatedly (e.g. from a Composable scope
+        // re-running on recomposition); re-parsing the args each time would re-fire the
+        // same launch URI. Restore-request relays go through readUriFrom/handleUri and
+        // are unaffected — each is a genuine new event.
+        if (!coldStartArgsDelivered) {
+            coldStartArgsDelivered = true
+            parseUriFromArgs(args)
+        }
     }
 
     /**
