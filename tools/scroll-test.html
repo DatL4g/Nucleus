@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scroll Impact Meter — browser reference</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; }
+  #panel {
+    position: sticky; top: 0; z-index: 10;
+    padding: 12px 16px; border-bottom: 1px solid #8884;
+    background: Canvas; backdrop-filter: blur(6px);
+  }
+  #panel h1 { font-size: 15px; margin: 0 0 8px; }
+  #live { font-family: ui-monospace, monospace; font-size: 13px; margin: 4px 0 10px; }
+  button { font: inherit; padding: 4px 12px; }
+  table { border-collapse: collapse; font-family: ui-monospace, monospace; font-size: 12px; }
+  th, td { text-align: right; padding: 2px 10px; white-space: nowrap; }
+  th { font-weight: 700; border-bottom: 1px solid #8884; }
+  #content .row { padding: 8px 16px; }
+  #content .row:nth-child(odd) { background: #8881; }
+</style>
+</head>
+<body>
+  <div id="panel">
+    <h1>Scroll Impact Meter — browser reference (mirror of ScrollTestScreen.kt)</h1>
+    <div id="live">live rawΔy = +0.000 | scrollTop = 0 | avg px/gesture = 0</div>
+    <button id="copy">Copy (TSV)</button>
+    <button id="reset">Reset</button>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>events</th><th>Σ rawΔy</th><th>px scrolled</th>
+          <th>ms</th><th>max |rawΔy|</th><th>px / event</th><th>deltaMode</th>
+        </tr>
+      </thead>
+      <tbody id="log"></tbody>
+    </table>
+  </div>
+  <div id="content"></div>
+
+<script>
+const IDLE_MS = 180;
+const ROWS = 600;
+const MAX_LOG = 14;
+const DELTA_MODE = { 0: "pixel", 1: "line", 2: "page" };
+
+const content = document.getElementById("content");
+for (let i = 0; i < ROWS; i++) {
+  const d = document.createElement("div");
+  d.className = "row";
+  d.textContent = "Row " + String(i).padStart(4, "0") +
+    " — scroll here with the trackpad and the mouse wheel";
+  content.appendChild(d);
+}
+
+const liveEl = document.getElementById("live");
+const logEl = document.getElementById("log");
+
+let counter = 0;
+let gestures = [];
+let meter = null;          // active gesture accumulator
+let idleTimer = 0;
+
+function fmt(n, sign, dec) {
+  const v = (dec != null) ? n.toFixed(dec) : String(n);
+  return (sign && n >= 0) ? "+" + v : v;
+}
+
+function renderLive(rawY) {
+  const avg = gestures.length
+    ? Math.round(gestures.reduce((s, g) => s + g.px, 0) / gestures.length) : 0;
+  liveEl.textContent =
+    `live rawΔy = ${fmt(rawY, true, 3)} | scrollTop = ${Math.round(window.scrollY)} | avg px/gesture = ${avg}`;
+}
+
+function renderLog() {
+  logEl.innerHTML = gestures.map(g => `<tr>
+      <td>${g.index}</td><td>${g.events}</td>
+      <td>${fmt(g.rawSumY, true, 2)}</td><td>${fmt(g.px, true)}</td>
+      <td>${g.ms}</td><td>${g.maxRawAbsY.toFixed(2)}</td>
+      <td>${g.events ? fmt(g.px / g.events, true, 1) : "-"}</td>
+      <td>${g.mode}</td>
+    </tr>`).join("");
+}
+
+function finalize() {
+  if (!meter) return;
+  const px = Math.round(window.scrollY) - meter.startScroll;
+  gestures.unshift({
+    index: ++counter,
+    events: meter.events,
+    rawSumY: meter.rawSumY,
+    px,
+    ms: Math.max(0, Math.round(meter.lastT - meter.startT)),
+    maxRawAbsY: meter.maxRawAbsY,
+    mode: DELTA_MODE[meter.mode] ?? meter.mode,
+  });
+  if (gestures.length > MAX_LOG) gestures.pop();
+  meter = null;
+  renderLog();
+  renderLive(0);
+}
+
+// Passive listener: we only measure, the browser scrolls as usual.
+window.addEventListener("wheel", (e) => {
+  const now = performance.now();
+  if (!meter || now - meter.lastT > IDLE_MS) {
+    meter = {
+      startScroll: Math.round(window.scrollY),
+      startT: now, lastT: now,
+      events: 0, rawSumY: 0, maxRawAbsY: 0, mode: e.deltaMode,
+    };
+  }
+  meter.events++;
+  meter.rawSumY += e.deltaY;
+  meter.maxRawAbsY = Math.max(meter.maxRawAbsY, Math.abs(e.deltaY));
+  meter.lastT = now;
+  meter.mode = e.deltaMode;
+  renderLive(e.deltaY);
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(finalize, IDLE_MS + 20);
+}, { passive: true });
+
+// Tab-separated dump mirroring buildClipboardText() in ScrollTestScreen.kt,
+// with an extra deltaMode column (browser-only info).
+function buildTSV() {
+  const avg = gestures.length
+    ? Math.round(gestures.reduce((s, g) => s + g.px, 0) / gestures.length) : 0;
+  const lines = [];
+  lines.push(`# Scroll Test — browser (${navigator.userAgent})`);
+  lines.push(`# gestures=${gestures.length}\tavgPxPerGesture=${avg}`);
+  lines.push("idx\tevents\trawSumY\tpxScrolled\tms\tmaxRawAbsY\tpxPerEvent\tdeltaMode");
+  // Oldest first for natural reading; the on-screen list is newest first.
+  gestures.slice().reverse().forEach(g => {
+    const pxPerEvent = g.events ? (g.px / g.events).toFixed(2) : "0.00";
+    lines.push([
+      g.index, g.events, g.rawSumY.toFixed(2), g.px, g.ms,
+      g.maxRawAbsY.toFixed(2), pxPerEvent, g.mode,
+    ].join("\t"));
+  });
+  return lines.join("\n") + "\n";
+}
+
+document.getElementById("copy").addEventListener("click", async () => {
+  const btn = document.getElementById("copy");
+  try {
+    await navigator.clipboard.writeText(buildTSV());
+    const prev = btn.textContent;
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = prev; }, 1000);
+  } catch {
+    // Clipboard API needs a secure context (file:// usually works in Chrome).
+    // Fall back to a selectable prompt.
+    window.prompt("Copy the results:", buildTSV());
+  }
+});
+
+document.getElementById("reset").addEventListener("click", () => {
+  gestures = []; counter = 0; renderLog(); renderLive(0);
+});
+
+renderLive(0);
+</script>
+</body>
+</html>

@@ -779,7 +779,11 @@ internal class TaoComposeSceneHostWindows(
 
     fun setContent(content: @Composable () -> Unit) {
         scene?.setContent {
-            TaoTextToolbarHost(textToolbar, content)
+            // Chromium-style fixed pixels-per-tick scrolling instead of Compose's
+            // viewport-relative WindowsWinUIConfig (see ChromeScrollConfig).
+            ProvideChromeScrollConfig {
+                TaoTextToolbarHost(textToolbar, content)
+            }
         }
     }
 

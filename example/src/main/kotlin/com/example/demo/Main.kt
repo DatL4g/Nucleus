@@ -153,7 +153,7 @@ fun main(args: Array<String>) =
                 ) {
                     val tabs =
                         buildList {
-                            addAll(listOf("Nucleus", "Fill Title", "Gallery", "Taskbar"))
+                            addAll(listOf("Nucleus", "Fill Title", "Gallery", "Taskbar", "Scroll Test"))
                             add("Notifications (Common)")
                             if (Platform.Current == Platform.MacOS ||
                                 Platform.Current == Platform.Linux ||
@@ -289,6 +289,7 @@ fun main(args: Array<String>) =
                             }
                         }
                         "Taskbar" -> TaskbarProgressScreen(nucleusWindow)
+                        "Scroll Test" -> ScrollTestScreen()
                         "Notifications" -> {
                             when (Platform.Current) {
                                 Platform.MacOS -> NotificationsScreen()
