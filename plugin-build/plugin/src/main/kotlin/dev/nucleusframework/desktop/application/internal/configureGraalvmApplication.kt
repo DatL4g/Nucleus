@@ -263,7 +263,15 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         ?: "1.0.0"
                 }
             val winCopyright = provider { app.nativeDistributions.copyright ?: "" }
-            val winDescription = provider { app.nativeDistributions.description ?: packageNameProvider.get() }
+            // FileDescription is the string Windows Task Manager shows as the process
+            // "Name", so it must carry the human app name (appName), not the description.
+            // Falls back to packageName when appName is unset.
+            val winDisplayName =
+                provider {
+                    app.nativeDistributions.appName
+                        ?: app.nativeDistributions.packageName
+                        ?: packageNameProvider.get()
+                }
             val winIconFile =
                 app.nativeDistributions.windows.iconFile
                     .orElse(unpackDefaultResources.flatMap { it.resources.windowsIcon })
@@ -283,7 +291,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 inputs.property("pkgName", winPkgName)
                 inputs.property("pkgVersion", winPkgVersion)
                 inputs.property("copyright", winCopyright)
-                inputs.property("description", winDescription)
+                inputs.property("displayName", winDisplayName)
                 inputs.property("imageName", imageName)
 
                 doLast {
@@ -293,7 +301,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     val pkgName = winPkgName.get()
                     val pkgVersion = winPkgVersion.get()
                     val copyright = winCopyright.get()
-                    val taskDescription = winDescription.get()
+                    val displayName = winDisplayName.get()
                     val versionParts = pkgVersion.split(".").map { it.toIntOrNull() ?: 0 }
                     val v1 = versionParts.getOrElse(0) { 0 }
                     val v2 = versionParts.getOrElse(1) { 0 }
@@ -328,6 +336,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
 
                     val rcContent =
                         buildString {
+                            // The .rc is written as UTF-8 below; tell rc.exe to parse it as
+                            // UTF-8 instead of the system ANSI codepage, otherwise non-ASCII
+                            // VERSIONINFO strings (Hebrew/Arabic/CJK app names) become mojibake.
+                            appendLine("#pragma code_page(65001)")
+                            appendLine()
                             appendLine("1 ICON \"${winIconFile.get().asFile.absolutePath.replace("\\", "\\\\")}\"")
                             appendLine()
                             // Embed DPI-aware manifest (RT_MANIFEST = 24)
@@ -341,12 +354,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                             appendLine("  BEGIN")
                             appendLine("    BLOCK \"040904B0\"")
                             appendLine("    BEGIN")
-                            appendLine("      VALUE \"FileDescription\", \"$taskDescription\"")
+                            appendLine("      VALUE \"FileDescription\", \"$displayName\"")
                             appendLine("      VALUE \"FileVersion\", \"$pkgVersion\"")
                             appendLine("      VALUE \"InternalName\", \"$pkgName\"")
                             appendLine("      VALUE \"LegalCopyright\", \"$copyright\"")
                             appendLine("      VALUE \"OriginalFilename\", \"${imageName.get()}.exe\"")
-                            appendLine("      VALUE \"ProductName\", \"$pkgName\"")
+                            appendLine("      VALUE \"ProductName\", \"$displayName\"")
                             appendLine("      VALUE \"ProductVersion\", \"$pkgVersion\"")
                             appendLine("    END")
                             appendLine("  END")

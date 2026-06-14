@@ -61,8 +61,13 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
         startupWmClass.orNull?.let { props["startup.wm.class"] = it }
         startupTaskId.orNull?.let { props["startup.task.id"] = it }
 
-        dir.resolve("nucleus-app.properties").writer().use { writer ->
-            props.store(writer, null)
+        // Use the OutputStream overload (not Writer): it escapes any non-Latin1
+        // character (e.g. Hebrew app names) as \uXXXX, so the file round-trips
+        // correctly through Properties.load(InputStream), which always decodes
+        // as ISO-8859-1. Writing via a UTF-8 Writer would emit raw multibyte
+        // bytes and produce mojibake when read back.
+        dir.resolve("nucleus-app.properties").outputStream().use { stream ->
+            props.store(stream, null)
         }
     }
 }

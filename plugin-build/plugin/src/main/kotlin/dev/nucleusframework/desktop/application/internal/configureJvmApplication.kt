@@ -710,7 +710,14 @@ private fun JvmApplicationContext.configurePackageTask(
     app.nativeDistributions.let { executables ->
         packageTask.packageName.set(packageNameProvider)
         packageTask.appName.set(project.provider { executables.appName })
-        packageTask.packageDescription.set(executables.description)
+        // For Windows: jpackage's --description becomes the FileDescription in the .exe
+        // version resource (shown as "Name" in Task Manager), so it must be the human app
+        // name, not the description. Falls back to packageName when appName is unset.
+        // (This matches the behavior of GraalVM native-image and electron-builder.)
+        val displayNameForJpackage = project.provider {
+            executables.appName ?: packageNameProvider.get()
+        }
+        packageTask.packageDescription.set(displayNameForJpackage)
         packageTask.packageCopyright.set(executables.copyright)
         packageTask.packageVendor.set(executables.vendor)
         packageTask.packageVersion.set(packageVersionFor(packageTask.targetFormat))

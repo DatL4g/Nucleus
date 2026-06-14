@@ -459,24 +459,34 @@ abstract class AbstractElectronBuilderPackageTask
                 return null
             }
 
-            val schemes =
+            // Pair each scheme with its human-readable protocol name. The (Default) value of
+            // the protocol key is what Windows and Chrome show in the "Open with …?" prompt
+            // (convention: "URL:<friendly name>"). Using the protocol name — which may be in
+            // Hebrew/Arabic/etc. — instead of the raw scheme makes that prompt readable.
+            // Falls back to appName, then to the scheme itself.
+            val handlers =
                 distributions.protocols
-                    .flatMap { it.schemes }
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-                    .distinct()
-            if (schemes.isEmpty()) return null
+                    .flatMap { protocol ->
+                        val friendlyName =
+                            protocol.name.takeIf { it.isNotBlank() }
+                                ?: distributions.appName
+                        protocol.schemes
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .map { scheme -> scheme to (friendlyName ?: scheme) }
+                    }.distinctBy { it.first }
+            if (handlers.isEmpty()) return null
 
             // SHELL_CONTEXT resolves to HKLM (per-machine) or HKCU (per-user) automatically.
             // ${APP_EXECUTABLE_FILENAME} is provided by electron-builder's NSIS template.
             val script =
                 buildString {
                     appendLine("!macro customInstall")
-                    for (scheme in schemes) {
+                    for ((scheme, friendlyName) in handlers) {
                         val key = "Software\\Classes\\$scheme"
                         appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")
                         appendLine("  DeleteRegKey SHELL_CONTEXT \"$key\"")
-                        appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"\" \"URL:$scheme\"")
+                        appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"\" \"URL:$friendlyName\"")
                         appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"URL Protocol\" \"\"")
                         appendLine(
                             "  WriteRegStr SHELL_CONTEXT \"$key\\DefaultIcon\" \"\" " +
@@ -493,7 +503,7 @@ abstract class AbstractElectronBuilderPackageTask
                     // Guard against auto-update: the new installer runs before the old uninstaller,
                     // so unconditional cleanup would drop a just-registered scheme.
                     appendLine("  \${ifNot} \${isUpdated}")
-                    for (scheme in schemes) {
+                    for ((scheme, _) in handlers) {
                         appendLine("    DeleteRegKey SHELL_CONTEXT \"Software\\Classes\\$scheme\"")
                     }
                     appendLine("  \${endIf}")
@@ -502,10 +512,13 @@ abstract class AbstractElectronBuilderPackageTask
 
             val nshFile = File(outputDir, "nucleus-protocols.nsh")
             nshFile.parentFile.mkdirs()
-            nshFile.writeText(script)
+            // Write with a UTF-8 BOM so makensis detects the encoding and keeps non-ASCII
+            // protocol names (e.g. Hebrew) intact. NSIS treats '#' as a comment, so a
+            // "#pragma" directive would be inert — the BOM is the supported mechanism.
+            nshFile.writeText("﻿$script", Charsets.UTF_8)
             logger.info(
                 "Generated NSIS protocol registration script at ${nshFile.absolutePath} " +
-                    "for schemes: ${schemes.joinToString()}",
+                    "for schemes: ${handlers.joinToString { it.first }}",
             )
             return nshFile
         }
