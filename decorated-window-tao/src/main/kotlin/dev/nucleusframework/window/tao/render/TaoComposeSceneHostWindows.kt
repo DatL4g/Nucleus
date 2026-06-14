@@ -1041,6 +1041,25 @@ internal class TaoComposeSceneHostWindows(
                     keyboardModifiers = currentKeyboardModifiers,
                 ),
         )
+
+        // WM_PAINT-starvation mitigation for brisk scrolling. Our frame clock
+        // only ticks in [onRedrawRequested], which fires from `WM_PAINT` — the
+        // lowest-priority Win32 message, synthesized only when the queue is
+        // otherwise empty. A precision-touchpad / fast-wheel flood keeps
+        // `WM_MOUSEWHEEL` queued continuously, starving `WM_PAINT`: the
+        // smooth-scroll animation freezes mid-flood then lurches (judder).
+        // AWT/JBR don't hit this — their frame clock isn't `WM_PAINT`-driven.
+        //
+        // Each wheel event already runs here on the event-loop thread with the
+        // GL context current, so we pump a frame inline, pacing the animation to
+        // the flood itself. We render only when the previous present has
+        // completed (`waitForIdle(0)` — non-blocking, never stalls input), which
+        // caps us at the hardware vsync rate. After the flood the regular
+        // `WM_PAINT` path resumes (no longer starved) and renders the tail.
+        // EGL/ANGLE presents inline (no swap thread) so pumping would block
+        // input — skip it there and keep the `WM_PAINT` path.
+        val pumpSwap = swapThread
+        if (pumpSwap != null && pumpSwap.waitForIdle(0L)) onRedrawRequested()
     }
 
     fun onKeyEvent(

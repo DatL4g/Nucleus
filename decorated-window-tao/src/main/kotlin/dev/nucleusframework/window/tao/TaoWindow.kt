@@ -638,10 +638,14 @@ class TaoWindow internal constructor(
             TaoEventCode.MOUSE_UP -> pointerButtonListener?.invoke(a, false)
             TaoEventCode.MODIFIERS_CHANGED -> modifierState = a
             TaoEventCode.SCROLL_LINE -> {
-                // AWT sends the wheel rotation as scrollDelta and leaves
+                // AWT sends the wheel rotation as scrollDelta and leaves the
                 // platform line-count policy in MouseWheelEvent.scrollAmount.
-                // Tao's Windows backend has already applied the OS line count;
-                // macOS AWT reports scrollAmount=1; Linux mirrors AWT's common
+                // The Windows backend emits the raw notch count (1.0 per notch,
+                // fractional for precision touchpads) — it deliberately does NOT
+                // apply SPI_GETWHEELSCROLLLINES, so the line-count policy is
+                // carried in [platformLineScrollAmount] and the notch→pixel
+                // mapping is left to the downstream ScrollConfig. macOS AWT
+                // reports scrollAmount=1; Linux mirrors AWT's common
                 // three-lines-per-notch default here.
                 val dx = -(a / SCROLL_FIXED_SCALE)
                 val dy = -(b / SCROLL_FIXED_SCALE)
