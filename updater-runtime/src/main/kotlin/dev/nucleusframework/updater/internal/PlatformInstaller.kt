@@ -108,8 +108,8 @@ internal object PlatformInstaller {
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher =
-            resolveLinuxLauncher()
-                ?: error("Cannot resolve application launcher from java.home")
+            currentExecutablePath()
+                ?: error("Cannot resolve application launcher from the running process")
 
         val installCmd =
             when (extension) {
@@ -135,7 +135,7 @@ internal object PlatformInstaller {
             |
             |PKG_FILE="${packageFile.absolutePath}"
             |APP_PID=$pid
-            |APP_LAUNCHER="${launcher.absolutePath}"
+            |APP_LAUNCHER="$launcher"
             |
             |# Wait for the app process to fully exit
             |while kill -0 "${'$'}APP_PID" 2>/dev/null; do
@@ -165,17 +165,19 @@ internal object PlatformInstaller {
     }
 
     /**
-     * Resolves the jpackage launcher on Linux.
-     * jpackage structure: /opt/<app>/bin/<Launcher> with java.home = /opt/<app>/lib/runtime
+     * Resolves the absolute path of the executable that launched the current process.
+     *
+     * Unlike reconstructing the launcher from `java.home`, this works identically for a
+     * jpackage launcher on the JVM and for a single-file GraalVM native image, where the
+     * `java.home` runtime layout does not exist.
      */
-    private fun resolveLinuxLauncher(): File? {
-        val javaHome = System.getProperty("java.home") ?: return null
-        // java.home = /opt/<app>/lib/runtime → parent = lib → parent = /opt/<app>
-        val appRoot = File(javaHome).parentFile?.parentFile ?: return null
-        val binDir = File(appRoot, "bin")
-        if (!binDir.isDirectory) return null
-        return binDir.listFiles()?.firstOrNull { it.canExecute() }
-    }
+    private fun currentExecutablePath(): String? =
+        ProcessHandle
+            .current()
+            .info()
+            .command()
+            .map { File(it).absolutePath }
+            .orElse(null)
 
     private fun buildMacInstaller(file: File): ProcessBuilder = ProcessBuilder("open", file.absolutePath)
 
@@ -261,7 +263,7 @@ internal object PlatformInstaller {
         restart: Boolean,
     ) {
         val pid = ProcessHandle.current().pid()
-        val launcher = resolveWindowsLauncher()
+        val launcher = currentExecutablePath()
         val installerCmd =
             when (extension) {
                 "msi" -> "Start-Process msiexec -ArgumentList '/i', '\"${file.absolutePath}\"', '/passive' -Wait"
@@ -270,7 +272,7 @@ internal object PlatformInstaller {
 
         val relaunchCmd =
             if (restart && launcher != null) {
-                "\n|# Relaunch the application\n|Start-Process '${launcher.absolutePath}'"
+                "\n|# Relaunch the application\n|Start-Process '$launcher'"
             } else {
                 ""
             }
@@ -303,17 +305,5 @@ internal object PlatformInstaller {
         ).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
-    }
-
-    /**
-     * Resolves the jpackage launcher on Windows.
-     * jpackage structure: C:\...\<AppName>\<AppName>.exe with java.home = C:\...\<AppName>\runtime
-     */
-    private fun resolveWindowsLauncher(): File? {
-        val javaHome = System.getProperty("java.home") ?: return null
-        // java.home = <install-dir>\runtime → parent = <install-dir>
-        val appRoot = File(javaHome).parentFile ?: return null
-        if (!appRoot.isDirectory) return null
-        return appRoot.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".exe") }
     }
 }
