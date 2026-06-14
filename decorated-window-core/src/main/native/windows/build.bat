@@ -22,15 +22,25 @@ set "JNI_INCLUDE=%JAVA_HOME%\include"
 set "JNI_INCLUDE_WIN32=%JAVA_HOME%\include\win32"
 
 set "VCVARSALL="
-for %%v in (2022 2019 2017) do (
-    for %%e in (Enterprise Professional Community BuildTools) do (
-        if exist "C:\Program Files\Microsoft Visual Studio\%%v\%%e\VC\Auxiliary\Build\vcvarsall.bat" (
-            set "VCVARSALL=C:\Program Files\Microsoft Visual Studio\%%v\%%e\VC\Auxiliary\Build\vcvarsall.bat"
-            goto :found_vc
-        )
-        if exist "C:\Program Files (x86)\Microsoft Visual Studio\%%v\%%e\VC\Auxiliary\Build\vcvarsall.bat" (
-            set "VCVARSALL=C:\Program Files (x86)\Microsoft Visual Studio\%%v\%%e\VC\Auxiliary\Build\vcvarsall.bat"
-            goto :found_vc
+REM Prefer vswhere: resolves any installed VS version (incl. 18+ and previews).
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if exist "%VSWHERE%" (
+    for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+        if exist "%%i\VC\Auxiliary\Build\vcvarsall.bat" set "VCVARSALL=%%i\VC\Auxiliary\Build\vcvarsall.bat"
+    )
+)
+REM Fallback: scan well-known install locations if vswhere did not resolve a path.
+if "%VCVARSALL%"=="" (
+    for %%v in (18 2022 2019 2017) do (
+        for %%e in (Enterprise Professional Community BuildTools) do (
+            if exist "C:\Program Files\Microsoft Visual Studio\%%v\%%e\VC\Auxiliary\Build\vcvarsall.bat" (
+                set "VCVARSALL=C:\Program Files\Microsoft Visual Studio\%%v\%%e\VC\Auxiliary\Build\vcvarsall.bat"
+                goto :found_vc
+            )
+            if exist "C:\Program Files (x86)\Microsoft Visual Studio\%%v\%%e\VC\Auxiliary\Build\vcvarsall.bat" (
+                set "VCVARSALL=C:\Program Files (x86)\Microsoft Visual Studio\%%v\%%e\VC\Auxiliary\Build\vcvarsall.bat"
+                goto :found_vc
+            )
         )
     )
 )
