@@ -108,8 +108,13 @@ class NativeMenuBarScope internal constructor() {
      * macOS automatically populates this menu with the window list
      * and "Bring All to Front", regardless of the displayed title.
      *
+     * On macOS 12 and earlier, AppKit cannot auto-populate an **empty**
+     * Window menu (it raises an internal range exception, which is caught
+     * natively so the app survives). Provide at least one item — e.g.
+     * "Minimize"/"Zoom" — to have the menu installed on those systems.
+     *
      * @param text Localized title shown in the menu bar.
-     * @param content Items inside this menu (optional; macOS adds its own).
+     * @param content Items inside this menu (optional on macOS 13+; macOS adds its own).
      */
     fun MenuWindow(
         text: String,

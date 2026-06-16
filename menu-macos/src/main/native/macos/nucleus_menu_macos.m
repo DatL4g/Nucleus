@@ -172,6 +172,21 @@ static void runOnMain(void (^block)(void)) {
     }
 }
 
+// Runs an AppKit mutation on the main thread, swallowing any Objective-C
+// exception so it never unwinds through the JNI frame (an ObjC exception
+// crossing back into a C/JVM frame calls abort() and kills the process).
+// AppKit's setWindowsMenu:/setHelpMenu: raise NSRangeException on an empty
+// menu on macOS 12 and earlier; this keeps the app alive there.
+static void runOnMainGuarded(const char *what, void (^block)(void)) {
+    runOnMain(^{
+        @try {
+            block();
+        } @catch (NSException *ex) {
+            NSLog(@"[nucleus_menu_macos] %s raised %@: %@", what, ex.name, ex.reason);
+        }
+    });
+}
+
 // ============================================================================
 // Action Target — routes NSMenuItem actions back to Kotlin
 // ============================================================================
@@ -820,7 +835,7 @@ JNIEXPORT jlong JNICALL JNI_FN(nativeGetMainMenu)(JNIEnv *env, jclass clazz) {
 JNIEXPORT void JNICALL JNI_FN(nativeSetMainMenu)(JNIEnv *env, jclass clazz, jlong menuHandle) {
     (void)env; (void)clazz;
     NSMenu *menu = HANDLE_TO_MENU(menuHandle);
-    runOnMain(^{
+    runOnMainGuarded("setMainMenu", ^{
         [NSApp setMainMenu:menu];
 
         // Register Services menu (nested inside the app menu, i.e. first item's submenu).
@@ -840,7 +855,7 @@ JNIEXPORT void JNICALL JNI_FN(nativeSetMainMenu)(JNIEnv *env, jclass clazz, jlon
 JNIEXPORT void JNICALL JNI_FN(nativeSetWindowsMenu)(JNIEnv *env, jclass clazz, jlong menuHandle) {
     (void)env; (void)clazz;
     NSMenu *menu = HANDLE_TO_MENU(menuHandle);
-    runOnMain(^{
+    runOnMainGuarded("setWindowsMenu", ^{
         [NSApp setWindowsMenu:menu];
     });
 }
@@ -848,7 +863,7 @@ JNIEXPORT void JNICALL JNI_FN(nativeSetWindowsMenu)(JNIEnv *env, jclass clazz, j
 JNIEXPORT void JNICALL JNI_FN(nativeSetHelpMenu)(JNIEnv *env, jclass clazz, jlong menuHandle) {
     (void)env; (void)clazz;
     NSMenu *menu = HANDLE_TO_MENU(menuHandle);
-    runOnMain(^{
+    runOnMainGuarded("setHelpMenu", ^{
         [NSApp setHelpMenu:menu];
     });
 }
