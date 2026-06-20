@@ -228,6 +228,18 @@ nucleus.application {
                 // Finish args: "--share=ipc", "--socket=x11", "--socket=wayland", "--socket=pulseaudio", "--device=dri", "--filesystem=home"
                 finishArgs = listOf("--share=ipc", "--socket=x11", "--socket=wayland")
             }
+
+            // --- GPG signing (deb/rpm), for distribution outside a store ---
+            // Values default from `compose.desktop.linux.signing.*` properties / env vars,
+            // so CI can just export the secrets and leave this block as-is.
+            // A `<package>.pub.asc` public key is written next to each signed artifact.
+            //   deb: gpg --import app.deb.pub.asc && gpg --verify app.deb.asc app.deb
+            //   rpm: rpm --import app.rpm.pub.asc && rpm -K app.rpm
+            signing {
+                // enabled.set(true)
+                // keyId.set("ABCD1234DEADBEEF")          // GPG key id / fingerprint / email
+                // keyFile.set(file("packaging/signing-key.asc")) // optional: imported into a throwaway keyring
+            }
         }
 
         // ========== WINDOWS ==========

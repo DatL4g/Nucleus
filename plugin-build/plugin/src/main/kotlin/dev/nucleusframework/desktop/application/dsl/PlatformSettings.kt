@@ -188,6 +188,12 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     fun appImage(fn: Action<AppImageSettings>) {
         fn.execute(appImage)
     }
+
+    val signing: LinuxSigningSettings = objects.newInstance(LinuxSigningSettings::class.java)
+
+    fun signing(fn: Action<LinuxSigningSettings>) {
+        fn.execute(signing)
+    }
 }
 
 abstract class WindowsPlatformSettings : AbstractPlatformSettings() {

@@ -27,6 +27,10 @@ internal object NucleusProperties {
     internal const val MAC_NOTARIZATION_API_KEY = "compose.desktop.mac.notarization.apiKey"
     internal const val MAC_NOTARIZATION_API_KEY_ID = "compose.desktop.mac.notarization.apiKeyId"
     internal const val MAC_NOTARIZATION_API_ISSUER = "compose.desktop.mac.notarization.apiIssuer"
+    internal const val LINUX_SIGN = "compose.desktop.linux.sign"
+    internal const val LINUX_SIGN_KEY_ID = "compose.desktop.linux.signing.keyId"
+    internal const val LINUX_SIGN_KEY_FILE = "compose.desktop.linux.signing.keyFile"
+    internal const val LINUX_SIGN_PASSPHRASE = "compose.desktop.linux.signing.passphrase"
     internal const val CHECK_JDK_VENDOR = "compose.desktop.packaging.checkJdkVendor"
     internal const val DISABLE_MULTIMODULE_RESOURCES = "org.jetbrains.compose.resources.multimodule.disable"
     internal const val SYNC_RESOURCES_PROPERTY = "compose.ios.resources.sync"
@@ -69,6 +73,15 @@ internal object NucleusProperties {
 
     @Suppress("MaxLineLength")
     fun macNotarizationApiIssuer(providers: ProviderFactory): Provider<String> = providers.valueOrNull(MAC_NOTARIZATION_API_ISSUER)
+
+    fun linuxSign(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(LINUX_SIGN).toBooleanProvider(false)
+
+    fun linuxSignKeyId(providers: ProviderFactory): Provider<String> = providers.valueOrNull(LINUX_SIGN_KEY_ID)
+
+    fun linuxSignKeyFile(providers: ProviderFactory): Provider<String> = providers.valueOrNull(LINUX_SIGN_KEY_FILE)
+
+    @Suppress("MaxLineLength")
+    fun linuxSignPassphrase(providers: ProviderFactory): Provider<String> = providers.valueOrNull(LINUX_SIGN_PASSPHRASE)
 
     fun checkJdkVendor(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(CHECK_JDK_VENDOR).toBooleanProvider(true)
 

@@ -11,6 +11,7 @@ import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
+import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
@@ -293,6 +294,7 @@ abstract class AbstractElectronBuilderPackageTask
             if (targetFormat == TargetFormat.Pkg) {
                 signPkgInstaller(outputDir)
             }
+            signLinuxPackage(outputDir, dist)
 
             cleanupParasiticFiles(outputDir)
             cleanupBuildTemporaries(outputDir)
@@ -872,6 +874,49 @@ abstract class AbstractElectronBuilderPackageTask
             pkgFile.delete()
             signedPkg.renameTo(pkgFile)
             logger.lifecycle("Signed PKG installer: ${pkgFile.name}")
+        }
+
+        /**
+         * Signs the produced `.deb`/`.rpm` with a GPG key and exports the public key next to
+         * each artifact, so users can verify a direct download (`gpg --verify` / `rpm -K`)
+         * without configuring a repository. No-op unless Linux signing is enabled.
+         */
+        private fun signLinuxPackage(
+            outputDir: File,
+            dist: JvmApplicationDistributions,
+        ) {
+            if (currentOS != OS.Linux) return
+            if (targetFormat != TargetFormat.Deb && targetFormat != TargetFormat.Rpm) return
+
+            val signing = dist.linux.signing
+            if (!signing.enabled.get()) return
+
+            val keyId = signing.keyId.orNull
+            if (keyId.isNullOrBlank()) {
+                logger.warn("Linux signing enabled but no signing.keyId configured; skipping signing")
+                return
+            }
+
+            val packages =
+                outputDir
+                    .listFiles { file ->
+                        file.isFile && (file.extension.equals("deb", true) || file.extension.equals("rpm", true))
+                    }?.toList()
+                    .orEmpty()
+            if (packages.isEmpty()) {
+                logger.warn("Linux signing enabled but no .deb/.rpm artifacts found in ${outputDir.absolutePath}")
+                return
+            }
+
+            LinuxSigner(runExternalTool, logger).sign(
+                packages = packages,
+                keyId = keyId,
+                keyFile =
+                    signing.keyFile.orNull
+                        ?.asFile,
+                passphrase = signing.passphrase.orNull,
+                debMethod = signing.debMethod,
+            )
         }
 
         private fun prepareLinuxIconSet(outputDir: File): File? {

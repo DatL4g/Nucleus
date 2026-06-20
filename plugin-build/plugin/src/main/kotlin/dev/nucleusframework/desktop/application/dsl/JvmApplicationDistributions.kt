@@ -64,6 +64,14 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         fn.execute(windows)
     }
 
+    /**
+     * Unified code-signing entry point across macOS, Windows and Linux.
+     * Delegates to the same `macOS.signing` / `windows.signing` / `linux.signing` instances.
+     */
+    fun signing(fn: Action<UnifiedSigningSettings>) {
+        fn.execute(UnifiedSigningSettings(macOS.signing, windows.signing, linux.signing))
+    }
+
     @JvmOverloads
     fun fileAssociation(
         mimeType: String,
