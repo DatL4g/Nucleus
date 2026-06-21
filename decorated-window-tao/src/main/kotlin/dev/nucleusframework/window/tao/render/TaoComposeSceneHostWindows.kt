@@ -136,6 +136,11 @@ internal class TaoComposeSceneHostWindows(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    // Banked scroll delta awaiting release, in wheel ticks (1 tick = 100px via
+    // ChromeScrollConfig). See [onPointerScroll]/[drainPendingScroll].
+    private var pendingScrollX: Float = 0f
+    private var pendingScrollY: Float = 0f
+
     /**
      * Renderers registered by overlay/popup scenes. Drained AFTER the
      * main scene's render in [onRedrawRequested] so each tick paints
@@ -861,6 +866,11 @@ internal class TaoComposeSceneHostWindows(
         val sc = scene ?: return
 
         if (widthPx <= 0 || heightPx <= 0) return
+
+        // Release one frame's slice of banked scroll BEFORE the frame clock ticks,
+        // so the resulting scroll-state write is composed in this same frame.
+        drainPendingScroll()
+
         val now = System.nanoTime()
 
         // ── Frame clock ordering ──────────────────────────────────────────
@@ -1025,22 +1035,19 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
-        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
-        windowInfo.keyboardModifiers = currentKeyboardModifiers
-        scene?.sendPointerEvent(
-            eventType = PointerEventType.Scroll,
-            position = Offset(lastPointerX, lastPointerY),
-            scrollDelta = Offset(event.dxAwt, event.dyAwt),
-            type = PointerType.Mouse,
-            keyboardModifiers = currentKeyboardModifiers,
-            nativeEvent =
-                TaoSyntheticMouseWheelEvent.create(
-                    event = event,
-                    x = lastPointerX,
-                    y = lastPointerY,
-                    keyboardModifiers = currentKeyboardModifiers,
-                ),
-        )
+        // Spike smoothing for fast precision-touchpad flicks. Windows can pack
+        // many ticks into a single WM_MOUSEWHEEL on an abrupt flick (measured up
+        // to ~7 ticks = ~700px in one event), while neighbouring events carry
+        // ~1 tick. Injected whole, that one event jumps the viewport ~700px in a
+        // single frame and Compose's per-event smooth-scroll tween runs ~5× the
+        // neighbours' velocity — the velocity lurch reads as a saccade. So we
+        // bank the raw delta here and release at most MAX_SCROLL_TICKS_PER_FRAME
+        // per rendered frame in [drainPendingScroll], keeping per-frame motion
+        // uniform. Distance is preserved (banked, never clipped); a hard flick
+        // just spreads over a few extra frames. Sub-cap deltas (mouse notch,
+        // slow trackpad) drain fully on the next frame — no added latency.
+        pendingScrollX += event.dxAwt
+        pendingScrollY += event.dyAwt
 
         // WM_PAINT-starvation mitigation for brisk scrolling. Our frame clock
         // only ticks in [onRedrawRequested], which fires from `WM_PAINT` — the
@@ -1059,8 +1066,55 @@ internal class TaoComposeSceneHostWindows(
         // EGL/ANGLE presents inline (no swap thread) so pumping would block
         // input — skip it there and keep the `WM_PAINT` path.
         val pumpSwap = swapThread
-        if (pumpSwap != null && pumpSwap.waitForIdle(0L)) onRedrawRequested()
+        if (pumpSwap != null && pumpSwap.waitForIdle(0L)) {
+            onRedrawRequested()
+        } else {
+            // Swap still in flight (or EGL, no swap thread): can't drain inline.
+            // Request a redraw so the banked delta drains on the next frame —
+            // banking alone doesn't invalidate Compose, so without this a slice
+            // could stall until an unrelated repaint.
+            window.requestRedraw()
+        }
     }
+
+    /**
+     * Releases one frame's worth of banked scroll (see [onPointerScroll]) into
+     * Compose, capped at [MAX_SCROLL_TICKS_PER_FRAME] per axis. Called once per
+     * rendered frame from [onRedrawRequested]; re-arms a redraw while delta
+     * remains so a hard flick keeps draining after the native flood ends.
+     */
+    private fun drainPendingScroll() {
+        if (pendingScrollX == 0f && pendingScrollY == 0f) return
+        val sc = scene ?: return
+        val sliceX = sliceScroll(pendingScrollX)
+        val sliceY = sliceScroll(pendingScrollY)
+        pendingScrollX -= sliceX
+        pendingScrollY -= sliceY
+
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
+        val slice = TaoPointerScrollEvent(dxAwt = sliceX, dyAwt = sliceY, scrollAmount = 1)
+        sc.sendPointerEvent(
+            eventType = PointerEventType.Scroll,
+            position = Offset(lastPointerX, lastPointerY),
+            scrollDelta = Offset(sliceX, sliceY),
+            type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
+            nativeEvent =
+                TaoSyntheticMouseWheelEvent.create(
+                    event = slice,
+                    x = lastPointerX,
+                    y = lastPointerY,
+                    keyboardModifiers = currentKeyboardModifiers,
+                ),
+        )
+        if (pendingScrollX != 0f || pendingScrollY != 0f) window.requestRedraw()
+    }
+
+    // Release the whole axis when within the cap (zeroes it), else cap magnitude
+    // and keep the remainder banked for the next frame.
+    private fun sliceScroll(v: Float): Float =
+        v.coerceIn(-MAX_SCROLL_TICKS_PER_FRAME, MAX_SCROLL_TICKS_PER_FRAME)
 
     fun onKeyEvent(
         type: Int,
@@ -1371,6 +1425,12 @@ internal class TaoComposeSceneHostWindows(
     }
 
     private companion object {
+        // ponytail: max scroll released per rendered frame, in wheel ticks
+        // (1 tick = 100px). 2.0 → 200px/frame = 12000px/s @60Hz, faster than any
+        // real flick yet small enough that no single frame jumps visibly. Raise
+        // if hard flicks feel capped/sluggish; lower if spikes still show.
+        private const val MAX_SCROLL_TICKS_PER_FRAME: Float = 2f
+
         /** Native backend kind reported by [NativeTaoGlBridge.nativeBackend] (EGL/ANGLE). */
         private const val BACKEND_EGL: Int = 1
 
