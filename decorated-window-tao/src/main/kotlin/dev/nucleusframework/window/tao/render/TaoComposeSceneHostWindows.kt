@@ -28,6 +28,7 @@ import dev.nucleusframework.window.tao.NativeTaoBridge
 import dev.nucleusframework.window.tao.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.TaoEventCode
+import dev.nucleusframework.window.tao.TaoMainDispatcher
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
@@ -136,10 +137,22 @@ internal class TaoComposeSceneHostWindows(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
-    // Banked scroll delta awaiting release, in wheel ticks (1 tick = 100px via
-    // ChromeScrollConfig). See [onPointerScroll]/[drainPendingScroll].
-    private var pendingScrollX: Float = 0f
-    private var pendingScrollY: Float = 0f
+    // ── Scroll vsync heartbeat ──────────────────────────────────────────────
+    // `System.nanoTime()` of the last scroll event. While within
+    // [SCROLL_PUMP_WINDOW_NS] of it, the swap thread re-pumps a frame after every
+    // present (see [maybeScheduleVsyncFrame]) so the smooth-scroll tween — driven
+    // by the frame clock in [onRedrawRequested] — ticks at the display refresh
+    // instead of the ~20 Hz wheel-event rate (WM_PAINT is starved during a
+    // WM_MOUSEWHEEL flood). Volatile: written on the event-loop thread, read on
+    // the swap thread.
+    @Volatile
+    private var lastScrollNanos: Long = 0L
+
+    // Guards against piling up more than one queued heartbeat frame at a time
+    // (the inline pump and the previous heartbeat can both try to re-arm).
+    // Set on the swap thread, cleared on the event-loop thread.
+    @Volatile
+    private var vsyncFrameQueued: Boolean = false
 
     /**
      * Renderers registered by overlay/popup scenes. Drained AFTER the
@@ -866,11 +879,6 @@ internal class TaoComposeSceneHostWindows(
         val sc = scene ?: return
 
         if (widthPx <= 0 || heightPx <= 0) return
-
-        // Release one frame's slice of banked scroll BEFORE the frame clock ticks,
-        // so the resulting scroll-state write is composed in this same frame.
-        drainPendingScroll()
-
         val now = System.nanoTime()
 
         // ── Frame clock ordering ──────────────────────────────────────────
@@ -1035,19 +1043,22 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
-        // Spike smoothing for fast precision-touchpad flicks. Windows can pack
-        // many ticks into a single WM_MOUSEWHEEL on an abrupt flick (measured up
-        // to ~7 ticks = ~700px in one event), while neighbouring events carry
-        // ~1 tick. Injected whole, that one event jumps the viewport ~700px in a
-        // single frame and Compose's per-event smooth-scroll tween runs ~5× the
-        // neighbours' velocity — the velocity lurch reads as a saccade. So we
-        // bank the raw delta here and release at most MAX_SCROLL_TICKS_PER_FRAME
-        // per rendered frame in [drainPendingScroll], keeping per-frame motion
-        // uniform. Distance is preserved (banked, never clipped); a hard flick
-        // just spreads over a few extra frames. Sub-cap deltas (mouse notch,
-        // slow trackpad) drain fully on the next frame — no added latency.
-        pendingScrollX += event.dxAwt
-        pendingScrollY += event.dyAwt
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
+        scene?.sendPointerEvent(
+            eventType = PointerEventType.Scroll,
+            position = Offset(lastPointerX, lastPointerY),
+            scrollDelta = Offset(event.dxAwt, event.dyAwt),
+            type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
+            nativeEvent =
+                TaoSyntheticMouseWheelEvent.create(
+                    event = event,
+                    x = lastPointerX,
+                    y = lastPointerY,
+                    keyboardModifiers = currentKeyboardModifiers,
+                ),
+        )
 
         // WM_PAINT-starvation mitigation for brisk scrolling. Our frame clock
         // only ticks in [onRedrawRequested], which fires from `WM_PAINT` — the
@@ -1057,64 +1068,48 @@ internal class TaoComposeSceneHostWindows(
         // smooth-scroll animation freezes mid-flood then lurches (judder).
         // AWT/JBR don't hit this — their frame clock isn't `WM_PAINT`-driven.
         //
-        // Each wheel event already runs here on the event-loop thread with the
-        // GL context current, so we pump a frame inline, pacing the animation to
-        // the flood itself. We render only when the previous present has
-        // completed (`waitForIdle(0)` — non-blocking, never stalls input), which
-        // caps us at the hardware vsync rate. After the flood the regular
-        // `WM_PAINT` path resumes (no longer starved) and renders the tail.
-        // EGL/ANGLE presents inline (no swap thread) so pumping would block
-        // input — skip it there and keep the `WM_PAINT` path.
+        // Compose's smooth-scroll animation is frame-clock driven (one tick per
+        // `frameClock.sendFrame`, i.e. one per [onRedrawRequested]). The inline
+        // pump below renders one frame per wheel event — but wheel events arrive
+        // at only ~20 Hz, so on their own they tick the tween at ~20 fps = the
+        // residual judder. So we also arm a vsync heartbeat: [lastScrollNanos]
+        // opens a window during which the swap thread re-pumps a frame after
+        // every present (see [maybeScheduleVsyncFrame]), driving the tween at the
+        // full display refresh independent of the wheel-event rate. The window
+        // resets on each event, so sustained scrolling stays at 60 fps and a
+        // flick's tail keeps animating until the tween settles.
+        lastScrollNanos = System.nanoTime()
+
+        // Inline bootstrap: render the first frame here (with the GL context
+        // already current on this thread) when the previous present has completed
+        // (`waitForIdle(0)` — non-blocking, never stalls input). That present then
+        // kicks off the swap-thread heartbeat. EGL/ANGLE presents inline (no swap
+        // thread, so no heartbeat) — pumping would block input, so skip it there
+        // and keep the `WM_PAINT` path.
         val pumpSwap = swapThread
-        if (pumpSwap != null && pumpSwap.waitForIdle(0L)) {
-            onRedrawRequested()
-        } else {
-            // Swap still in flight (or EGL, no swap thread): can't drain inline.
-            // Request a redraw so the banked delta drains on the next frame —
-            // banking alone doesn't invalidate Compose, so without this a slice
-            // could stall until an unrelated repaint.
-            window.requestRedraw()
-        }
+        if (pumpSwap != null && pumpSwap.waitForIdle(0L)) onRedrawRequested()
     }
 
     /**
-     * Releases one frame's worth of banked scroll (see [onPointerScroll]) into
-     * Compose, capped at [MAX_SCROLL_TICKS_PER_FRAME] per axis. Called once per
-     * rendered frame from [onRedrawRequested]; re-arms a redraw while delta
-     * remains so a hard flick keeps draining after the native flood ends.
+     * Re-pumps a frame at the display refresh while a scroll is active, so
+     * Compose's frame-clock-driven smooth-scroll animation ticks at vsync rather
+     * than the ~20 Hz wheel-event rate. Called on the swap thread right after
+     * each present (the present's vsync wait is what paces the loop). Posts the
+     * render to [TaoMainDispatcher] — drained on `MAIN_EVENTS_CLEARED`, which (unlike
+     * `WM_PAINT`) is not starved by the `WM_MOUSEWHEEL` flood. The posted block
+     * re-renders → re-presents → re-arms, sustaining a vsync-paced loop until the
+     * [SCROLL_PUMP_WINDOW_NS] window lapses, then it quiesces (no idle cost: with
+     * nothing rendering there are no presents, so this is never called).
      */
-    private fun drainPendingScroll() {
-        if (pendingScrollX == 0f && pendingScrollY == 0f) return
-        val sc = scene ?: return
-        val sliceX = sliceScroll(pendingScrollX)
-        val sliceY = sliceScroll(pendingScrollY)
-        pendingScrollX -= sliceX
-        pendingScrollY -= sliceY
-
-        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
-        windowInfo.keyboardModifiers = currentKeyboardModifiers
-        val slice = TaoPointerScrollEvent(dxAwt = sliceX, dyAwt = sliceY, scrollAmount = 1)
-        sc.sendPointerEvent(
-            eventType = PointerEventType.Scroll,
-            position = Offset(lastPointerX, lastPointerY),
-            scrollDelta = Offset(sliceX, sliceY),
-            type = PointerType.Mouse,
-            keyboardModifiers = currentKeyboardModifiers,
-            nativeEvent =
-                TaoSyntheticMouseWheelEvent.create(
-                    event = slice,
-                    x = lastPointerX,
-                    y = lastPointerY,
-                    keyboardModifiers = currentKeyboardModifiers,
-                ),
-        )
-        if (pendingScrollX != 0f || pendingScrollY != 0f) window.requestRedraw()
+    private fun maybeScheduleVsyncFrame() {
+        if (System.nanoTime() - lastScrollNanos >= SCROLL_PUMP_WINDOW_NS) return
+        if (vsyncFrameQueued) return
+        vsyncFrameQueued = true
+        TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
+            vsyncFrameQueued = false
+            if (System.nanoTime() - lastScrollNanos < SCROLL_PUMP_WINDOW_NS) onRedrawRequested()
+        }
     }
-
-    // Release the whole axis when within the cap (zeroes it), else cap magnitude
-    // and keep the remainder banked for the next frame.
-    private fun sliceScroll(v: Float): Float =
-        v.coerceIn(-MAX_SCROLL_TICKS_PER_FRAME, MAX_SCROLL_TICKS_PER_FRAME)
 
     fun onKeyEvent(
         type: Int,
@@ -1425,11 +1420,11 @@ internal class TaoComposeSceneHostWindows(
     }
 
     private companion object {
-        // ponytail: max scroll released per rendered frame, in wheel ticks
-        // (1 tick = 100px). 2.0 → 200px/frame = 12000px/s @60Hz, faster than any
-        // real flick yet small enough that no single frame jumps visibly. Raise
-        // if hard flicks feel capped/sluggish; lower if spikes still show.
-        private const val MAX_SCROLL_TICKS_PER_FRAME: Float = 2f
+        // ponytail: how long after a scroll event the vsync heartbeat keeps
+        // re-pumping frames. Must outlast Compose's smooth-scroll tween (≤100 ms
+        // animation + 50 ms ScrollProgressTimeout); 180 ms covers it with margin.
+        // Each event resets the window, so this only governs the post-flick tail.
+        private const val SCROLL_PUMP_WINDOW_NS: Long = 180_000_000L
 
         /** Native backend kind reported by [NativeTaoGlBridge.nativeBackend] (EGL/ANGLE). */
         private const val BACKEND_EGL: Int = 1
@@ -1578,6 +1573,12 @@ internal class TaoComposeSceneHostWindows(
                                 idleCond.signalAll()
                             }
                         }
+                        // Present done (and the WGL context released). If a scroll
+                        // is active, re-pump the next frame so the smooth-scroll
+                        // tween keeps ticking at vsync — the present we just did is
+                        // the heartbeat. Outside the scroll window this is a cheap
+                        // no-op and nothing re-arms.
+                        maybeScheduleVsyncFrame()
                     }
                 }
             } catch (_: InterruptedException) {
