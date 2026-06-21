@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 /**
  * Diagnostic screen that measures scroll "impact" so the Tao backend can be
@@ -83,6 +85,28 @@ fun ScrollTestScreen() {
     var counter by remember { mutableStateOf(0) }
     var liveRawY by remember { mutableStateOf(0f) }
     var liveValue by remember { mutableStateOf(0) }
+    var fps by remember { mutableStateOf(0) }
+
+    // Live render FPS = frame-clock ticks per second. This is the metric the
+    // scroll-cadence fix changes (the smooth-scroll tween ticks once per frame):
+    // it should hold ~display refresh while scrolling, not drop to the
+    // wheel-event rate (~20). Measured over a ~500ms rolling window.
+    LaunchedEffect(Unit) {
+        var frames = 0
+        var windowStartNs = 0L
+        while (true) {
+            withFrameNanos { ns ->
+                frames++
+                if (windowStartNs == 0L) windowStartNs = ns
+                val elapsed = ns - windowStartNs
+                if (elapsed >= 500_000_000L) {
+                    fps = (frames * 1_000_000_000.0 / elapsed).roundToInt()
+                    frames = 0
+                    windowStartNs = ns
+                }
+            }
+        }
+    }
 
     // Finalize a gesture once the scroll events go quiet for IDLE_MS. Both this
     // ticker and the pointer handler run on the UI dispatcher, so the shared
@@ -118,6 +142,7 @@ fun ScrollTestScreen() {
                 liveRawY = liveRawY,
                 value = liveValue,
                 maxValue = scrollState.maxValue,
+                fps = fps,
                 onReset = {
                     gestures.clear()
                     counter = 0
@@ -189,6 +214,7 @@ private fun StatsPanel(
     liveRawY: Float,
     value: Int,
     maxValue: Int,
+    fps: Int,
     onReset: () -> Unit,
     onCopy: () -> Unit,
 ) {
@@ -203,8 +229,8 @@ private fun StatsPanel(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "live rawΔy = %+.3f   |   offset = %d / %d   |   avg px/gesture = %.0f"
-                .format(liveRawY, value, maxValue, avgPx),
+            "live rawΔy = %+.3f   |   offset = %d / %d   |   avg px/gesture = %.0f   |   render = %d fps"
+                .format(liveRawY, value, maxValue, avgPx, fps),
             fontFamily = FontFamily.Monospace,
             style = MaterialTheme.typography.bodyMedium,
         )
