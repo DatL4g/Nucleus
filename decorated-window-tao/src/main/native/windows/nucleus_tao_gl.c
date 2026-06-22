@@ -85,6 +85,18 @@ static PFNWGLCHOOSEPIXELFORMATARBPROC    pwglChoosePixelFormatARB    = NULL;
 static PFNWGLSWAPINTERVALEXTPROC         pwglSwapIntervalEXT         = NULL;
 static volatile BOOL extensionsLoaded = FALSE;
 
+/* DWM composition flush. `wglSwapIntervalEXT(1)` paces SwapBuffers off the
+ * driver's vsync, which jitters badly under the Desktop Window Manager
+ * (~14-19ms instead of a clean 16.67ms) — that jitter is the residual scroll
+ * judder once the frame clock already ticks at 60fps. Skiko's
+ * WindowsOpenGLRedrawer hits the same wall and fixes it the same way: disable
+ * the swap interval and block on DwmFlush() for a DWM-aligned vsync instead.
+ * Loaded dynamically from dwmapi.dll (this TU builds /NODEFAULTLIB, so we don't
+ * link the import lib). NULL => fall back to swap-interval pacing. */
+typedef HRESULT (WINAPI *PFNDWMFLUSHPROC)(void);
+static PFNDWMFLUSHPROC pDwmFlush  = NULL;
+static HMODULE         sLibDwm    = NULL;
+
 #define WGL_DRAW_TO_WINDOW_ARB                    0x2001
 #define WGL_ACCELERATION_ARB                      0x2003
 #define WGL_FULL_ACCELERATION_ARB                 0x2027
@@ -156,6 +168,12 @@ static void loadWglExtensions(void) {
             wglGetProcAddress("wglSwapIntervalEXT");
         wglMakeCurrent(NULL, NULL);
         wglDeleteContext(hglrc);
+    }
+
+    /* Resolve DwmFlush (no GL context needed). */
+    sLibDwm = LoadLibraryA("dwmapi.dll");
+    if (sLibDwm) {
+        pDwmFlush = (PFNDWMFLUSHPROC)GetProcAddress(sLibDwm, "DwmFlush");
     }
 
     ReleaseDC(hwnd, hdc);
@@ -488,11 +506,12 @@ static GlAttachment *attachWgl(HWND hwnd) {
     }
 
     wglMakeCurrent(hdc, hglrc);
-    /* VSync ON: SwapBuffers blocks until the next display refresh. Required
-     * for smooth scroll: Compose's `withFrameNanos` animation steps land on
-     * regular display-aligned ticks, otherwise the irregular cadence of
-     * software-throttled frames feels juddery compared to AWT/Skiko. */
-    if (pwglSwapIntervalEXT) pwglSwapIntervalEXT(1);
+    /* VSync pacing. When DwmFlush is available we DISABLE the swap interval and
+     * pace on DwmFlush in nativePresent instead — wglSwapIntervalEXT(1) jitters
+     * under DWM and that jitter is the residual scroll judder. Without DwmFlush
+     * (e.g. DWM composition off), fall back to interval 1 so SwapBuffers blocks
+     * on the driver vsync as before. */
+    if (pwglSwapIntervalEXT) pwglSwapIntervalEXT(pDwmFlush ? 0 : 1);
 
     GlAttachment *att = (GlAttachment *)HeapAlloc(
         GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(GlAttachment));
@@ -788,6 +807,15 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativePresent(
         pEglSwapBuffers(att->eglDisplay, att->eglSurface);
     } else {
         SwapBuffers(att->hdc);
+        /* DWM-aligned vsync: with the swap interval disabled, SwapBuffers
+         * returns without waiting, so block here for a clean composition tick.
+         * glFinish ensures the GPU has finished the frame before we wait, so the
+         * present lands in the upcoming composition rather than slipping a frame.
+         * Mirrors skiko's swapBuffers→glFinish→dwmFlush loop. */
+        if (pDwmFlush) {
+            glFinish();
+            pDwmFlush();
+        }
     }
 }
 
