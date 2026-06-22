@@ -65,6 +65,12 @@ private class ScrollMeter {
     var rawSumX = 0f
     var maxRawAbsY = 0f
     var lastRawY = 0f
+
+    // Monotonic frame-clock tick counter (incremented in the withFrameNanos
+    // loop) and its value at gesture start. The difference over the gesture
+    // window measures render FPS — the metric the scroll-cadence fix changes.
+    var frameCount = 0
+    var startFrameCount = 0
 }
 
 private data class GestureStat(
@@ -74,6 +80,7 @@ private data class GestureStat(
     val pxScrolled: Int,
     val durationMs: Long,
     val maxRawAbsY: Float,
+    val fps: Int,
 )
 
 @Composable
@@ -97,6 +104,7 @@ fun ScrollTestScreen() {
         while (true) {
             withFrameNanos { ns ->
                 frames++
+                meter.frameCount++
                 if (windowStartNs == 0L) windowStartNs = ns
                 val elapsed = ns - windowStartNs
                 if (elapsed >= 500_000_000L) {
@@ -118,6 +126,12 @@ fun ScrollTestScreen() {
             val now = System.nanoTime() / 1_000_000
             if (meter.inGesture && now - meter.lastTimeMs >= IDLE_MS) {
                 val px = scrollState.value - meter.startValuePx
+                // Render FPS over the whole gesture window (start → finalize, i.e.
+                // including the post-input animation tail) = frames rendered ÷
+                // wall-clock. This is what the cadence fix should lift toward the
+                // display refresh; ~20 means the tween only ticks at wheel rate.
+                val windowMs = (now - meter.startTimeMs).coerceAtLeast(1)
+                val gestureFrames = meter.frameCount - meter.startFrameCount
                 gestures.add(
                     0,
                     GestureStat(
@@ -127,6 +141,7 @@ fun ScrollTestScreen() {
                         pxScrolled = px,
                         durationMs = (meter.lastTimeMs - meter.startTimeMs).coerceAtLeast(0),
                         maxRawAbsY = meter.maxRawAbsY,
+                        fps = (gestureFrames * 1000L / windowMs).toInt(),
                     ),
                 )
                 if (gestures.size > MAX_LOG) gestures.removeAt(gestures.lastIndex)
@@ -170,6 +185,7 @@ fun ScrollTestScreen() {
                                             meter.inGesture = true
                                             meter.startValuePx = scrollState.value
                                             meter.startTimeMs = now
+                                            meter.startFrameCount = meter.frameCount
                                             meter.events = 0
                                             meter.rawSumY = 0f
                                             meter.rawSumX = 0f
@@ -243,6 +259,7 @@ private fun StatsPanel(
             HeaderCell("ms", 60)
             HeaderCell("max |rawΔy|", 110)
             HeaderCell("px / event", 90)
+            HeaderCell("fps", 60)
         }
         gestures.forEach { g ->
             Row {
@@ -253,6 +270,7 @@ private fun StatsPanel(
                 Cell("${g.durationMs}", 60)
                 Cell("%.2f".format(g.maxRawAbsY), 110)
                 Cell(if (g.events == 0) "-" else "%+.1f".format(g.pxScrolled.toFloat() / g.events), 90)
+                Cell("${g.fps}", 60)
             }
         }
     }
@@ -266,13 +284,13 @@ private fun buildClipboardText(gestures: List<GestureStat>): String {
     val sb = StringBuilder()
     sb.append("# Scroll Test — Compose (Tao backend) — $os\n")
     sb.append("# gestures=${gestures.size}\tavgPxPerGesture=%.0f\n".format(l, avgPx))
-    sb.append("idx\tevents\trawSumY\tpxScrolled\tms\tmaxRawAbsY\tpxPerEvent\n")
+    sb.append("idx\tevents\trawSumY\tpxScrolled\tms\tmaxRawAbsY\tpxPerEvent\tfps\n")
     // Oldest first for natural reading; the on-screen list is newest first.
     gestures.asReversed().forEach { g ->
         val pxPerEvent = if (g.events == 0) 0f else g.pxScrolled.toFloat() / g.events
         sb.append(
-            "%d\t%d\t%.2f\t%d\t%d\t%.2f\t%.2f\n"
-                .format(l, g.index, g.events, g.rawSumY, g.pxScrolled, g.durationMs, g.maxRawAbsY, pxPerEvent),
+            "%d\t%d\t%.2f\t%d\t%d\t%.2f\t%.2f\t%d\n"
+                .format(l, g.index, g.events, g.rawSumY, g.pxScrolled, g.durationMs, g.maxRawAbsY, pxPerEvent, g.fps),
         )
     }
     return sb.toString()
