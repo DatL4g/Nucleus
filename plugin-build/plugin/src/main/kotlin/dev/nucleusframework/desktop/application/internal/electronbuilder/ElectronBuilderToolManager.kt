@@ -37,6 +37,14 @@ internal class ElectronBuilderToolManager(
 ) {
     companion object {
         private const val ELECTRON_BUILDER_PACKAGE = "electron-builder"
+
+        // Pin electron-builder so the packaged output (and the generated AppImage AppRun) is
+        // reproducible across builds. Left unpinned, `npx electron-builder` resolves whatever
+        // version is latest at build time, so the same plugin + sources can produce different
+        // artifacts on different days. See #266.
+        private const val ELECTRON_BUILDER_VERSION = "26.15.5"
+        private const val ELECTRON_BUILDER_SPEC = "$ELECTRON_BUILDER_PACKAGE@$ELECTRON_BUILDER_VERSION"
+
         private const val PREPACKAGED_ELECTRON_VERSION = "33.0.0"
     }
 
@@ -58,7 +66,7 @@ internal class ElectronBuilderToolManager(
         val args =
             buildList {
                 add("--yes")
-                add(ELECTRON_BUILDER_PACKAGE)
+                add(ELECTRON_BUILDER_SPEC)
                 add("--prepackaged")
                 add(invocation.prepackagedDir.absolutePath)
                 add("--config")
@@ -156,7 +164,7 @@ internal class ElectronBuilderToolManager(
             val result =
                 execOperations.exec { spec ->
                     spec.executable = npx.absolutePath
-                    spec.args = listOf("--yes", ELECTRON_BUILDER_PACKAGE, "--version")
+                    spec.args = listOf("--yes", ELECTRON_BUILDER_SPEC, "--version")
                     spec.isIgnoreExitValue = true
                     spec.standardOutput = ByteArrayOutputStream()
                     spec.errorOutput = ByteArrayOutputStream()
