@@ -46,8 +46,9 @@ impl WindowId {
 pub struct Window {
   /// Window id.
   pub(crate) window_id: WindowId,
-  /// Gtk application window.
-  pub(crate) window: gtk::ApplicationWindow,
+  /// Gtk window. A `GtkApplicationWindow` for regular windows, a plain
+  /// `GTK_WINDOW_POPUP` for popup overlays (see `popup_transient_for`).
+  pub(crate) window: gtk::Window,
   pub(crate) default_vbox: Option<gtk::Box>,
   /// Window requests sender
   pub(crate) window_requests_tx: glib::Sender<(WindowId, WindowRequest)>,
@@ -71,6 +72,15 @@ pub struct Window {
   css_provider: CssProvider,
 }
 
+/// Synthesized ids for popup windows, disjoint from GtkApplicationWindow ids
+/// (which start at 1 and grow slowly). High bit set to make collisions
+/// impossible in practice.
+fn next_popup_window_id() -> u32 {
+  use std::sync::atomic::{AtomicU32, Ordering};
+  static NEXT: AtomicU32 = AtomicU32::new(0x8000_0000);
+  NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 impl Window {
   pub(crate) fn new<T>(
     event_loop_window_target: &EventLoopWindowTarget<T>,
@@ -82,20 +92,44 @@ impl Window {
     let draw_tx = event_loop_window_target.draw_tx.clone();
     let is_wayland = event_loop_window_target.is_wayland();
 
-    let mut window_builder = gtk::ApplicationWindow::builder()
-      .application(app)
-      .accept_focus(attributes.focusable && attributes.focused);
-    if let Parent::ChildOf(parent) = pl_attribs.parent {
-      window_builder = window_builder.transient_for(&parent);
-    }
+    // Nucleus patch: `popup_transient_for` creates a `GTK_WINDOW_POPUP` window
+    // instead of a `GtkApplicationWindow`. On Wayland GDK maps such a window as
+    // a `wl_subsurface` of the transient parent ("wayland: prefer subsurface
+    // when possible", GTK 3.20+), which is the ONLY window kind a client can
+    // freely position under xdg-shell — `gtk_window_move` becomes
+    // `wl_subsurface.set_position` and the surface is not clipped to the
+    // parent. Used for cursor-following overlays (drag ghosts). On X11 it is
+    // an override-redirect window, positionable as usual.
+    let (window, window_id) = if let Some(popup_parent) = pl_attribs.popup_transient_for.clone() {
+      let window = gtk::Window::new(gtk::WindowType::Popup);
+      window.set_transient_for(Some(&popup_parent));
+      window.set_accept_focus(attributes.focusable && attributes.focused);
+      // Deliberately NOT added to the GtkApplication: popup overlays must not
+      // keep the app alive nor appear in `gtk_application_get_window_by_id`
+      // (their ids are synthesized below and routed via `popup_windows`).
+      let window_id = WindowId(next_popup_window_id());
+      event_loop_window_target
+        .popup_windows
+        .borrow_mut()
+        .insert(window_id.0, window.clone());
+      (window, window_id)
+    } else {
+      let mut window_builder = gtk::ApplicationWindow::builder()
+        .application(app)
+        .accept_focus(attributes.focusable && attributes.focused);
+      if let Parent::ChildOf(parent) = pl_attribs.parent {
+        window_builder = window_builder.transient_for(&parent);
+      }
 
-    let window = window_builder.build();
+      let window = window_builder.build();
 
-    if is_wayland {
-      WlHeader::setup(&window, &attributes.title);
-    }
+      if is_wayland {
+        WlHeader::setup(&window, &attributes.title);
+      }
 
-    let window_id = WindowId(window.id());
+      let window_id = WindowId(window.id());
+      (window.upcast::<gtk::Window>(), window_id)
+    };
     event_loop_window_target
       .windows
       .borrow_mut()
@@ -109,6 +143,14 @@ impl Window {
       .unwrap_or((800, 600));
     window.set_default_size(1, 1);
     window.resize(width, height);
+    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
+    // window — GTK sizes it to the content's natural size instead, so a
+    // 200×40 overlay came up 200×200. Pin the requested size through the
+    // widget size request (the only sizing channel GTK honours when
+    // `resizable == false`). Applies to both X11 and Wayland.
+    if !attributes.resizable && !attributes.maximized {
+      window.set_size_request(width, height);
+    }
 
     if attributes.maximized {
       // Nucleus patch: apply `maximize()` synchronously, before the GTK window
@@ -272,7 +314,7 @@ impl Window {
       minimized,
       is_always_on_top,
       tiled,
-    ) = Self::setup_signals(&window, Some(&attributes));
+    ) = Self::setup_signals(&window, window_id, Some(&attributes));
 
     if let Some(icon) = attributes.window_icon {
       window.set_icon(Some(&icon.inner.into()));
@@ -314,7 +356,8 @@ impl Window {
   }
 
   fn setup_signals(
-    window: &gtk::ApplicationWindow,
+    window: &gtk::Window,
+    window_id: WindowId,
     attributes: Option<&WindowAttributes>,
   ) -> (
     Rc<AtomicI32>,
@@ -409,7 +452,7 @@ impl Window {
       // actually transitioning to avoid spamming the embedder hook.
       if event.changed_mask().contains(WindowState::ICONIFIED) {
         if let Some(hook) = crate::platform::linux::MINIMIZED_HOOK.get() {
-          hook(crate::window::WindowId(WindowId(window.id())), iconified);
+          hook(crate::window::WindowId(window_id), iconified);
         }
       }
       glib::Propagation::Proceed
@@ -442,6 +485,7 @@ impl Window {
     let draw_tx = event_loop_window_target.draw_tx.clone();
 
     let window_id = WindowId(window.id());
+    let window = window.upcast::<gtk::Window>();
     event_loop_window_target
       .windows
       .borrow_mut()
@@ -457,7 +501,7 @@ impl Window {
       minimized,
       is_always_on_top,
       tiled,
-    ) = Self::setup_signals(&window, None);
+    ) = Self::setup_signals(&window, window_id, None);
 
     let win = Self {
       window_id,

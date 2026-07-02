@@ -74,6 +74,8 @@ class TaoWindow internal constructor(
     private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
 
     @Volatile
+    private var willHideListener: (() -> Unit)? = null
+    private var shownListener: (() -> Unit)? = null
     private var pointerMoveListener: ((Int, Int) -> Unit)? = null
 
     @Volatile
@@ -544,6 +546,23 @@ class TaoWindow internal constructor(
         minimizedListeners += block
     }
 
+    /**
+     * Linux only. Fires synchronously on the event-loop thread right before
+     * the GTK window is hidden — the host must suspend EGL rendering before
+     * Wayland's parent `wl_surface` is destroyed (see [TaoEventCode.WILL_HIDE]).
+     */
+    fun onWillHide(block: () -> Unit) {
+        willHideListener = block
+    }
+
+    /**
+     * Linux only. Fires synchronously right after the GTK window is shown
+     * again, once the GDK surface exists — the host may re-attach EGL.
+     */
+    fun onShown(block: () -> Unit) {
+        shownListener = block
+    }
+
     fun onPointerMoved(block: (xFixed: Int, yFixed: Int) -> Unit) {
         pointerMoveListener = block
     }
@@ -672,6 +691,8 @@ class TaoWindow internal constructor(
             TaoEventCode.MOUSE_DOWN -> pointerButtonListener?.invoke(a, true)
             TaoEventCode.MOUSE_UP -> pointerButtonListener?.invoke(a, false)
             TaoEventCode.MODIFIERS_CHANGED -> modifierState = a
+            TaoEventCode.WILL_HIDE -> willHideListener?.invoke()
+            TaoEventCode.SHOWN -> shownListener?.invoke()
             TaoEventCode.SCROLL_LINE -> {
                 // AWT sends the wheel rotation as scrollDelta and leaves the
                 // platform line-count policy in MouseWheelEvent.scrollAmount.

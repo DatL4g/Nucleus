@@ -91,8 +91,8 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
         if let Some(map) = guard.as_ref() {
             if let Some(window) = map.get(&(handle as u64)) {
                 let gtk_window = window.gtk_window();
-                let raw: *mut gtk::ffi::GtkApplicationWindow =
-                    glib::translate::ToGlibPtr::<*mut gtk::ffi::GtkApplicationWindow>::to_glib_none(
+                let raw: *mut gtk::ffi::GtkWindow =
+                    glib::translate::ToGlibPtr::<*mut gtk::ffi::GtkWindow>::to_glib_none(
                         gtk_window,
                     ).0;
                 out = raw as jlong;

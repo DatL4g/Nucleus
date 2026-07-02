@@ -67,6 +67,11 @@ object TaoApplication {
         resizable: Boolean = true,
         visible: Boolean = true,
         maximized: Boolean = false,
+        // Linux only: make this window a popup overlay of [popupOf]
+        // (GTK_WINDOW_POPUP transient → wl_subsurface on Wayland, the only
+        // client-positionable window kind under xdg-shell). For
+        // cursor-following overlays such as drag ghosts. Ignored elsewhere.
+        popupOf: TaoWindow? = null,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
         val window = TaoWindow(handle, isResizable = resizable)
@@ -80,6 +85,7 @@ object TaoApplication {
             resizable,
             visible,
             maximized,
+            popupOf?.handle ?: 0L,
         )
         return window
     }

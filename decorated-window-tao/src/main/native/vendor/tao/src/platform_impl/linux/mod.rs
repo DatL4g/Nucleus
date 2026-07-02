@@ -52,6 +52,11 @@ pub struct PlatformSpecificWindowBuilderAttributes {
   pub rgba_visual: bool,
   pub cursor_moved: bool,
   pub default_vbox: bool,
+  /// Nucleus patch: build a `GTK_WINDOW_POPUP` transient for this window
+  /// instead of a `GtkApplicationWindow`. On Wayland GDK maps it as a
+  /// `wl_subsurface` of the parent — the only client-positionable window
+  /// kind under xdg-shell. For cursor-following overlays (drag ghosts).
+  pub popup_transient_for: Option<gtk::Window>,
 }
 
 impl Default for PlatformSpecificWindowBuilderAttributes {
@@ -65,6 +70,7 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
       rgba_visual: false,
       cursor_moved: true,
       default_vbox: true,
+      popup_transient_for: None,
     }
   }
 }

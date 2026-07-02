@@ -33,6 +33,12 @@ fun NucleusApplicationScope.DecoratedWindow(
     // Fully borderless window (no macOS traffic lights) — for overlay/ghost windows.
     // Honoured by the Tao backend; the AWT backend currently ignores it.
     undecorated: Boolean = false,
+    // Linux/Tao only: make this window a popup overlay of [popupFor]. On
+    // Wayland it maps as a wl_subsurface of the parent — the only window kind
+    // a client can freely position under xdg-shell (coordinates are
+    // parent-relative). For cursor-following overlays such as drag ghosts.
+    // Ignored by the AWT backend and on macOS/Windows.
+    popupFor: NucleusWindow? = null,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -85,6 +91,7 @@ fun NucleusApplicationScope.DecoratedWindow(
                 focusable = focusable,
                 alwaysOnTop = alwaysOnTop,
                 undecorated = undecorated,
+                popupFor = popupFor,
                 minimumSize = minimumSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,

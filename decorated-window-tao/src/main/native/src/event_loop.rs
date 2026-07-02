@@ -172,6 +172,7 @@ pub(crate) fn run_event_loop_blocking() {
                     resizable,
                     visible,
                     maximized,
+                    popup_of,
                 } => {
                     #[allow(unused_mut)]
                     let mut builder = WindowBuilder::new()
@@ -181,6 +182,26 @@ pub(crate) fn run_event_loop_blocking() {
                         .with_resizable(resizable)
                         .with_visible(visible)
                         .with_maximized(maximized);
+                    // Linux: build cursor-following overlays as GTK_WINDOW_POPUP
+                    // transient children — on Wayland GDK maps them as
+                    // `wl_subsurface`s, the only client-positionable window
+                    // kind under xdg-shell. Silently ignored if the parent
+                    // handle is unknown (falls back to a regular toplevel).
+                    #[cfg(target_os = "linux")]
+                    if popup_of != 0 {
+                        use tao::platform::unix::{WindowBuilderExtUnix, WindowExtUnix};
+                        let parent_gtk = {
+                            let guard = WINDOWS.lock().unwrap();
+                            guard.as_ref().and_then(|map| {
+                                map.get(&popup_of).map(|w| w.gtk_window().clone())
+                            })
+                        };
+                        if let Some(parent_gtk) = parent_gtk {
+                            builder = builder.with_popup_transient_for(&parent_gtk);
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = popup_of;
                     // Linux: request an ARGB visual so the GTK window's X
                     // visual matches the canonical visual that Mesa's EGL
                     // exposes through its EGLConfigs. Without this, GDK
@@ -210,22 +231,50 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                 }
                 UserEvent::SetVisible { handle, visible } => {
-                    let guard = WINDOWS.lock().unwrap();
-                    if let Some(map) = guard.as_ref() {
-                        if let Some(w) = map.get(&handle) {
-                            w.set_visible(visible);
-                            // Force a fresh frame into the now-composited surface.
-                            // The first frame is rendered (SwapBuffers) while the
-                            // HWND is still hidden, but WGL/DWM does not reliably
-                            // retain that pre-show swap once ShowWindow composites
-                            // the window — it can reveal an undefined/black front
-                            // buffer until the next redraw. Re-presenting here
-                            // guarantees the content paints the instant the window
-                            // appears.
-                            if visible {
-                                w.request_redraw();
+                    // Linux: let the JVM suspend its EGL rendering BEFORE GTK
+                    // unmaps the window. On Wayland `gtk_widget_hide` destroys
+                    // the parent `wl_surface`; a swap racing that destruction
+                    // trips a fatal protocol error (GDK "Error 71"). Dispatched
+                    // outside the WINDOWS lock — the JVM handler re-enters
+                    // native code that takes the same lock.
+                    #[cfg(target_os = "linux")]
+                    if !visible {
+                        dispatch(handle, crate::events::EVENT_WILL_HIDE, 0, 0);
+                    }
+                    {
+                        let guard = WINDOWS.lock().unwrap();
+                        if let Some(map) = guard.as_ref() {
+                            if let Some(w) = map.get(&handle) {
+                                w.set_visible(visible);
+                                if visible {
+                                    // Linux: `set_visible` only queues the GTK
+                                    // show through tao's request channel. Show
+                                    // synchronously so the GDK surface already
+                                    // exists when EVENT_SHOWN (below) lets the
+                                    // JVM re-attach EGL. Idempotent with the
+                                    // queued request.
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        use gtk::prelude::WidgetExt;
+                                        use tao::platform::unix::WindowExtUnix;
+                                        w.gtk_window().show_all();
+                                    }
+                                    // Force a fresh frame into the now-composited surface.
+                                    // The first frame is rendered (SwapBuffers) while the
+                                    // HWND is still hidden, but WGL/DWM does not reliably
+                                    // retain that pre-show swap once ShowWindow composites
+                                    // the window — it can reveal an undefined/black front
+                                    // buffer until the next redraw. Re-presenting here
+                                    // guarantees the content paints the instant the window
+                                    // appears.
+                                    w.request_redraw();
+                                }
                             }
                         }
+                    }
+                    #[cfg(target_os = "linux")]
+                    if visible {
+                        dispatch(handle, crate::events::EVENT_SHOWN, 0, 0);
                     }
                 }
                 UserEvent::SetTitle { handle, title } => {

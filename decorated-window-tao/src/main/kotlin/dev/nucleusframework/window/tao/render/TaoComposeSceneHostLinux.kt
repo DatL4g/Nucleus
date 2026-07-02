@@ -200,6 +200,14 @@ internal class TaoComposeSceneHostLinux(
     private var lastPointerY: Float = 0f
 
     /**
+     * Number of currently-pressed mouse buttons. While non-zero a drag is in
+     * flight: pointer positions may legitimately be OUTSIDE the window (the
+     * platform grab keeps delivering them) and must reach Compose — the
+     * resize-band hit-test must not swallow them.
+     */
+    private var pressedButtons: Int = 0
+
+    /**
      * Captured at the first composition via [setContent]. Exposes the
      * standard `FocusManager.clearFocus(force = true)` API which the
      * scene-level [androidx.compose.ui.scene.ComposeSceneFocusManager]
@@ -222,7 +230,67 @@ internal class TaoComposeSceneHostLinux(
             else -> 0
         }
 
+    /** Backend kind of the current EGL attachment: 1 = X11, 2 = Wayland. */
+    private var attachedKind: Int = 0
+
+    /** True while the EGL attachment is torn down because the window is hidden. */
+    private var gpuSuspended: Boolean = false
+
     fun attach() {
+        attachGpu()
+
+        @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+        val dndManager =
+            dev.nucleusframework.window.tao.TaoDragAndDropManager(
+                getRootNode = { scene!!.rootDragAndDropNode },
+                outboundLauncher = ::launchLinuxOutboundDrag,
+            )
+        scene =
+            CanvasLayersComposeScene(
+                density = Density(scale),
+                layoutDirection = GlobalLayoutDirection,
+                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                platformContext =
+                    LinuxTaoPlatformContext(
+                        windowHandle = window.handle,
+                        // The custom CSD title bar is drawn inside the same Compose
+                        // scene as the rest of the content, so it shares the (0, 0)
+                        // origin with everything else. We must NOT report it as a
+                        // `PlatformInsets.top`: Compose's `RootMeasurePolicy` (cf.
+                        // `RootMeasurePolicy.skiko.kt::positionWithInsets`) applies
+                        // platform insets as an *additive offset* on the popup
+                        // position (designed for iOS notches / Android status
+                        // bars, where the safe area is outside the Compose surface).
+                        // Reporting `top = titleBarHeight` here shifts every Popup,
+                        // DropdownMenu, ContextMenu, and Tooltip down by that
+                        // amount — visible as a consistent "title-bar-height
+                        // downward drift" of every popup the user opens. Popups
+                        // are free to overlap the title bar zone; the title bar
+                        // composable's own z-order keeps it visually on top of
+                        // the page content but popups (rendered in a higher
+                        // ComposeSceneLayer) naturally float above both.
+                        topInsetPx = { 0 },
+                        windowInfo = windowInfo,
+                        semanticsOwnerListener = semanticsOwnerListener,
+                        dragAndDropManager = dndManager,
+                        textToolbar = textToolbar,
+                    ),
+                invalidate = {
+                    requestRedrawCoalesced()
+                },
+            ).apply { compositionLocalContext = pendingCompositionLocalContext }
+
+        registerInboundDnD()
+        registerTouch()
+    }
+
+    /**
+     * EGL + Skia half of [attach]: resolves the native window handles, binds
+     * an EGL context/surface, creates the per-window [DirectContext] and
+     * starts the swap thread. Split out so [resumeGpu] can rebuild the GPU
+     * side alone after a hide/show cycle destroyed the native surface.
+     */
+    private fun attachGpu() {
         check(NativeTaoBridge.isLoaded && NativeTaoEglBridge.isLoaded) {
             "Tao Linux native libraries not loaded"
         }
@@ -301,50 +369,60 @@ internal class TaoComposeSceneHostLinux(
         // pass via [bindContextForRender].
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread = SwapThread(attachmentHandle).also { it.start() }
+        attachedKind = kind
+        // Force the next render to re-push size/scale into the fresh EGL
+        // surface and rebuild the Skia render target.
+        lastAppliedWidthPx = -1
+        lastAppliedHeightPx = -1
+        lastAppliedScale = Float.NaN
+    }
 
-        @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-        val dndManager =
-            dev.nucleusframework.window.tao.TaoDragAndDropManager(
-                getRootNode = { scene!!.rootDragAndDropNode },
-                outboundLauncher = ::launchLinuxOutboundDrag,
-            )
-        scene =
-            CanvasLayersComposeScene(
-                density = Density(scale),
-                layoutDirection = GlobalLayoutDirection,
-                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                platformContext =
-                    LinuxTaoPlatformContext(
-                        windowHandle = window.handle,
-                        // The custom CSD title bar is drawn inside the same Compose
-                        // scene as the rest of the content, so it shares the (0, 0)
-                        // origin with everything else. We must NOT report it as a
-                        // `PlatformInsets.top`: Compose's `RootMeasurePolicy` (cf.
-                        // `RootMeasurePolicy.skiko.kt::positionWithInsets`) applies
-                        // platform insets as an *additive offset* on the popup
-                        // position (designed for iOS notches / Android status
-                        // bars, where the safe area is outside the Compose surface).
-                        // Reporting `top = titleBarHeight` here shifts every Popup,
-                        // DropdownMenu, ContextMenu, and Tooltip down by that
-                        // amount — visible as a consistent "title-bar-height
-                        // downward drift" of every popup the user opens. Popups
-                        // are free to overlap the title bar zone; the title bar
-                        // composable's own z-order keeps it visually on top of
-                        // the page content but popups (rendered in a higher
-                        // ComposeSceneLayer) naturally float above both.
-                        topInsetPx = { 0 },
-                        windowInfo = windowInfo,
-                        semanticsOwnerListener = semanticsOwnerListener,
-                        dragAndDropManager = dndManager,
-                        textToolbar = textToolbar,
-                    ),
-                invalidate = {
-                    requestRedrawCoalesced()
-                },
-            ).apply { compositionLocalContext = pendingCompositionLocalContext }
+    /**
+     * Tears down the GPU side (swap thread, Skia, EGL attachment) while the
+     * window is hidden. Wayland only: `gtk_widget_hide` destroys the parent
+     * `wl_surface`, and any `eglSwapBuffers` racing that destruction commits
+     * to an orphaned subsurface — the compositor answers with a fatal
+     * protocol error (GDK "Error 71", observed as
+     * `wp_commit_timer_v1: "Commit already has timestamp"`). On X11 the XID
+     * survives a hide, so the attachment is kept.
+     *
+     * Called synchronously (via [dev.nucleusframework.window.tao.TaoWindow.onWillHide])
+     * on the event-loop thread BEFORE the GTK hide runs.
+     */
+    fun suspendGpu() {
+        if (attachmentHandle == 0L || gpuSuspended || attachedKind != 2) return
+        gpuSuspended = true
+        // Wait out any in-flight swap; after the join no other thread touches
+        // the EGL context (same protocol as [detach]).
+        swapThread?.shutdownAndJoin()
+        swapThread = null
+        NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+        cachedSurface?.close()
+        cachedSurface = null
+        cachedRt?.close()
+        cachedRt = null
+        // The DirectContext is bound to the EGL context being destroyed; the
+        // scene itself survives and renders again once [resumeGpu] rebuilds it.
+        directContext?.close()
+        directContext = null
+        NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+        NativeTaoEglBridge.nativeDetach(attachmentHandle)
+        attachmentHandle = 0L
+    }
 
-        registerInboundDnD()
-        registerTouch()
+    /**
+     * Rebuilds the GPU side after the GTK window was shown again — GDK has
+     * created a brand-new `wl_surface`, so the EGL attachment is recreated
+     * from scratch. No-op unless [suspendGpu] ran.
+     */
+    fun resumeGpu() {
+        if (!gpuSuspended) return
+        gpuSuspended = false
+        attachGpu()
+        // The redraw gate may have latched while hidden (invalidations with no
+        // draw ever arriving); clear it so the re-arm below goes through.
+        redrawPending.set(false)
+        requestRedrawCoalesced()
     }
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -1111,7 +1189,13 @@ internal class TaoComposeSceneHostLinux(
         // the move to Compose. When the pointer is inside the band we set the
         // resize cursor and swallow the event so Compose's own cursor /
         // `PointerIcon` plumbing can't overwrite it on the next motion.
-        val direction = currentResizeDirection(xPx, yPx)
+        //
+        // Skip entirely while a button is held: during a drag the platform
+        // grab delivers positions outside the window, which the band test
+        // would otherwise classify as "on the edge" and swallow — freezing
+        // any Compose gesture (e.g. a cross-window tab drag) the moment the
+        // pointer crosses the window border.
+        val direction = if (pressedButtons == 0) currentResizeDirection(xPx, yPx) else null
         if (resizeDecoration.onMove(direction)) return
 
         scene?.sendPointerEvent(
@@ -1169,6 +1253,7 @@ internal class TaoComposeSceneHostLinux(
         buttonCode: Int,
         pressed: Boolean,
     ) {
+        pressedButtons = (pressedButtons + if (pressed) 1 else -1).coerceAtLeast(0)
         // JBR-style peer hook: a LMB press inside the resize band starts the
         // native resize drag and is NOT forwarded to Compose. Matches
         // `WLDecoratedPeer.postMouseEvent` calling

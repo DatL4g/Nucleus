@@ -62,6 +62,11 @@ fun ApplicationScope.DecoratedWindow(
     isDialog: Boolean = false,
     /** Fully borderless window (no traffic lights on macOS) — for overlays/ghosts. */
     undecorated: Boolean = false,
+    /**
+     * Linux only: popup overlay of another window (wl_subsurface on Wayland —
+     * client-positionable; parent-relative coordinates). Ignored elsewhere.
+     */
+    popupFor: TaoWindow? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
@@ -131,6 +136,7 @@ fun ApplicationScope.DecoratedWindow(
                     maximized = state.placement == WindowPlacement.Maximized,
                     isDialog = isDialog,
                     undecorated = undecorated,
+                    popupFor = popupFor,
                     onPreviewKeyEvent = { latestPreview(it) },
                     onKeyEvent = { latestKey(it) },
                     macOSStyle = macOSStyle,

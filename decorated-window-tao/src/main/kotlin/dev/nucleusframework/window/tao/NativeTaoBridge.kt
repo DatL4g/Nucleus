@@ -119,6 +119,11 @@ internal object NativeTaoBridge {
         resizable: Boolean,
         visible: Boolean,
         maximized: Boolean,
+        // Linux only: non-zero = handle of the window this one is a popup
+        // overlay of (GTK_WINDOW_POPUP transient; wl_subsurface on Wayland —
+        // the only client-positionable window kind under xdg-shell). Ignored
+        // on other platforms.
+        popupOf: Long,
     )
 
     @JvmStatic
@@ -664,6 +669,20 @@ object TaoEventCode {
 
     /** `a` carries the current [TaoModifierMask] bitset. */
     const val MODIFIERS_CHANGED: Int = 22
+
+    /**
+     * Linux only. Dispatched synchronously right BEFORE the GTK window is
+     * hidden, so the host can suspend EGL rendering first — on Wayland the
+     * hide destroys the parent `wl_surface` and a racing swap on the owned
+     * subsurface is a fatal protocol error (GDK "Error 71").
+     */
+    const val WILL_HIDE: Int = 23
+
+    /**
+     * Linux only. Dispatched synchronously right AFTER the GTK window is
+     * shown again (GDK surface re-created) so the host can re-attach EGL.
+     */
+    const val SHOWN: Int = 24
 }
 
 /** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */
