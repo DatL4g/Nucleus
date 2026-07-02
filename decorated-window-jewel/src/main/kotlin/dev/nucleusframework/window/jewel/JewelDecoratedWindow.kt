@@ -9,6 +9,7 @@ import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.NucleusApplicationScope
+import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
 import dev.nucleusframework.window.AwtDecoratedWindowScope
 import dev.nucleusframework.window.DecoratedWindow
@@ -87,6 +88,10 @@ fun NucleusApplicationScope.JewelDecoratedWindow(
     alwaysOnTop: Boolean = false,
     // Fully borderless window (no macOS traffic lights) — for overlay/ghost windows.
     undecorated: Boolean = false,
+    // Linux/Tao only: popup overlay of [popupFor] — on Wayland a wl_subsurface
+    // of the parent, the only client-positionable window kind under xdg-shell
+    // (parent-relative coordinates). For drag ghosts. Ignored elsewhere.
+    popupFor: NucleusWindow? = null,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -114,6 +119,7 @@ fun NucleusApplicationScope.JewelDecoratedWindow(
             focusable = focusable,
             alwaysOnTop = alwaysOnTop,
             undecorated = undecorated,
+            popupFor = popupFor,
             minimumSize = minimumSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,

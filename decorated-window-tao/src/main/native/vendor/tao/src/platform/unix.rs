@@ -76,7 +76,7 @@ pub trait WindowExtUnix {
   ) -> Result<Window, OsError>;
 
   /// Returns the `gtk::ApplicatonWindow` from gtk crate that is used by this window.
-  fn gtk_window(&self) -> &gtk::ApplicationWindow;
+  fn gtk_window(&self) -> &gtk::Window;
 
   /// Returns the vertical `gtk::Box` that is added by default as the sole child of this window.
   /// Returns `None` if the default vertical `gtk::Box` creation was disabled by [`WindowBuilderExtUnix::with_default_vbox`].
@@ -89,7 +89,7 @@ pub trait WindowExtUnix {
 }
 
 impl WindowExtUnix for Window {
-  fn gtk_window(&self) -> &gtk::ApplicationWindow {
+  fn gtk_window(&self) -> &gtk::Window {
     &self.window.window
   }
 
@@ -120,6 +120,14 @@ pub trait WindowBuilderExtUnix {
   /// Set this window as a transient dialog for `parent`
   /// <https://gtk-rs.org/gtk3-rs/stable/latest/docs/gdk/struct.Window.html#method.set_transient_for>
   fn with_transient_for(self, parent: &impl gtk::glib::IsA<gtk::Window>) -> WindowBuilder;
+
+  /// Nucleus patch: build this window as a `GTK_WINDOW_POPUP` transient for
+  /// `parent`. On Wayland GDK maps it as a `wl_subsurface` of the parent,
+  /// making it the only window kind a client can freely position under
+  /// xdg-shell (`gtk_window_move` → `wl_subsurface.set_position`, not
+  /// clipped to the parent). On X11 it is an override-redirect window.
+  /// For cursor-following overlays such as drag ghosts.
+  fn with_popup_transient_for(self, parent: &impl gtk::glib::IsA<gtk::Window>) -> WindowBuilder;
 
   /// Whether to enable or disable the internal draw for transparent window.
   ///
@@ -166,6 +174,12 @@ impl WindowBuilderExtUnix for WindowBuilder {
   fn with_transient_for(mut self, parent: &impl gtk::glib::IsA<gtk::Window>) -> WindowBuilder {
     use gtk::glib::Cast;
     self.platform_specific.parent = Parent::ChildOf(parent.clone().upcast());
+    self
+  }
+
+  fn with_popup_transient_for(mut self, parent: &impl gtk::glib::IsA<gtk::Window>) -> WindowBuilder {
+    use gtk::glib::Cast;
+    self.platform_specific.popup_transient_for = Some(parent.clone().upcast());
     self
   }
 

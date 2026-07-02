@@ -165,7 +165,7 @@ fn map_effect_to_action(effect: jint) -> DragAction {
 /// Falls back to multiplying by scale only when `translate_coordinates` fails
 /// (would only happen if the bin child isn't realised — unlikely once any
 /// drag is in flight).
-fn translate_to_content_phys(window: &gtk::ApplicationWindow, x: i32, y: i32) -> (i32, i32) {
+fn translate_to_content_phys(window: &gtk::Window, x: i32, y: i32) -> (i32, i32) {
     let scale = window
         .window()
         .map(|w| w.scale_factor())
@@ -350,7 +350,7 @@ fn percent_encode_path(input: &str) -> String {
 // ── Inbound: gtk_drag_dest_set + signal handlers ───────────────────────────
 
 fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str> {
-    let widget: gtk::ApplicationWindow =
+    let widget: gtk::Window =
         with_window(handle, |w| w.gtk_window().clone()).ok_or("window not found")?;
 
     // Defensive: in case Tao or some other layer registered a target. Tao

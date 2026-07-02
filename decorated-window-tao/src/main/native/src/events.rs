@@ -145,6 +145,17 @@ pub(crate) const EVENT_WINDOW_READY: jint = 16; // a = width, b = height (logica
 pub(crate) const EVENT_SCROLL_LINE: jint = 17; // a = dx * SCROLL_FIXED_SCALE, b = dy * SCROLL_FIXED_SCALE
 pub(crate) const EVENT_SCROLL_PIXEL: jint = 18;
 pub(crate) const EVENT_MODIFIERS_CHANGED: jint = 22;
+// Linux only. Dispatched synchronously on the event-loop thread right
+// BEFORE the GTK window is hidden, so the JVM can suspend its EGL rendering
+// first — on Wayland `gtk_widget_hide` destroys the parent `wl_surface`
+// while the render loop keeps committing to the owned subsurface, which
+// trips a fatal protocol error (GDK "Error 71").
+#[cfg(target_os = "linux")]
+pub(crate) const EVENT_WILL_HIDE: jint = 23;
+// Linux only. Dispatched synchronously right AFTER the GTK window is shown
+// again (GDK surface re-created), so the JVM can re-attach its EGL rendering.
+#[cfg(target_os = "linux")]
+pub(crate) const EVENT_SHOWN: jint = 24;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;
@@ -233,6 +244,12 @@ pub(crate) enum UserEvent {
         // "Linux: most size methods like maximized are async"). Setting it
         // at builder time avoids the glitch entirely.
         maximized: bool,
+        // Linux only: when non-zero, the handle of an existing window this
+        // window should be a GTK_WINDOW_POPUP transient child of. On Wayland
+        // GDK maps such windows as `wl_subsurface`s of the parent — the only
+        // window kind a client can freely position under xdg-shell. Used for
+        // cursor-following overlays (drag ghosts). Ignored on other platforms.
+        popup_of: u64,
     },
     SetVisible {
         handle: u64,

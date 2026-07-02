@@ -72,6 +72,10 @@ internal class ResizeFrameDecoration(
         forTouch: Boolean = false,
     ): Direction? {
         if (widthLogical <= 0 || heightLogical <= 0) return null
+        // A pointer OUTSIDE the window (delivered during a button-held drag by
+        // the platform grab) is not on a resize handle — without this guard
+        // `x < edge` / `x >= width - edge` match every out-of-bounds position.
+        if (x < 0f || y < 0f || x >= widthLogical || y >= heightLogical) return null
         val edge = if (forTouch) touchEdgeThicknessLogical else edgeThicknessLogical
         val nearLeft = x < edge
         val nearRight = x >= widthLogical - edge

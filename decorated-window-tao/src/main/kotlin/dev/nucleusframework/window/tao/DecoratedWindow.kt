@@ -104,6 +104,11 @@ internal fun ApplicationScope.openDecoratedWindow(
     // Fully borderless window: no native chrome at all — on macOS this drops the
     // traffic-light buttons too. For overlay/ghost windows (drag previews, HUDs).
     undecorated: Boolean = false,
+    // Linux only: make this window a popup overlay of [popupFor]
+    // (GTK_WINDOW_POPUP transient → wl_subsurface on Wayland, the only
+    // client-positionable window kind under xdg-shell). Positions are
+    // parent-relative on Wayland. Ignored on other platforms.
+    popupFor: TaoWindow? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
@@ -134,6 +139,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             // produces a one-frame glitch where the window flashes at its
             // requested logical size before snapping to maximized.
             maximized = maximized,
+            popupOf = popupFor,
         )
 
     if (Platform.Current == Platform.Windows) {
@@ -427,6 +433,12 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     val fullscreenHolder = FullscreenTitleBarHolder()
 
     val linuxDe = LinuxDesktopEnvironment.Current
+    // Wayland: GTK destroys the window's `wl_surface` on hide and creates a
+    // fresh one on show. Suspend the EGL attachment before the hide (a swap
+    // racing the surface destruction is a fatal Wayland protocol error) and
+    // rebuild it once the new surface exists. No-ops on X11.
+    window.onWillHide { host.suspendGpu() }
+    window.onShown { host.resumeGpu() }
     window.onWindowReady { w, h ->
         host.attach()
         // Bring the AccessKit adapter up before we hand the SemanticsOwnerListener

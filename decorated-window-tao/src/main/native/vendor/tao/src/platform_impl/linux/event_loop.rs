@@ -58,6 +58,11 @@ pub struct EventLoopWindowTarget<T> {
   pub(crate) app: gtk::Application,
   /// Window Ids of the application
   pub(crate) windows: Rc<RefCell<HashSet<WindowId>>>,
+  /// Nucleus patch: popup overlay windows (GTK_WINDOW_POPUP) keyed by their
+  /// synthesized ids. Not GtkApplicationWindows, so they can't be resolved
+  /// through `gtk_application_get_window_by_id` — the request router falls
+  /// back to this map.
+  pub(crate) popup_windows: Rc<RefCell<std::collections::HashMap<u32, gtk::Window>>>,
   /// Window requests sender
   pub(crate) window_requests_tx: glib::Sender<(WindowId, WindowRequest)>,
   /// Draw event sender
@@ -244,12 +249,15 @@ impl<T: 'static> EventLoop<T> {
     let (window_requests_tx, window_requests_rx) = glib::MainContext::channel(Priority::default());
     let display = gdk::Display::default()
       .expect("GdkDisplay not found. This usually means `gkt_init` hasn't called yet.");
+    let popup_windows: Rc<RefCell<std::collections::HashMap<u32, gtk::Window>>> =
+      Rc::new(RefCell::new(std::collections::HashMap::new()));
     let window_target = EventLoopWindowTarget {
       display,
       app,
       windows: Rc::new(RefCell::new(HashSet::new())),
       window_requests_tx,
       draw_tx: draw_tx_,
+      popup_windows: popup_windows.clone(),
       _marker: std::marker::PhantomData,
     };
 
@@ -294,12 +302,30 @@ impl<T: 'static> EventLoop<T> {
     }
 
     // Window Request
+    let popup_windows_ = popup_windows.clone();
     window_requests_rx.attach(Some(&context), move |(id, request)| {
-      if let Some(window) = app_.window_by_id(id.0) {
+      // Nucleus patch: popup overlay windows are plain gtk::Windows with
+      // synthesized ids — resolve them from the popup map when the
+      // GtkApplication lookup misses. All request arms operate through
+      // GtkWindowExt / WidgetExt, which both kinds implement.
+      let resolved: Option<gtk::Window> = app_
+        .window_by_id(id.0)
+        .map(|w| w.upcast::<gtk::Window>())
+        .or_else(|| popup_windows_.borrow().get(&id.0).cloned());
+      if let Some(window) = resolved {
         match request {
           WindowRequest::Title(title) => window.set_title(&title),
           WindowRequest::Position((x, y)) => window.move_(x, y),
-          WindowRequest::Size((w, h)) => window.resize(w, h),
+          WindowRequest::Size((w, h)) => {
+            // Nucleus patch: `gtk_window_resize` is a no-op on non-resizable
+            // windows (GTK follows the content's natural size instead); route
+            // the request through the widget size request in that case.
+            if window.is_resizable() {
+              window.resize(w, h);
+            } else {
+              window.set_size_request(w, h);
+            }
+          }
           WindowRequest::SizeConstraints(constraints) => {
             util::set_size_constraints(&window, constraints);
           }
@@ -587,7 +613,7 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_enter_notify_event(move |_, _| {
+            window.connect_enter_notify_event(move |window, crossing| {
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorEntered {
@@ -599,26 +625,50 @@ impl<T: 'static> EventLoop<T> {
                   e
                 );
               }
+              // Nucleus patch: follow the enter with a CursorMoved carrying the
+              // entry coordinates. Crossing events are the ONLY position signal
+              // a window gets when the pointer lands on it without moving —
+              // e.g. the compositor's focus re-evaluation right after a
+              // button-held drag ends on Wayland (used for cross-window drop
+              // targeting, where global coordinates don't exist).
+              let scale_factor = window.scale_factor();
+              let (x, y) = crossing.position();
+              if let Err(e) = tx_clone.send(Event::WindowEvent {
+                window_id: RootWindowId(id),
+                event: WindowEvent::CursorMoved {
+                  position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
+                  device_id: DEVICE_ID,
+                  modifiers: ModifiersState::empty(),
+                },
+              }) {
+                log::warn!("Failed to send cursor moved event to event channel: {}", e);
+              }
               glib::Propagation::Proceed
             });
 
             let tx_clone = event_tx.clone();
             window.connect_motion_notify_event(move |window, motion| {
               if cursor_moved {
-                if let Some(cursor) = motion.device() {
-                  let scale_factor = window.scale_factor();
-                  let (_, x, y) = cursor.window_at_position();
-                  if let Err(e) = tx_clone.send(Event::WindowEvent {
-                    window_id: RootWindowId(id),
-                    event: WindowEvent::CursorMoved {
-                      position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
-                      device_id: DEVICE_ID,
-                      // this field is depracted so it is fine to pass empty state
-                      modifiers: ModifiersState::empty(),
-                    },
-                  }) {
-                    log::warn!("Failed to send cursor moved event to event channel: {}", e);
-                  }
+                // Nucleus patch: report the event's own coordinates instead of
+                // `Device::window_at_position()`. The latter resolves the window
+                // currently UNDER the pointer, so the moment a button-held drag
+                // crosses the window edge it stops tracking (breaks cross-window
+                // drag ghosts). Event coordinates keep flowing for the whole
+                // implicit grab — including negative / out-of-bounds values — on
+                // X11 and Wayland alike. macOS (mouseDragged) and Windows
+                // (SetCapture) already behave this way.
+                let scale_factor = window.scale_factor();
+                let (x, y) = motion.position();
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event: WindowEvent::CursorMoved {
+                    position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
+                    device_id: DEVICE_ID,
+                    // this field is depracted so it is fine to pass empty state
+                    modifiers: ModifiersState::empty(),
+                  },
+                }) {
+                  log::warn!("Failed to send cursor moved event to event channel: {}", e);
                 }
               }
               glib::Propagation::Stop

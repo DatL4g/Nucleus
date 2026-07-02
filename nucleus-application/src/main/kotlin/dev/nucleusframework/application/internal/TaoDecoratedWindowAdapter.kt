@@ -43,6 +43,7 @@ internal object TaoDecoratedWindowAdapter {
         focusable: Boolean,
         alwaysOnTop: Boolean,
         undecorated: Boolean,
+        popupFor: NucleusWindow?,
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
@@ -68,6 +69,7 @@ internal object TaoDecoratedWindowAdapter {
                 focusable = focusable,
                 alwaysOnTop = alwaysOnTop,
                 undecorated = undecorated,
+                popupFor = popupFor?.unsafe?.taoWindow,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
             ) {

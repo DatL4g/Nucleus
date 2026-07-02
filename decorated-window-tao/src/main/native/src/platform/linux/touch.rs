@@ -86,7 +86,7 @@ struct Registration {
     event_id: glib::SignalHandlerId,
     /// The toplevel `ApplicationWindow` the handler is attached to; kept
     /// alive so the SignalHandlerId stays valid until revoke.
-    window: gtk::ApplicationWindow,
+    window: gtk::Window,
     /// State shared with the closure.
     state: Rc<TouchState>,
 }
@@ -140,7 +140,7 @@ fn with_window<R, F: FnOnce(&tao::window::Window) -> R>(handle: u64, f: F) -> Op
 /// We attach to the toplevel because Tao 0.35's bin_child is a no-window
 /// GtkBox: it has no GdkWindow of its own, so `connect_event` on it never
 /// fires (`bin_child.window()` returns the toplevel's window, not a child).
-fn to_physical_fixed(window: &gtk::ApplicationWindow, x: f64, y: f64) -> (i64, i64) {
+fn to_physical_fixed(window: &gtk::Window, x: f64, y: f64) -> (i64, i64) {
     let scale = window
         .window()
         .map(|w| w.scale_factor())
@@ -267,7 +267,7 @@ fn handle_touch(
     handle: u64,
     callback: &GlobalRef,
     state: &TouchState,
-    window: &gtk::ApplicationWindow,
+    window: &gtk::Window,
     ev: &EventTouch,
 ) {
     let Some(seq) = ev.event_sequence() else {
@@ -336,7 +336,7 @@ fn handle_touchpad_pinch(
     handle: u64,
     callback: &GlobalRef,
     state: &TouchState,
-    window: &gtk::ApplicationWindow,
+    window: &gtk::Window,
     ev: &EventTouchpadPinch,
 ) {
     let raw = ev.as_ref();
@@ -430,7 +430,7 @@ fn handle_touchpad_pinch(
 // ── Install / revoke ──────────────────────────────────────────────────────
 
 fn install(handle: u64, callback: GlobalRef) -> Result<(), &'static str> {
-    let window: gtk::ApplicationWindow =
+    let window: gtk::Window =
         with_window(handle, |w| w.gtk_window().clone()).ok_or("window not found")?;
 
     // Tao 0.35's bin_child is a no-window GtkBox — `connect_event` on it
