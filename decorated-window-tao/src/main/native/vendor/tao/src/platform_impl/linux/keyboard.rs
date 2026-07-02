@@ -176,6 +176,36 @@ pub(crate) fn get_modifiers(key: EventKey) -> ModifiersState {
   result
 }
 
+/// Nucleus patch: full modifier state at the time of [key], patched for the
+/// key itself. GDK's `EventKey::state()` reflects the state *before* the
+/// event, so a modifier key press doesn't include its own bit yet and a
+/// release still does. Upstream only forwards [get_modifiers] (the pressed
+/// key's own bit), so holding Ctrl and then pressing Shift emitted
+/// `ModifiersChanged({SHIFT})` and dropped Ctrl — Ctrl+Shift+<key> shortcuts
+/// never matched on the Linux backend.
+pub(crate) fn get_modifier_state(key: &EventKey, pressed: bool) -> ModifiersState {
+  let state = key.state();
+  let mut result = ModifiersState::empty();
+  if state.contains(gdk::ModifierType::SHIFT_MASK) {
+    result |= ModifiersState::SHIFT;
+  }
+  if state.contains(gdk::ModifierType::CONTROL_MASK) {
+    result |= ModifiersState::CONTROL;
+  }
+  if state.contains(gdk::ModifierType::MOD1_MASK) {
+    result |= ModifiersState::ALT;
+  }
+  if state.contains(gdk::ModifierType::SUPER_MASK) || state.contains(gdk::ModifierType::MOD4_MASK) {
+    result |= ModifiersState::SUPER;
+  }
+  let own = get_modifiers(key.clone());
+  if pressed {
+    result | own
+  } else {
+    result - own
+  }
+}
+
 pub(crate) fn make_key_event(
   key: &EventKey,
   is_repeat: bool,

@@ -762,12 +762,13 @@ impl<T: 'static> EventLoop<T> {
             let tx_clone = event_tx.clone();
             let keyboard_handler = Rc::new(move |event_key: EventKey, element_state| {
               // if we have a modifier lets send it
-              let mut mods = keyboard::get_modifiers(event_key.clone());
-              if !mods.is_empty() {
-                // if we release the modifier tell the world
-                if ElementState::Released == element_state {
-                  mods = ModifiersState::empty();
-                }
+              if !keyboard::get_modifiers(event_key.clone()).is_empty() {
+                // Nucleus patch: emit the FULL modifier state, not just the
+                // pressed key's own bit — upstream sent `{SHIFT}` when Shift
+                // was pressed while Ctrl was held, dropping Ctrl from the
+                // state and breaking every Ctrl+Shift+<key> shortcut.
+                let mods =
+                  keyboard::get_modifier_state(&event_key, ElementState::Pressed == element_state);
 
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
