@@ -9,8 +9,8 @@ import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.NucleusApplicationScope
-import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
+import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.window.AwtDecoratedWindowScope
 import dev.nucleusframework.window.DecoratedWindow
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
