@@ -109,7 +109,7 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         // it yield to rendering + the throttled re-arm below.
         val deadlineNs = System.nanoTime() + PUMP_TIME_BUDGET_NS
         var pass = 0
-        @Suppress("TooGenericExceptionCaught", "PrintStackTrace")
+        @Suppress("TooGenericExceptionCaught", "PrintStackTrace", "LoopWithTooManyJumpStatements")
         while (pass++ < MAX_PUMP_PASSES) {
             var remaining = pending.size
             if (remaining == 0) break
