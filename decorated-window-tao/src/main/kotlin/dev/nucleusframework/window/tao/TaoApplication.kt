@@ -74,7 +74,7 @@ object TaoApplication {
         popupOf: TaoWindow? = null,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
-        val window = TaoWindow(handle, isResizable = resizable)
+        val window = TaoWindow(handle, isResizable = resizable, isPopup = popupOf != null)
         windows[handle] = window
         NativeTaoBridge.nativeCreateWindow(
             handle,
