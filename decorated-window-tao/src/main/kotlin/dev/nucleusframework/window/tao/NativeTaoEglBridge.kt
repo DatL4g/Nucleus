@@ -54,6 +54,14 @@ internal object NativeTaoEglBridge {
      * Without it the subsurface renders ~scale× oversized and input is
      * miscalibrated.
      *
+     * [swapInterval] is passed to `eglSwapInterval`: 1 for toplevel-backed
+     * attachments (FIFO pacing against the compositor's frame callbacks),
+     * 0 for popup overlays whose EGL child hangs off GDK's own synchronized
+     * `wl_subsurface` — FIFO commits there stay cached compositor-side and
+     * Mesa's pending `wp_commit_timer_v1` timestamp is never consumed, so the
+     * next `set_timestamp` raises a fatal "Commit already has timestamp"
+     * protocol error (see [TaoWindow.isPopup]).
+     *
      * Returns 0 if libwayland-egl isn't available on the system; the caller
      * should fall back to the X11 path or surface a clear error.
      */
@@ -64,6 +72,7 @@ internal object NativeTaoEglBridge {
         widthPx: Int,
         heightPx: Int,
         bufferScale: Int,
+        swapInterval: Int,
     ): Long
 
     @JvmStatic

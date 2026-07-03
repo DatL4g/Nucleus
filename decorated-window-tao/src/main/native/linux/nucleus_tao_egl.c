@@ -986,7 +986,7 @@ JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeAttachWayland(
     JNIEnv *env, jclass clazz,
     jlong wlDisplayPtr, jlong wlSurfacePtr,
-    jint widthPx, jint heightPx, jint bufferScale)
+    jint widthPx, jint heightPx, jint bufferScale, jint swapInterval)
 {
     (void) env; (void) clazz;
     if (!wlDisplayPtr || !wlSurfacePtr) return 0;
@@ -1263,8 +1263,16 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeAttachWayland(
      * current on a separate thread and calls `nativePresent` there, so the
      * GTK main thread keeps draining wl events while the swap thread waits
      * on the compositor — and we get true hardware vsync without melting
-     * the CPU. */
-    if (p_eglSwapInterval) p_eglSwapInterval(edpy, 1);
+     * the CPU.
+     *
+     * swapInterval == 0 is used for popup overlays (drag ghosts): their EGL
+     * child is a subsurface of GDK's own synchronized wl_subsurface, so FIFO
+     * commits stay cached compositor-side and Mesa's pending
+     * wp_commit_timer_v1 timestamp is never consumed — the next
+     * set_timestamp raises a fatal "Commit already has timestamp" protocol
+     * error. Interval 0 keeps Mesa off the fifo/commit-timing path entirely;
+     * pacing for those surfaces is event-driven (pointer motion) anyway. */
+    if (p_eglSwapInterval) p_eglSwapInterval(edpy, swapInterval ? 1 : 0);
 
     EglAttachment *att = (EglAttachment *) calloc(1, sizeof(EglAttachment));
     if (!att) {

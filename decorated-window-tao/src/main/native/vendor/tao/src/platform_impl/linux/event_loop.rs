@@ -1030,7 +1030,15 @@ impl<T: 'static> EventLoop<T> {
                 break code;
               }
               ControlFlow::Wait => {
-                if !events.is_empty() {
+                // Pending redraws must prevent the blocking gtk iteration just
+                // like pending events: `request_redraw` only pushes into the
+                // draw channel without waking the glib main context, so a
+                // redraw queued while this loop is parked in
+                // `gtk::main_iteration_do(true)` would otherwise stall until
+                // an unrelated GTK event arrives. With several windows
+                // animating, the DrawQueue state below serves the queue one
+                // wakeup at a time and every other window's frame starves.
+                if !events.is_empty() || !draws.is_empty() {
                   callback(
                     Event::NewEvents(StartCause::WaitCancelled {
                       start: Instant::now(),
@@ -1056,7 +1064,7 @@ impl<T: 'static> EventLoop<T> {
                     &mut control_flow,
                   );
                   state = EventState::EventQueue;
-                } else if !events.is_empty() {
+                } else if !events.is_empty() || !draws.is_empty() {
                   callback(
                     Event::NewEvents(StartCause::WaitCancelled {
                       start,
@@ -1101,7 +1109,10 @@ impl<T: 'static> EventLoop<T> {
                 break code;
               }
               _ => {
-                if let Ok(id) = draws.try_recv() {
+                // Drain ALL pending redraws in one pass so N windows are
+                // served within the same loop cycle instead of one window
+                // per wakeup.
+                while let Ok(id) = draws.try_recv() {
                   callback(
                     Event::RedrawRequested(RootWindowId(id)),
                     window_target,

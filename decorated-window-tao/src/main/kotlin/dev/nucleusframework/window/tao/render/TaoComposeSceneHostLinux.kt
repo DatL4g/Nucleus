@@ -340,7 +340,21 @@ internal class TaoComposeSceneHostLinux(
                     val physW = initialW.coerceAtLeast(1)
                     val physH = initialH.coerceAtLeast(1)
                     val bufferScale = scale.roundToInt().coerceAtLeast(1)
-                    val h = NativeTaoEglBridge.nativeAttachWayland(display, nativeWin, physW, physH, bufferScale)
+                    // Popup overlays: swap interval 0 — their EGL child hangs
+                    // off GDK's own synchronized wl_subsurface, where Mesa's
+                    // FIFO commit-timing state is never consumed and the next
+                    // set_timestamp is a fatal protocol error (see
+                    // TaoWindow.isPopup). Pacing there is event-driven anyway.
+                    val swapInterval = if (window.isPopup) 0 else 1
+                    val h =
+                        NativeTaoEglBridge.nativeAttachWayland(
+                            display,
+                            nativeWin,
+                            physW,
+                            physH,
+                            bufferScale,
+                            swapInterval,
+                        )
                     require(h != 0L) {
                         "Failed to create EGL context for wl_surface=$nativeWin — libwayland-egl missing?"
                     }

@@ -23,6 +23,17 @@ class TaoWindow internal constructor(
      * — `frame.isResizable` gates the maximize button there too).
      */
     val isResizable: Boolean = true,
+    /**
+     * `true` when the window was created as a popup overlay of another window
+     * (`openWindow(popupOf = …)` — GTK_WINDOW_POPUP, mapped as a `wl_subsurface`
+     * on Wayland). The Linux host disables Mesa's FIFO frame pacing for these:
+     * their EGL child is a subsurface of GDK's own (synchronized) subsurface,
+     * so FIFO commits stay cached compositor-side and the pending
+     * `wp_commit_timer_v1` timestamp is never consumed — the next
+     * `set_timestamp` then kills the client with a fatal
+     * "Commit already has timestamp" protocol error.
+     */
+    val isPopup: Boolean = false,
 ) {
     @Volatile
     private var readyListener: ((Int, Int) -> Unit)? = null

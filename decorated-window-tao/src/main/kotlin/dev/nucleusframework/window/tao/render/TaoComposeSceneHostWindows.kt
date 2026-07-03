@@ -70,6 +70,7 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
  * to whatever thread called `nativeAttach`, so all rendering must stay on it).
  */
 @OptIn(InternalComposeUiApi::class)
+@Suppress("LargeClass", "TooManyFunctions")
 internal class TaoComposeSceneHostWindows(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
