@@ -239,6 +239,10 @@ nucleus.application {
                 // enabled.set(true)
                 // keyId.set("ABCD1234DEADBEEF")          // GPG key id / fingerprint / email
                 // keyFile.set(file("packaging/signing-key.asc")) // optional: imported into a throwaway keyring
+
+                // Passwordless self-update: installs a signature-verifying helper + polkit policy so
+                // the app applies a verified update without a root password prompt. Requires enabled = true.
+                // silentUpdate.set(true)
             }
         }
 

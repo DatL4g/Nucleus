@@ -67,6 +67,21 @@ abstract class LinuxSigningSettings {
     /** Method used to sign `.deb` packages. Default: [DebSignMethod.Detached]. */
     @get:Input
     var debMethod: DebSignMethod = DebSignMethod.Detached
+
+    /**
+     * Enable passwordless self-update for DEB/RPM installs (Linux only).
+     *
+     * Requires [enabled] — the update helper only installs packages whose detached signature
+     * verifies against the public key bundled in the app. When on, the package ships a root-owned
+     * update helper plus a polkit policy that lets the app apply a verified update without a
+     * password prompt. Off by default. Falls back to the standard `pkexec` (password) install when
+     * the helper is absent.
+     */
+    @get:Input
+    val silentUpdate: Property<Boolean> =
+        objects.notNullProperty<Boolean>().apply {
+            set(NucleusProperties.linuxSignSilentUpdate(providers).orElse(false))
+        }
 }
 
 /**

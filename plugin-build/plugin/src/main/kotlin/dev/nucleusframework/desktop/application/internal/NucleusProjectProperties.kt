@@ -31,6 +31,7 @@ internal object NucleusProperties {
     internal const val LINUX_SIGN_KEY_ID = "compose.desktop.linux.signing.keyId"
     internal const val LINUX_SIGN_KEY_FILE = "compose.desktop.linux.signing.keyFile"
     internal const val LINUX_SIGN_PASSPHRASE = "compose.desktop.linux.signing.passphrase"
+    internal const val LINUX_SIGN_SILENT_UPDATE = "compose.desktop.linux.signing.silentUpdate"
     internal const val CHECK_JDK_VENDOR = "compose.desktop.packaging.checkJdkVendor"
     internal const val DISABLE_MULTIMODULE_RESOURCES = "org.jetbrains.compose.resources.multimodule.disable"
     internal const val SYNC_RESOURCES_PROPERTY = "compose.ios.resources.sync"
@@ -82,6 +83,9 @@ internal object NucleusProperties {
 
     @Suppress("MaxLineLength")
     fun linuxSignPassphrase(providers: ProviderFactory): Provider<String> = providers.valueOrNull(LINUX_SIGN_PASSPHRASE)
+
+    @Suppress("MaxLineLength")
+    fun linuxSignSilentUpdate(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(LINUX_SIGN_SILENT_UPDATE).toBooleanProvider(false)
 
     fun checkJdkVendor(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(CHECK_JDK_VENDOR).toBooleanProvider(true)
 
