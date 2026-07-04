@@ -35,6 +35,11 @@ import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.BlendMode
 import org.jetbrains.skia.Canvas
@@ -59,6 +64,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -757,6 +763,11 @@ internal class TaoComposeSceneHostLinux(
     private var gestureScale = 1f
     private var gestureAngle = 0f
 
+    // Ctrl+wheel is a discrete stream with no ENDED phase (unlike a native trackpad
+    // gesture), so the synthetic magnify is released by an idle timer on this scope.
+    private val gestureScope = CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob())
+    private var wheelZoomEndJob: Job? = null
+
     @OptIn(ExperimentalComposeUiApi::class)
     private fun dispatchTrackpadGesture(
         kind: Int,
@@ -1330,6 +1341,18 @@ internal class TaoComposeSceneHostLinux(
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+
+        // Ctrl+wheel → synthetic magnify gesture, never a scroll. On Windows the native
+        // layer routes WM_MOUSEWHEEL+Ctrl to the magnify hook; GTK delivers it here as a
+        // plain scroll, so we do the same routing in Kotlin. Keeps Ctrl+wheel = zoom (not
+        // zoom-and-scroll) and matches the Windows backend — the AWT backend has no
+        // pinch-zoom to mirror. Real (non-Ctrl) scroll falls through to the list.
+        if ((window.modifierState and TaoModifierMask.CONTROL) != 0) {
+            val delta = if (abs(event.dyAwt) >= abs(event.dxAwt)) event.dyAwt else event.dxAwt
+            onCtrlWheelZoom(delta)
+            return
+        }
+
         scene?.sendPointerEvent(
             eventType = PointerEventType.Scroll,
             position = Offset(lastPointerX, lastPointerY),
@@ -1344,6 +1367,40 @@ internal class TaoComposeSceneHostLinux(
                     keyboardModifiers = currentKeyboardModifiers,
                 ),
         )
+    }
+
+    /**
+     * Feeds one Ctrl+wheel tick into the shared magnify-gesture machinery (Touch pinch),
+     * so the app's pinch-zoom handler receives it exactly like a trackpad pinch. The
+     * gesture is opened on the first tick, moved on each tick, and released by an idle
+     * timer once ticks stop ([scheduleWheelZoomEnd]).
+     */
+    private fun onCtrlWheelZoom(deltaAwt: Float) {
+        if (scene == null) return
+        // AWT sign: wheel-up (zoom in) is a negative rotation, so negate to get a
+        // positive magnify value that grows the gesture scale.
+        val step = TaoWheelPinchZoom.stepFromWheelDelta(-deltaAwt)
+        if (!gestureActive) {
+            startGesture(lastPointerX, lastPointerY)
+            sendGesturePointers(PointerEventType.Press)
+        } else {
+            gestureCenterX = lastPointerX
+            gestureCenterY = lastPointerY
+        }
+        gestureScale *= step
+        sendGesturePointers(PointerEventType.Move)
+        scheduleWheelZoomEnd()
+    }
+
+    /** Re-arms the idle timer that releases the synthetic wheel-driven magnify. */
+    private fun scheduleWheelZoomEnd() {
+        wheelZoomEndJob?.cancel()
+        wheelZoomEndJob =
+            gestureScope.launch {
+                delay(WHEEL_ZOOM_IDLE_END_MS)
+                wheelZoomEndJob = null
+                endGesture(cancelled = false)
+            }
     }
 
     fun onKeyEvent(
@@ -1600,6 +1657,7 @@ internal class TaoComposeSceneHostLinux(
         private const val TRACKPAD_POINTER_ID_B: Long = 0xA002L
         private const val DEGREES_PER_RADIAN: Float = 180f
         private const val MIN_GESTURE_SCALE: Float = 0.05f
+        private const val WHEEL_ZOOM_IDLE_END_MS: Long = 120L
 
         // A11y debounce: run the SemanticsOwner walk ~this long after the last
         // change (so a scroll's per-frame change burst collapses to one walk
