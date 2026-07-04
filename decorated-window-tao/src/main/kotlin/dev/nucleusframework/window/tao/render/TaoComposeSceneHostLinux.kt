@@ -200,12 +200,18 @@ internal class TaoComposeSceneHostLinux(
     private var lastPointerY: Float = 0f
 
     /**
-     * Number of currently-pressed mouse buttons. While non-zero a drag is in
-     * flight: pointer positions may legitimately be OUTSIDE the window (the
+     * Codes of the currently-pressed mouse buttons. While non-empty a drag is
+     * in flight: pointer positions may legitimately be OUTSIDE the window (the
      * platform grab keeps delivering them) and must reach Compose — the
      * resize-band hit-test must not swallow them.
+     *
+     * A set, not a counter, so it can't desync: the GTK backend delivers a
+     * duplicate press for the same button when a click triggers a relayout
+     * (e.g. the theme toggle re-dispatches the press at the same coords). A
+     * counter would go 1→2→1 and stay stuck, permanently disabling the hover
+     * resize hit-test; re-adding a code already in the set is a no-op.
      */
-    private var pressedButtons: Int = 0
+    private val pressedButtons = mutableSetOf<Int>()
 
     /**
      * Captured at the first composition via [setContent]. Exposes the
@@ -1209,7 +1215,7 @@ internal class TaoComposeSceneHostLinux(
         // would otherwise classify as "on the edge" and swallow — freezing
         // any Compose gesture (e.g. a cross-window tab drag) the moment the
         // pointer crosses the window border.
-        val direction = if (pressedButtons == 0) currentResizeDirection(xPx, yPx) else null
+        val direction = if (pressedButtons.isEmpty()) currentResizeDirection(xPx, yPx) else null
         if (resizeDecoration.onMove(direction)) return
 
         scene?.sendPointerEvent(
@@ -1273,15 +1279,15 @@ internal class TaoComposeSceneHostLinux(
         // `FrameDecoration.processMouseEvent` first.
         //
         // Checked BEFORE the pressedButtons bookkeeping: the compositor's
-        // resize grab swallows the matching button release, so counting this
-        // press would leave pressedButtons stuck > 0 forever — and since the
-        // hover hit-test only runs while no button is held, the resize cursor
+        // resize grab swallows the matching button release, so recording this
+        // press would leave the button stuck in the set — and the hover
+        // hit-test only runs while no button is held, so the resize cursor
         // would never show again after the first edge drag.
         if (pressed && buttonCode == dev.nucleusframework.window.tao.TaoMouseButton.LEFT) {
             val direction = currentResizeDirection(lastPointerX, lastPointerY)
             if (resizeDecoration.onLeftPress(direction)) return
         }
-        pressedButtons = (pressedButtons + if (pressed) 1 else -1).coerceAtLeast(0)
+        if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
 
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
