@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.DpSize
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.DecoratedWindowState
+import dev.nucleusframework.window.GlobalModalDialogCount
 import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.LocalTitleBarInfo
 import dev.nucleusframework.window.TitleBarInfo
@@ -485,12 +486,16 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                                 scopeFactory().content()
                             }
                         }
-                        if (modalCount.value > 0) {
+                        if (modalCount.value > 0 || (!isDialog && GlobalModalDialogCount.value > 0)) {
                             // Dim the whole parent window while a dialog is open.
                             // Linux dialogs are undecorated (no compositor
                             // shadow), so the scrim is what visually pushes the
                             // parent back and lifts the dialog forward — on top
-                            // of swallowing pointer events.
+                            // of swallowing pointer events. GlobalModalDialogCount
+                            // covers dialogs composed at application scope, which
+                            // are application-modal: they block every window
+                            // except dialog windows themselves (the app-modal
+                            // dialog must stay interactive).
                             Box(
                                 modifier =
                                     Modifier
@@ -796,7 +801,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                                 scopeFactory().content()
                             }
                         }
-                        if (modalCount.value > 0) {
+                        if (modalCount.value > 0 || (!isDialog && GlobalModalDialogCount.value > 0)) {
                             Box(
                                 modifier =
                                     Modifier
