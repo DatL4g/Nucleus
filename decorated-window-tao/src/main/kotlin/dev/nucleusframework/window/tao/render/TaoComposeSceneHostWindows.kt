@@ -520,7 +520,7 @@ internal class TaoComposeSceneHostWindows(
         // WHEEL_DELTA-normalized value through a multiplicative curve so small
         // ticks accumulate smoothly without each message behaving like a large
         // zoom step.
-        val step = TaoWindowsPinchZoom.stepFromWheelDelta(value)
+        val step = TaoWheelPinchZoom.stepFromWheelDelta(value)
 
         if (!pinchActive) {
             pinchActive = true
