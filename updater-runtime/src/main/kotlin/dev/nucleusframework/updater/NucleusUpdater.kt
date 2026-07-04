@@ -115,6 +115,11 @@ class NucleusUpdater(
                 if (finalFile.exists()) finalFile.delete()
                 tempFile.renameTo(finalFile)
 
+                // Best-effort: fetch the detached signature next to the package so a signature-verified
+                // silent install (Linux passwordless update) can use it. Absent signature is not fatal —
+                // the installer simply falls back to the standard (password-prompting) path.
+                downloadDetachedSignature(targetFile.url, File(finalFile.parentFile, "${finalFile.name}.asc"))
+
                 emit(DownloadProgress(bytesDownloaded, totalBytes, PERCENT_MAX, finalFile))
             } catch (e: UpdateException) {
                 tempFile.delete()
@@ -129,6 +134,32 @@ class NucleusUpdater(
                 throw NetworkException("Download failed", e)
             }
         }.flowOn(Dispatchers.IO)
+
+    /**
+     * Downloads `<url>.asc` to [dest] if present. Failures are swallowed: the detached signature is
+     * optional and only used by the Linux passwordless self-update helper.
+     */
+    private fun downloadDetachedSignature(
+        url: String,
+        dest: File,
+    ) {
+        try {
+            val requestBuilder =
+                HttpRequest
+                    .newBuilder()
+                    .uri(URI.create("$url.asc"))
+                    .GET()
+            applyAuthHeaders(requestBuilder)
+            val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray())
+            if (response.statusCode() == HTTP_OK) {
+                dest.writeBytes(response.body())
+            }
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            // Signature unavailable — silent update will fall back to the prompting install path.
+        }
+    }
 
     fun installAndRestart(installerFile: File) {
         writeUpdateMarker()

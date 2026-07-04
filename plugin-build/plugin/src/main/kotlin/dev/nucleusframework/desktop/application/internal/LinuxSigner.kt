@@ -40,6 +40,7 @@ internal class LinuxSigner(
         keyFile: File?,
         passphrase: String?,
         debMethod: DebSignMethod,
+        requireDetachedSignature: Boolean = false,
     ) {
         if (packages.isEmpty()) return
 
@@ -50,28 +51,91 @@ internal class LinuxSigner(
                     return
                 }
 
+        withKeyring(keyFile, passphrase) { home, passphraseFile ->
+            for (pkg in packages) {
+                val wroteDetached =
+                    when (pkg.extension.lowercase()) {
+                        "rpm" -> {
+                            signRpm(gpg, home, keyId, passphraseFile, pkg)
+                            false
+                        }
+                        "deb" -> signDeb(gpg, home, keyId, passphraseFile, debMethod, pkg)
+                        else -> false
+                    }
+                // The silent-update helper verifies a detached `<pkg>.asc`; make sure one exists
+                // even for formats whose primary signature lives elsewhere (RPM header, _gpgorigin).
+                if (requireDetachedSignature && !wroteDetached) {
+                    detachSign(gpg, home, keyId, passphraseFile, pkg)
+                }
+                exportPublicKey(gpg, home, keyId, File(pkg.parentFile, "${pkg.name}.pub.asc"))
+            }
+        }
+    }
+
+    /**
+     * Exports just the public key for [keyId] to [destination], without touching any package.
+     * Used to bundle the key inside the app before packaging so the update helper can verify
+     * downloads against it.
+     */
+    fun exportPublicKey(
+        keyId: String,
+        keyFile: File?,
+        passphrase: String?,
+        destination: File,
+    ) {
+        val gpg =
+            findInPath("gpg")
+                ?: run {
+                    logger.warn("Public key export skipped: 'gpg' not found in PATH")
+                    return
+                }
+        withKeyring(keyFile, passphrase) { home, _ ->
+            exportPublicKey(gpg, home, keyId, destination)
+        }
+    }
+
+    /**
+     * Runs [block] with a throwaway `GNUPGHOME` that has [keyFile] imported (if given), so the
+     * user's real keyring is never touched. The keyring and its agent are cleaned up afterwards.
+     */
+    private fun withKeyring(
+        keyFile: File?,
+        passphrase: String?,
+        block: (home: File, passphraseFile: File?) -> Unit,
+    ) {
+        val gpg = findInPath("gpg") ?: return
         val home = Files.createTempDirectory("nucleus-gpg").toFile()
         restrictToOwner(home)
         // Allow non-interactive (loopback) passphrase entry in this throwaway keyring.
         File(home, "gpg-agent.conf").writeText("allow-loopback-pinentry\n")
         val passphraseFile = passphrase?.let { writePassphraseFile(home, it) }
-
         try {
             if (keyFile != null) {
                 importKey(gpg, home, keyFile, passphraseFile)
             }
-            for (pkg in packages) {
-                when (pkg.extension.lowercase()) {
-                    "rpm" -> signRpm(gpg, home, keyId, passphraseFile, pkg)
-                    "deb" -> signDeb(gpg, home, keyId, passphraseFile, debMethod, pkg)
-                    else -> Unit
-                }
-                exportPublicKey(gpg, home, keyId, File(pkg.parentFile, "${pkg.name}.pub.asc"))
-            }
+            block(home, passphraseFile)
         } finally {
             killAgent(home)
             home.deleteRecursively()
         }
+    }
+
+    /** Writes a detached, armored `<pkg>.asc` signature next to [pkg]. */
+    private fun detachSign(
+        gpg: File,
+        home: File,
+        keyId: String,
+        passphraseFile: File?,
+        pkg: File,
+    ) {
+        val sig = File(pkg.parentFile, "${pkg.name}.asc")
+        logger.lifecycle("Writing detached signature ${sig.name}")
+        runTool(
+            tool = gpg,
+            args =
+                gpgBaseArgs(home, passphraseFile) +
+                    listOf("-u", keyId, "--detach-sign", "--armor", "-o", sig.absolutePath, pkg.absolutePath),
+        )
     }
 
     private fun gpgBaseArgs(
@@ -145,6 +209,7 @@ internal class LinuxSigner(
         )
     }
 
+    /** Signs a `.deb`. Returns `true` when it wrote a detached `<pkg>.asc` (the `Detached` method). */
     private fun signDeb(
         gpg: File,
         home: File,
@@ -152,7 +217,7 @@ internal class LinuxSigner(
         passphraseFile: File?,
         debMethod: DebSignMethod,
         pkg: File,
-    ) {
+    ): Boolean {
         val gpgOpts =
             buildString {
                 append("--homedir ${home.absolutePath} --batch --yes --no-tty")
@@ -163,21 +228,15 @@ internal class LinuxSigner(
 
         when (debMethod) {
             DebSignMethod.Detached -> {
-                val sig = File(pkg.parentFile, "${pkg.name}.asc")
-                logger.lifecycle("Signing DEB ${pkg.name} (detached ${sig.name})")
-                runTool(
-                    tool = gpg,
-                    args =
-                        gpgBaseArgs(home, passphraseFile) +
-                            listOf("-u", keyId, "--detach-sign", "--armor", "-o", sig.absolutePath, pkg.absolutePath),
-                )
+                detachSign(gpg, home, keyId, passphraseFile, pkg)
+                return true
             }
             DebSignMethod.DpkgSig -> {
                 val dpkgSig =
                     findInPath("dpkg-sig")
                         ?: run {
                             logger.warn("DEB signing skipped for ${pkg.name}: 'dpkg-sig' not found in PATH")
-                            return
+                            return false
                         }
                 logger.lifecycle("Signing DEB ${pkg.name} (dpkg-sig)")
                 runTool(
@@ -190,7 +249,7 @@ internal class LinuxSigner(
                     findInPath("debsigs")
                         ?: run {
                             logger.warn("DEB signing skipped for ${pkg.name}: 'debsigs' not found in PATH")
-                            return
+                            return false
                         }
                 logger.lifecycle("Signing DEB ${pkg.name} (debsigs/_gpgorigin)")
                 runTool(
@@ -199,6 +258,7 @@ internal class LinuxSigner(
                 )
             }
         }
+        return false
     }
 
     private fun exportPublicKey(

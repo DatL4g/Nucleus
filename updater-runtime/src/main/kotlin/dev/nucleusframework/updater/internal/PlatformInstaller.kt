@@ -111,10 +111,18 @@ internal object PlatformInstaller {
             currentExecutablePath()
                 ?: error("Cannot resolve application launcher from the running process")
 
+        // Prefer the passwordless, signature-verifying update helper installed alongside the app
+        // (see the Gradle plugin's afterInstall script). It only runs without a password when its
+        // polkit policy is present, and only installs a package whose detached signature verifies
+        // against the bundled public key. Falls back to the standard prompting install otherwise.
+        val helper = resolveUpdateHelper(launcher)
+        val signatureFile = File("${packageFile.absolutePath}.asc")
         val installCmd =
-            when (extension) {
-                "deb" -> "pkexec dpkg -i \"\$PKG_FILE\""
-                "rpm" -> "pkexec rpm -U \"\$PKG_FILE\""
+            when {
+                helper != null && signatureFile.isFile ->
+                    "pkexec \"${helper.absolutePath}\" \"\$PKG_FILE\""
+                extension == "deb" -> "pkexec dpkg -i \"\$PKG_FILE\""
+                extension == "rpm" -> "pkexec rpm -U \"\$PKG_FILE\""
                 else -> error("Unsupported package format: $extension")
             }
 
@@ -149,8 +157,8 @@ internal object PlatformInstaller {
             |# which would prevent the application from relaunching.
             |$installCmd
             |
-            |# Clean up the package file
-            |rm -f "${'$'}PKG_FILE"
+            |# Clean up the package file and its detached signature
+            |rm -f "${'$'}PKG_FILE" "${'$'}PKG_FILE.asc"
             |$relaunchCmd
             |# Clean up this script
             |rm -f "${'$'}{0}"
@@ -163,6 +171,18 @@ internal object PlatformInstaller {
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
     }
+
+    /**
+     * Resolves the passwordless update helper installed next to the app, or `null` if absent.
+     *
+     * The helper lives beside the real launcher binary (e.g. `/opt/<App>/nucleus-update-helper`).
+     * The running launcher may be a `/usr/bin` symlink, so resolve through it to the install dir.
+     */
+    private fun resolveUpdateHelper(launcher: String): File? =
+        File(launcher)
+            .canonicalFile.parentFile
+            ?.resolve("nucleus-update-helper")
+            ?.takeIf { it.isFile }
 
     /**
      * Resolves the absolute path of the executable that launched the current process.
