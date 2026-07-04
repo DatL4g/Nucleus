@@ -1,17 +1,19 @@
 // Cross-platform cursor JNI export.
 //
-// macOS / Windows go directly through Tao's `set_cursor_icon`; Linux delegates
-// to a dedicated GDK/XInput2 helper (see `platform::linux::cursor`) because
-// GTK 3's per-device cursor table beats legacy `XDefineCursor`.
+// Every platform goes through Tao's `set_cursor_icon`. On Linux that call is
+// channel-dispatched to the GTK main thread (`WindowRequest::CursorIcon` →
+// `gdk_window_set_cursor` with a themed cursor), which is the only safe way
+// in: the previous per-device GDK/XInput2 helper ran directly on the calling
+// JVM thread, and GTK 3 is not thread-safe — on Wayland the call was a silent
+// no-op, so the hover resize cursor never appeared even though the resize
+// drag itself (channel-dispatched like this) worked fine.
 
 use jni::objects::JClass;
 use jni::sys::{jint, jlong};
 use jni::JNIEnv;
 
-#[cfg(not(target_os = "linux"))]
 use tao::window::CursorIcon;
 
-#[cfg(not(target_os = "linux"))]
 use crate::state::WINDOWS;
 
 /// Mirrors `TaoCursorIcon` on the JVM side. Numeric codes only, so the JNI
@@ -19,7 +21,6 @@ use crate::state::WINDOWS;
 /// `PointerIcon` constants surface — additional shapes can be added later.
 /// On macOS, code 0 is an explicit arrow cursor rather than Tao's null
 /// `Default`, matching Compose AWT's concrete `Cursor.DEFAULT_CURSOR`.
-#[cfg(not(target_os = "linux"))]
 fn cursor_from_code(code: jint) -> CursorIcon {
     match code {
         #[cfg(target_os = "macos")]
@@ -50,23 +51,16 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     handle: jlong,
     code: jint,
 ) {
-    #[cfg(target_os = "linux")]
-    {
-        crate::platform::linux::cursor::set_cursor(handle as u64, code);
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let guard = match WINDOWS.lock() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
-        let Some(map) = guard.as_ref() else { return };
-        if let Some(window) = map.get(&(handle as u64)) {
-            window.set_cursor_icon(cursor_from_code(code));
-            #[cfg(target_os = "macos")]
-            unsafe {
-                crate::platform::macos::ffi::nucleus_tao_set_cursor_icon(code);
-            }
+    let guard = match WINDOWS.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let Some(map) = guard.as_ref() else { return };
+    if let Some(window) = map.get(&(handle as u64)) {
+        window.set_cursor_icon(cursor_from_code(code));
+        #[cfg(target_os = "macos")]
+        unsafe {
+            crate::platform::macos::ffi::nucleus_tao_set_cursor_icon(code);
         }
     }
 }

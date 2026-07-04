@@ -1267,15 +1267,21 @@ internal class TaoComposeSceneHostLinux(
         buttonCode: Int,
         pressed: Boolean,
     ) {
-        pressedButtons = (pressedButtons + if (pressed) 1 else -1).coerceAtLeast(0)
         // JBR-style peer hook: a LMB press inside the resize band starts the
         // native resize drag and is NOT forwarded to Compose. Matches
         // `WLDecoratedPeer.postMouseEvent` calling
         // `FrameDecoration.processMouseEvent` first.
+        //
+        // Checked BEFORE the pressedButtons bookkeeping: the compositor's
+        // resize grab swallows the matching button release, so counting this
+        // press would leave pressedButtons stuck > 0 forever — and since the
+        // hover hit-test only runs while no button is held, the resize cursor
+        // would never show again after the first edge drag.
         if (pressed && buttonCode == dev.nucleusframework.window.tao.TaoMouseButton.LEFT) {
             val direction = currentResizeDirection(lastPointerX, lastPointerY)
             if (resizeDecoration.onLeftPress(direction)) return
         }
+        pressedButtons = (pressedButtons + if (pressed) 1 else -1).coerceAtLeast(0)
 
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
