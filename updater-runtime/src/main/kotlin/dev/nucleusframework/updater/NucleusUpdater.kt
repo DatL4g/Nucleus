@@ -155,9 +155,11 @@ class NucleusUpdater(
                 dest.writeBytes(response.body())
             }
         } catch (
-            @Suppress("TooGenericExceptionCaught") e: Exception,
+            @Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception,
         ) {
-            // Signature unavailable — silent update will fall back to the prompting install path.
+            // Deliberately swallowed: the detached signature is optional, so any failure here
+            // (missing .asc, network error) just means the silent update falls back to the
+            // standard password-prompting install path — not an error worth surfacing.
         }
     }
 
