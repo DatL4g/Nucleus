@@ -92,6 +92,13 @@ jobs:
           pattern: 'taskbar-progress-*'
           merge-multiple: true
 
+      - name: Download fs-watcher artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: fs-watcher/src/main/resources/nucleus/native/
+          pattern: 'fs-watcher-*'
+          merge-multiple: true
+
       - name: Download notification-macos artifacts
         uses: actions/download-artifact@v4
         with:
@@ -236,6 +243,12 @@ jobs:
             "taskbar-progress/src/main/resources/nucleus/native/win32-aarch64/nucleus_taskbar_progress.dll"
             "taskbar-progress/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_taskbar_progress.dylib"
             "taskbar-progress/src/main/resources/nucleus/native/darwin-x64/libnucleus_taskbar_progress.dylib"
+            "fs-watcher/src/main/resources/nucleus/native/win32-x64/nucleus_fs_watcher.dll"
+            "fs-watcher/src/main/resources/nucleus/native/win32-aarch64/nucleus_fs_watcher.dll"
+            "fs-watcher/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_fs_watcher.dylib"
+            "fs-watcher/src/main/resources/nucleus/native/darwin-x64/libnucleus_fs_watcher.dylib"
+            "fs-watcher/src/main/resources/nucleus/native/linux-x64/libnucleus_fs_watcher.so"
+            "fs-watcher/src/main/resources/nucleus/native/linux-aarch64/libnucleus_fs_watcher.so"
             "notification-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_notification.dylib"
             "notification-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_notification.dylib"
             "service-management-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_service_management.dylib"

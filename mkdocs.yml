@@ -118,6 +118,8 @@ nav:
           - Networking:
               - Native SSL: runtime/native-ssl.md
               - Native HTTP: runtime/native-http.md
+          - Filesystem:
+              - FS Watcher: runtime/fs-watcher.md
   - Comparison:
       - Packaging: comparison/packaging.md
   - Ecosystem:

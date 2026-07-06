@@ -203,6 +203,7 @@ tasks.register("preMerge") {
     dependsOn(":notification-macos:check")
     dependsOn(":launcher-linux:check")
     dependsOn(":scheduler:check")
+    dependsOn(":fs-watcher:check")
     dependsOn(":example:check")
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:check"))
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
