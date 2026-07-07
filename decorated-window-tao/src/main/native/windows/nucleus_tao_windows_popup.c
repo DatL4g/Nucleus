@@ -3,9 +3,9 @@
  *
  * Each popup is a top-level WS_POPUP HWND owned by the parent (the Tao
  * main HWND, even for nested popups — single-level owner chain) with
- * WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW. Each owns its own transparent
- * WGL context joined to the host's share group via the shared
- * `nucleus_tao_overlay_gl_init` (rendering delegated to overlay_gl.c).
+ * WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP.
+ * Rendering goes through the shared `nucleus_tao_overlay_gl_init`
+ * EGL/ANGLE + DirectComposition bridge (overlay_dcomp.cpp).
  *
  * Outside-click dismissal:
  *   - A thread-local `WH_MOUSE` hook (mouseHookProc) observes every
@@ -406,10 +406,6 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
 
     case WM_ERASEBKGND:
         return 1;
-
-    case WM_DWMCOMPOSITIONCHANGED:
-        if (p) nucleus_tao_overlay_gl_rearm_blur(&p->gl);
-        return 0;
     }
     return DefWindowProcW(hwnd, msg, w, l);
 }
@@ -418,7 +414,6 @@ static void ensurePopupClassRegistered(void) {
     if (InterlockedCompareExchange(&sPopupClassRegistered, 1, 0) != 0) return;
     WNDCLASSW wc;
     ZeroMemory(&wc, sizeof(wc));
-    /* CS_OWNDC: stable HDC required for wglMakeCurrent across frames. */
     wc.style = CS_OWNDC;
     wc.lpfnWndProc = popupWndProc;
     wc.hInstance = GetModuleHandleW(NULL);
@@ -454,13 +449,9 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
         prevDpi = pSetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
-    /* DComp backend: see the matching comment in overlay.c —
-     * WS_EX_NOREDIRECTIONBITMAP must be decided at creation time. */
-    DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
-    if (nucleus_tao_overlay_backend_is_dcomp()) exStyle |= WS_EX_NOREDIRECTIONBITMAP;
-
+    /* WS_EX_NOREDIRECTIONBITMAP: see the matching comment in overlay.c. */
     HWND hwnd = CreateWindowExW(
-        exStyle,
+        WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP,
         kPopupClassName, L"",
         WS_POPUP,
         origin.x + xPx, origin.y + yPx, widthPx, heightPx,
@@ -517,7 +508,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetFrameInWi
         origin.x + xPx, origin.y + yPx, widthPx, heightPx,
         SWP_NOACTIVATE | SWP_NOZORDER);
     /* DComp swapchains don't track the HWND — resize explicitly
-     * (no-op on WGL and when only the position changed). */
+     * (no-op when only the position changed). */
     nucleus_tao_overlay_gl_resize(&p->gl, widthPx, heightPx);
 }
 

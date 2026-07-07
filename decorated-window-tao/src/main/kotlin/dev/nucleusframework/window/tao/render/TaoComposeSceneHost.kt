@@ -215,7 +215,7 @@ internal class TaoComposeSceneHost(
     // Frame pacing is delegated to the CAMetalLayer's `displaySyncEnabled`
     // (default YES): `nextDrawable` blocks for vsync, naturally capping the
     // loop at the display refresh rate. Mirrors Windows/Linux where Tao
-    // backends rely on `wglSwapIntervalEXT(1)` / GLX swap interval. A software
+    // backends rely on the EGL / GLX swap interval. A software
     // throttle here only drops frames the GPU is ready to present.
 
     fun attach() {

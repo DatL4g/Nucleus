@@ -29,7 +29,7 @@ import org.jetbrains.skia.DirectContext
  *
  * The coordinate model mirrors Compose Desktop's AWT WindowComposeSceneLayer:
  * boundsInWindow is the logical content rect, and rendering happens in
- * parent-window coordinates. The native WGL popup surface is kept exactly
+ * parent-window coordinates. The native popup surface is kept exactly
  * at content bounds because transparent pixels around the content are not
  * reliably alpha-composited by DWM on all Windows drivers.
  */
@@ -50,6 +50,17 @@ internal class TaoPopupSceneLayerWindows(
 
     private val rendererToken: Any = Any()
     private val moveListenerToken: Any = Any()
+
+    /**
+     * Set in [close] before `nativeRelease` frees the panel. Guards
+     * [renderFrame] against firing on a freed handle: the host drains a
+     * *snapshot* of its renderer map each frame, so if rendering one
+     * layer triggers a recomposition that closes another layer, that
+     * layer's already-captured renderer still runs once. Without this
+     * flag it would call `nativeMakeCurrent` on freed memory (a
+     * use-after-free crash reading the released `PopupState`).
+     */
+    private var released = false
 
     private val sceneLayoutSize: IntSize =
         host.parentWindowSize.let {
@@ -240,6 +251,7 @@ internal class TaoPopupSceneLayerWindows(
         }
 
     override fun close() {
+        released = true
         host.notifyPopupClosing()
         host.unregisterRenderer(rendererToken)
         host.unregisterOwnerMoveListener(moveListenerToken)
@@ -283,6 +295,7 @@ internal class TaoPopupSceneLayerWindows(
     override fun calculateLocalPosition(positionInWindow: IntOffset): IntOffset = positionInWindow
 
     private fun renderFrame() {
+        if (released) return
         if (drawBounds == IntRect.Zero) return
         if (widthPx <= 0 || heightPx <= 0) return
         if (!PopupNativeBridgeWindows.nativeMakeCurrent(panelHandle)) return

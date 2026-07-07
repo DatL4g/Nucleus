@@ -9,7 +9,7 @@
  *
  * Forked from decorated-window-jni's nucleus_windows_decoration.c with the
  * Skiko-AWT child-window plumbing removed: a Tao window has no child HWND —
- * the WGL render surface is the HWND itself.
+ * the GL render surface is a child HWND.
  *
  * Per-HWND state stored via SetProp/GetProp.
  * Linked libraries: kernel32.lib user32.lib dwmapi.lib gdi32.lib shell32.lib
@@ -166,7 +166,7 @@ static LRESULT CALLBACK decoWndProc(
 
     switch (msg) {
 
-    /* During ShowWindow, DWM can request an erased client surface before WGL
+    /* During ShowWindow, DWM can request an erased client surface before GL
      * has presented into the now-visible redirection surface. Paint the themed
      * background only for that startup gap; after the first native redraw event
      * this is disabled to avoid solid-color flicker while resizing or dragging. */
@@ -294,7 +294,7 @@ static LRESULT CALLBACK decoWndProc(
         /* Suppress the Alt / F10 system-menu activation. On a custom-decorated
          * window with no menu bar, SC_KEYMENU makes DefWindowProc enter a modal
          * menu loop that blocks the Tao/winit message pump (MainEventsCleared,
-         * WGL present) — the app appears frozen until Alt/Esc is pressed again.
+         * GL present) — the app appears frozen until Alt/Esc is pressed again.
          * Tao still processes WM_SYSKEYDOWN/UP, so Compose keeps receiving the
          * Alt KeyDown/KeyUp; we only prevent the menu loop from starting.
          * Mirrors AWT, which returns mrConsume for sys-keys and never lets

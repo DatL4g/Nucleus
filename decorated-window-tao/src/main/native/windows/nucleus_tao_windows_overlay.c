@@ -1,16 +1,12 @@
 /**
  * JNI overlay HWND lifecycle + WndProc for the Tao Windows NativeView.
  *
- * Creates an owned WS_POPUP HWND with WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
- * hosts a Compose scene rendered through a transparent WGL context (see
- * nucleus_tao_windows_overlay_gl.c — Phase 4). WndProc handles
- * WM_NCHITTEST (region-based click-through), WM_MOUSEACTIVATE
- * (MA_NOACTIVATE), WM_DPICHANGED, and pointer/wheel forwarding to the
- * JNI callback.
- *
- * The window class registers with `CS_OWNDC` so `GetDC(hwnd)` returns a
- * stable HDC for the lifetime of the window — required by `wglMakeCurrent`
- * which would otherwise see different HDCs each frame.
+ * Creates an owned WS_POPUP HWND with WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+ * | WS_EX_NOREDIRECTIONBITMAP, hosts a Compose scene rendered through the
+ * EGL/ANGLE + DirectComposition bridge (nucleus_tao_windows_overlay_dcomp
+ * .cpp). WndProc handles WM_NCHITTEST (region-based click-through),
+ * WM_MOUSEACTIVATE (MA_NOACTIVATE), WM_DPICHANGED, and pointer/wheel
+ * forwarding to the JNI callback.
  *
  * Owner-tracking: each overlay installs a chained subclass on its owner
  * HWND that listens for WM_WINDOWPOSCHANGED + WM_NCDESTROY,
@@ -20,11 +16,6 @@
  * deco.c subclass; we use a chained subclass-on-top instead — same
  * effect (Win32 subclass chains are first-in-last-out so deco.c's
  * handler still runs first), no cross-DLL coupling.
- *
- * Phase 3 paints a solid red FillRect placeholder so we can validate
- * the z-order + size + region-based click-through before WGL is wired
- * up; Phase 4 replaces the WM_PAINT handler with a no-op (SwapBuffers
- * owns the pixels from then on).
  *
  * Linked into nucleus_tao_windows_native_view.dll.
  */
@@ -78,7 +69,7 @@ struct OverlayState {
     int widthPx;
     int heightPx;
 
-    /* WGL resources owned by overlay_gl.c. */
+    /* DComp/EGL render surface owned by overlay_dcomp.cpp. */
     GlSurface gl;
 
     /* Cursor handle to apply in WM_SETCURSOR. NULL → use the class
@@ -304,12 +295,8 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
     }
 
     case WM_ERASEBKGND:
-        /* Suppress GDI fill — SwapBuffers owns the pixels. */
+        /* Suppress GDI fill — the DComp visual tree owns the pixels. */
         return 1;
-
-    case WM_DWMCOMPOSITIONCHANGED:
-        if (s) nucleus_tao_overlay_gl_rearm_blur(&s->gl);
-        return 0;
 
     case WM_SETCURSOR:
         /* WM_SETCURSOR lParam packs:
@@ -440,8 +427,6 @@ static void ensureClassRegistered(void) {
     if (InterlockedCompareExchange(&sClassRegistered, 1, 0) != 0) return;
     WNDCLASSW wc;
     memset(&wc, 0, sizeof(wc));
-    /* CS_OWNDC: GetDC(hwnd) returns a stable HDC for the window's
-     * lifetime — required so wglMakeCurrent's HDC matches across frames. */
     wc.style = CS_OWNDC;
     wc.lpfnWndProc = overlayWndProc;
     wc.hInstance = GetModuleHandleW(NULL);
@@ -479,16 +464,11 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeCreateO
      *
      * Window-follow is implemented Kotlin-side via TaoWindow.onMoved
      * — re-issue nativeSetOverlayFrame on each owner movement. */
-    /* DComp backend: WS_EX_NOREDIRECTIONBITMAP drops the GDI redirection
-     * surface so nothing (uninitialised, opaque) composes behind the
-     * DComp visual tree. Must be decided at creation time — the flag
-     * can't be toggled later — while the WGL backend NEEDS the
-     * redirection surface for its blt-model SwapBuffers. */
-    DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
-    if (nucleus_tao_overlay_backend_is_dcomp()) exStyle |= WS_EX_NOREDIRECTIONBITMAP;
-
+    /* WS_EX_NOREDIRECTIONBITMAP drops the GDI redirection surface so
+     * nothing (uninitialised, opaque) composes behind the DComp visual
+     * tree that renders this overlay. */
     HWND hwnd = CreateWindowExW(
-        exStyle,
+        WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP,
         kOverlayClassName, L"",
         WS_POPUP,
         0, 0, 1, 1,
@@ -508,9 +488,9 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeCreateO
     InitializeCriticalSection(&s->regionLock);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)s);
 
-    /* Set up the transparent WGL context BEFORE showing the window so
-     * DwmEnableBlurBehindWindow + DWM polish (rounded corners, dark mode,
-     * extended frame for shadow) is in effect on the very first paint. */
+    /* Set up the DComp/EGL chain BEFORE showing the window so the DWM
+     * polish (rounded corners, dark mode, extended frame for shadow) is
+     * in effect on the very first paint. */
     s->gl.hwnd = hwnd;
     if (!nucleus_tao_overlay_gl_init(&s->gl, TRUE)) {
         /* Init failed — tear down everything we created and return 0. */
@@ -546,7 +526,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOver
         origin.x + xPx, origin.y + yPx, widthPx, heightPx,
         SWP_NOACTIVATE | SWP_NOZORDER);
     /* DComp swapchains don't track the HWND — resize explicitly
-     * (no-op on WGL and when only the position changed). */
+     * (no-op when only the position changed). */
     nucleus_tao_overlay_gl_resize(&s->gl, widthPx, heightPx);
 }
 
@@ -685,8 +665,8 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeRelease
 
     unregisterOverlayFromOwner(s);
 
-    /* Tear down WGL before destroying the HWND so wglDeleteContext sees
-     * a live HDC. */
+    /* Tear down the DComp/EGL chain before destroying the HWND (the
+     * DComp target must be released against a live window). */
     nucleus_tao_overlay_gl_destroy(&s->gl);
 
     if (IsWindow(s->hwnd)) {

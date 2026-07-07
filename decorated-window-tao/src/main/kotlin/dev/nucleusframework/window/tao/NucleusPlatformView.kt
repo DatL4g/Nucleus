@@ -16,7 +16,7 @@ package dev.nucleusframework.window.tao
  *    via `SetParent`, sized via `SetWindowPos`, clipped with
  *    `SetWindowRgn(CreateRoundRectRgn)` for rounded corners. Supports
  *    the [content] overlay slot via a sibling top-level WS_POPUP HWND
- *    with a transparent WGL context (see `NativeViewOverlayControllerWindows`).
+ *    with per-pixel alpha via DirectComposition (see `NativeViewOverlayControllerWindows`).
  *
  * The default empty implementations let host code call lifecycle
  * methods unconditionally without forcing every variant to override
@@ -100,7 +100,7 @@ sealed interface NucleusPlatformView {
     /**
      * Windows variant — child HWND reparented under the Tao main HWND
      * via `SetParent`, with the [content] overlay slot rendered in a
-     * sibling top-level WS_POPUP HWND owning its own transparent WGL
+     * sibling top-level WS_POPUP HWND owning its own transparent DComp
      * context (see `NativeViewOverlayControllerWindows`).
      */
     interface HWnd : NucleusPlatformView {

@@ -3,13 +3,13 @@
  *
  * Embeds a user-supplied child HWND under the Tao main HWND:
  *   - SetParent + flips WS_CHILD, strips popup/caption/thickframe
- *   - WS_CLIPCHILDREN on parent so the parent's WGL SwapBuffers skips
+ *   - WS_CLIPCHILDREN on parent so the parent's GL present skips
  *     the child region (otherwise GL paints over the child every frame)
  *   - SetWindowPos for sizing
  *   - SetWindowRgn(CreateRoundRectRgn) for rounded corners
  *
  * Linked into nucleus_tao_windows_native_view.dll alongside the overlay
- * + popup + WGL bridges (single combined DLL to limit JNI loader hops).
+ * + popup + DComp bridges (single combined DLL to limit JNI loader hops).
  *
  * Linked libraries: kernel32.lib user32.lib gdi32.lib
  */
@@ -74,7 +74,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsNativeViewBridge_nativeAtta
     SetWindowPos(child, NULL, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
-    /* Add WS_CLIPCHILDREN to the parent so its WGL SwapBuffers (and any
+    /* Add WS_CLIPCHILDREN to the parent so its GL present (and any
      * GDI paint) skips the child's region. Without this, the main scene's
      * GL framebuffer covers the embedded child every frame and the user
      * sees nothing where the child should be. */

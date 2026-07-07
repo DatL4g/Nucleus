@@ -32,28 +32,23 @@ import kotlin.coroutines.CoroutineContext
 /**
  * Windows port of the macOS [NativeViewOverlayController]. Owns the
  * top-level overlay HWND mounted above a user-supplied child HWND, its
- * transparent WGL context (joined to the host's share group via
- * `wglCreateContextAttribsARB(.., hostHGLRC, ..)`), and the inner
- * [ComposeScene] that renders into it. Maintains a list of "interactive
- * regions" populated by `Modifier.consumeOverlayPointerEvents()`; the
- * overlay's WndProc consults the same list (via JNI) to decide whether
+ * DComp/EGL render surface (the host's EGLContext bound to a
+ * d3d-texture pbuffer, presented via a composition swapchain — see
+ * nucleus_tao_windows_overlay_dcomp.cpp), and the inner [ComposeScene]
+ * that renders into it. Maintains a list of "interactive regions"
+ * populated by `Modifier.consumeOverlayPointerEvents()`; the overlay's
+ * WndProc consults the same list (via JNI) to decide whether
  * `WM_NCHITTEST` returns `HTCLIENT` or `HTTRANSPARENT`.
  *
- * Per-frame render path (cross-context sync per the plan):
- *   1. host.flushAndSubmit + nativePresent (handled by the host before
- *      this lambda runs)
- *   2. nativeMakeCurrent(overlay)
- *   3. overlayDirectContext.resetGLAll()
- *   4. renderGlFrame -> glClear(0,0,0,0) + scene.render +
- *      flushAndSubmit + nativeSwapBuffers (which does SwapBuffers + DwmFlush)
- *   5. host re-makes-current + resetGLAll (handled by the host after
- *      the popup loop)
- *
- * Phase 5 ships with [CanvasLayersComposeScene] so popups stay clipped
- * to the overlay's own bounds; Phase 7 swaps in
- * `PlatformLayersComposeScene + TaoComposeSceneContextWindows` so
- * `DropdownMenu` / `Tooltip` / context menus open as their own
- * top-level HWNDs.
+ * Per-frame render path (cross-surface sync):
+ *   1. host renders + flushAndSubmit (handled by the host before this
+ *      lambda runs; the host present happens after the popup loop)
+ *   2. nativeMakeCurrent(overlay) — binds the pbuffer surface
+ *   3. directContext.resetGLAll()
+ *   4. renderGlFrame -> clear(transparent) + scene.render +
+ *      flushAndSubmit + nativeSwapBuffers (CopyResource + Present +
+ *      Commit)
+ *   5. host re-binds its window surface + resetGLAll on its next frame
  *
  * Threading: every method runs on the host HWND's UI thread.
  */
@@ -252,10 +247,10 @@ internal class NativeViewOverlayControllerWindows(
     private var overlayHandle: Long = 0
 
     /**
-     * Single-HGLRC architecture: all overlays + popups + the host
-     * share the host's `DirectContext`. The overlay controller doesn't
-     * create its own — `popupHost.hostDirectContext` is the source of
-     * truth.
+     * Single-context architecture: all overlays + popups + the host
+     * share the host's `DirectContext` (one EGLContext, one surface per
+     * HWND). The overlay controller doesn't create its own —
+     * `popupHost.hostDirectContext` is the source of truth.
      */
     private val directContext: DirectContext = popupHost.hostDirectContext
     private var scene: ComposeScene? = null
@@ -302,13 +297,11 @@ internal class NativeViewOverlayControllerWindows(
         if (overlayHandle != 0L) return
         overlayHandle = NativeTaoWindowsOverlayBridge.nativeCreateOverlay(popupHost.parentHwnd)
         if (overlayHandle == 0L) {
-            // Overlay creation requires the host's WGL context (single-HGLRC
-            // architecture in nucleus_tao_windows_overlay_gl.c). Under the
-            // ANGLE/D3D11 render path there is none, so the transparent
-            // overlay can't be built yet. Degrade gracefully: the embedded
-            // child HWND keeps working, only the Compose `content` slot is
-            // dropped. The controller stays inert — every other entry point
-            // already no-ops on overlayHandle == 0.
+            // DComp/EGL chain creation failed (overlay_dcomp.cpp) — e.g.
+            // DirectComposition unavailable. Degrade gracefully: the
+            // embedded child HWND keeps working, only the Compose `content`
+            // slot is dropped. The controller stays inert — every other
+            // entry point already no-ops on overlayHandle == 0.
             warnOverlayUnavailableOnce()
             return
         }
@@ -430,10 +423,10 @@ internal class NativeViewOverlayControllerWindows(
         if (!firstBoundsApplied) {
             firstBoundsApplied = true
 
-            // Single-HGLRC: the overlay HDC uses the host's HGLRC. We
-            // don't call DirectContext.makeGL() — `directContext` is the
-            // host's, already initialized. Each renderFrame() switches
-            // the host HGLRC to draw into the overlay's HDC and calls
+            // Single-context: the overlay renders through the host's
+            // EGLContext. We don't create a DirectContext —
+            // `directContext` is the host's, already initialized. Each
+            // renderFrame() binds the overlay's pbuffer surface and calls
             // resetGLAll on the shared directContext to re-sync Skia's
             // GL state cache for the new framebuffer.
 
@@ -546,10 +539,10 @@ internal class NativeViewOverlayControllerWindows(
         if (widthPx == 0 || heightPx == 0) return
         if (overlayHandle == 0L) return
         if (!NativeTaoWindowsOverlayBridge.nativeMakeCurrent(overlayHandle)) return
-        // Switched the host's HGLRC to draw into the overlay's HDC —
-        // FBO 0 now refers to the overlay's back-buffer. resetGLAll
-        // tells Skia "external code touched GL state" so it re-fetches
-        // the current framebuffer binding before issuing draws.
+        // Bound the overlay's pbuffer surface on the shared EGLContext —
+        // FBO 0 now refers to the overlay's texture. resetGLAll tells
+        // Skia "external code touched GL state" so it re-fetches the
+        // current framebuffer binding before issuing draws.
         directContext.resetGLAll()
         renderGlFrame(
             widthPx = widthPx,
@@ -602,10 +595,9 @@ private val overlayUnavailableWarned =
 private fun warnOverlayUnavailableOnce() {
     if (!overlayUnavailableWarned.compareAndSet(false, true)) return
     System.err.println(
-        "[NativeView] Compose overlay unavailable: the transparent overlay " +
-            "HWND requires the WGL render path, but this window renders via " +
-            "ANGLE/D3D11. The embedded native view still works; the overlay " +
-            "`content` slot is ignored. Set NUCLEUS_TAO_WIN_RENDER=wgl to " +
-            "restore it until the DirectComposition overlay path lands.",
+        "[NativeView] Compose overlay unavailable: the DirectComposition " +
+            "overlay chain could not be created on this system. The " +
+            "embedded native view still works; the overlay `content` slot " +
+            "is ignored.",
     )
 }

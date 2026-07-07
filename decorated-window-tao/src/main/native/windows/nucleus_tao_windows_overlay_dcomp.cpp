@@ -1,15 +1,16 @@
 /**
  * EGL/ANGLE + DirectComposition rendering bridge for the Tao Windows
- * overlay & popup HWNDs — the ANGLE-host counterpart of the WGL
- * single-HGLRC path in nucleus_tao_windows_overlay_gl.c.
+ * overlay & popup HWNDs — implements the `nucleus_tao_overlay_gl_*`
+ * helpers declared in nucleus_tao_windows_overlay_internal.h.
  *
- * Why not the blur-behind trick here: ANGLE presents HWND surfaces
- * through a blt-model DXGI swapchain that drops the alpha channel when
- * copying into DWM's redirection surface, and CreateSwapChainForHwnd
+ * Why DirectComposition: ANGLE presents HWND surfaces through a
+ * blt-model DXGI swapchain that drops the alpha channel when copying
+ * into DWM's redirection surface, and CreateSwapChainForHwnd
  * categorically rejects DXGI_ALPHA_MODE_PREMULTIPLIED. Per-pixel alpha
  * on Windows with a D3D-backed renderer requires a *composition*
  * swapchain — the same architecture Chromium uses for transparent
- * windows.
+ * windows. (The legacy WGL path used the DwmEnableBlurBehindWindow
+ * empty-region trick instead; it died with the WGL backend.)
  *
  * Per-HWND chain:
  *
@@ -24,14 +25,14 @@
  *        (created with WS_EX_NOREDIRECTIONBITMAP — no GDI redirection
  *         surface behind the visuals)
  *
- * Single-context architecture: like the WGL path, no second GL/EGL
- * context is ever created. The host's EGLContext binds to the pbuffer
- * for the overlay frame and back to the host's window surface for the
- * main frame; the shared Skia DirectContext re-syncs via resetGLAll().
- * Presents run inline on the event-loop thread — ANGLE's per-display
- * D3D11 device deadlocks on cross-thread present (see
- * TaoComposeSceneHostWindows.attach), and Present(0)/Commit don't
- * block on vsync anyway (pacing comes from the host's swap interval).
+ * Single-context architecture: no second GL/EGL context is ever
+ * created. The host's EGLContext binds to the pbuffer for the overlay
+ * frame and back to the host's window surface for the main frame; the
+ * shared Skia DirectContext re-syncs via resetGLAll(). Presents run
+ * inline on the event-loop thread — ANGLE's per-display D3D11 device
+ * deadlocks on cross-thread present (see TaoComposeSceneHostWindows) —
+ * and Present(0)/Commit don't block on vsync anyway (pacing comes from
+ * the host's swap interval).
  *
  * The Y-flip transform on the visual compensates Skia's BOTTOM_LEFT
  * surface origin (renderGlFrame): GL row 0 = image bottom lands in
@@ -48,6 +49,7 @@
  */
 
 #include <windows.h>
+#include <dwmapi.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <dcomp.h>
@@ -59,17 +61,34 @@
 
 #include "nucleus_tao_windows_overlay_internal.h"
 
+/* DWM constants — defined manually because dwmapi.h ships them in
+ * different SDK versions and our /NODEFAULTLIB build sometimes pulls
+ * an older header. */
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+#ifndef DWMWA_TRANSITIONS_FORCEDISABLED
+#define DWMWA_TRANSITIONS_FORCEDISABLED 3
+#endif
+#ifndef DWMWCP_DONOTROUND
+#define DWMWCP_DONOTROUND 1
+#endif
+#ifndef DWMWCP_ROUNDSMALL
+#define DWMWCP_ROUNDSMALL 3
+#endif
+
 /* ================================================================== */
 /*  Host bridge (nucleus_tao_gl.dll exports)                           */
 /* ================================================================== */
 
-typedef int   (*PFN_host_backend)(void);
 typedef void *(*PFN_host_egl_display)(void);
 typedef void *(*PFN_host_egl_context)(void);
 typedef void *(*PFN_host_egl_config)(void);
 typedef void *(*PFN_host_egl_proc)(const char *name);
 
-static PFN_host_backend     pHostBackend    = NULL;
 static PFN_host_egl_display pHostEglDisplay = NULL;
 static PFN_host_egl_context pHostEglContext = NULL;
 static PFN_host_egl_config  pHostEglConfig  = NULL;
@@ -83,7 +102,6 @@ static PFNEGLCREATEPBUFFERFROMCLIENTBUFFERPROC pEglCreatePbufferFromClientBuffer
 static PFNEGLDESTROYSURFACEPROC               pEglDestroySurface               = NULL;
 static PFNEGLMAKECURRENTPROC                  pEglMakeCurrent                  = NULL;
 static PFNEGLGETCURRENTSURFACEPROC            pEglGetCurrentSurface            = NULL;
-static PFNEGLGETERRORPROC                     pEglGetError                     = NULL;
 
 typedef void (APIENTRY *PFN_glFlush)(void);
 static PFN_glFlush pglFlush = NULL;
@@ -97,7 +115,6 @@ static void resolveHost(void) {
 
     HMODULE m = GetModuleHandleW(L"nucleus_tao_gl.dll");
     if (!m) return;
-    pHostBackend    = (PFN_host_backend)    GetProcAddress(m, "nucleus_tao_host_backend");
     pHostEglDisplay = (PFN_host_egl_display)GetProcAddress(m, "nucleus_tao_host_egl_display");
     pHostEglContext = (PFN_host_egl_context)GetProcAddress(m, "nucleus_tao_host_egl_context");
     pHostEglConfig  = (PFN_host_egl_config) GetProcAddress(m, "nucleus_tao_host_egl_config");
@@ -113,7 +130,6 @@ static void resolveHost(void) {
     pEglDestroySurface    = (PFNEGLDESTROYSURFACEPROC)    pHostEglProc("eglDestroySurface");
     pEglMakeCurrent       = (PFNEGLMAKECURRENTPROC)       pHostEglProc("eglMakeCurrent");
     pEglGetCurrentSurface = (PFNEGLGETCURRENTSURFACEPROC) pHostEglProc("eglGetCurrentSurface");
-    pEglGetError          = (PFNEGLGETERRORPROC)          pHostEglProc("eglGetError");
     pglFlush              = (PFN_glFlush)                 pHostEglProc("glFlush");
 
     HMODULE dcomp = LoadLibraryW(L"dcomp.dll");
@@ -123,9 +139,34 @@ static void resolveHost(void) {
     }
 }
 
-extern "C" BOOL nucleus_tao_overlay_backend_is_dcomp(void) {
-    resolveHost();
-    return (pHostBackend && pHostBackend() == 1 /* BACKEND_EGL */) ? TRUE : FALSE;
+/* ================================================================== */
+/*  DWM window styling                                                 */
+/* ================================================================== */
+
+static void applyDwmPolish(HWND hwnd) {
+    /* Rounded corners — Win11 22000+, silently no-ops on Win10. */
+    DWORD corner = DWMWCP_ROUNDSMALL;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &corner, sizeof(corner));
+
+    /* Mirror the host's dark-mode setting (best effort: just enable). */
+    BOOL dark = TRUE;
+    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                          &dark, sizeof(dark));
+
+    /* Four-sided shadow via extended frame margins of {1,1,1,1}. */
+    MARGINS margins = { 1, 1, 1, 1 };
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+}
+
+static void applyDwmPopupSurface(HWND hwnd) {
+    DWORD corner = DWMWCP_DONOTROUND;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &corner, sizeof(corner));
+
+    BOOL disableTransitions = TRUE;
+    DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED,
+                          &disableTransitions, sizeof(disableTransitions));
 }
 
 /* ================================================================== */
@@ -236,7 +277,19 @@ static BOOL createPbufferAndTexture(DcompSurface *s, int w, int h) {
     return TRUE;
 }
 
-extern "C" void *nucleus_tao_overlay_dcomp_create(HWND hwnd) {
+static void destroySurface(DcompSurface *s) {
+    if (!s) return;
+    releasePbufferAndTexture(s);
+    if (s->visual)      { s->visual->SetContent(NULL); s->visual->Release(); }
+    if (s->target)      { s->target->SetRoot(NULL); s->target->Release(); }
+    if (s->swapChain)   s->swapChain->Release();
+    if (s->dcompDevice) { s->dcompDevice->Commit(); s->dcompDevice->Release(); }
+    if (s->imCtx)       s->imCtx->Release();
+    if (s->device)      s->device->Release();
+    HeapFree(GetProcessHeap(), 0, s);
+}
+
+static DcompSurface *createSurface(HWND hwnd) {
     resolveHost();
     if (!pHostEglDisplay || !pHostEglContext || !pHostEglConfig ||
         !pEglCreatePbufferFromClientBuffer || !pEglMakeCurrent ||
@@ -325,33 +378,42 @@ extern "C" void *nucleus_tao_overlay_dcomp_create(HWND hwnd) {
     if (dxgiDevice) dxgiDevice->Release();
 
     if (!ok) {
-        nucleus_tao_overlay_dcomp_destroy(s);
+        destroySurface(s);
         return NULL;
     }
     return s;
 }
 
-extern "C" void nucleus_tao_overlay_dcomp_destroy(void *surface) {
-    DcompSurface *s = (DcompSurface *)surface;
-    if (!s) return;
-    releasePbufferAndTexture(s);
-    if (s->visual)      { s->visual->SetContent(NULL); s->visual->Release(); }
-    if (s->target)      { s->target->SetRoot(NULL); s->target->Release(); }
-    if (s->swapChain)   s->swapChain->Release();
-    if (s->dcompDevice) { s->dcompDevice->Commit(); s->dcompDevice->Release(); }
-    if (s->imCtx)       s->imCtx->Release();
-    if (s->device)      s->device->Release();
-    HeapFree(GetProcessHeap(), 0, s);
+/* ================================================================== */
+/*  Public helpers (nucleus_tao_windows_overlay_internal.h)            */
+/* ================================================================== */
+
+extern "C" BOOL nucleus_tao_overlay_gl_init(GlSurface *gl, BOOL nativeWindowPolish) {
+    if (!gl || !gl->hwnd) return FALSE;
+    gl->dcomp = createSurface(gl->hwnd);
+    if (!gl->dcomp) return FALSE;
+    if (nativeWindowPolish) {
+        applyDwmPolish(gl->hwnd);
+    } else {
+        applyDwmPopupSurface(gl->hwnd);
+    }
+    return TRUE;
 }
 
-extern "C" BOOL nucleus_tao_overlay_dcomp_make_current(void *surface) {
-    DcompSurface *s = (DcompSurface *)surface;
+extern "C" void nucleus_tao_overlay_gl_destroy(GlSurface *gl) {
+    if (!gl) return;
+    destroySurface((DcompSurface *)gl->dcomp);
+    gl->dcomp = NULL;
+}
+
+extern "C" BOOL nucleus_tao_overlay_gl_make_current(GlSurface *gl) {
+    DcompSurface *s = gl ? (DcompSurface *)gl->dcomp : NULL;
     if (!s || s->pbuffer == EGL_NO_SURFACE) return FALSE;
     return pEglMakeCurrent(s->dpy, s->pbuffer, s->pbuffer, s->ctx) ? TRUE : FALSE;
 }
 
-extern "C" void nucleus_tao_overlay_dcomp_present(void *surface) {
-    DcompSurface *s = (DcompSurface *)surface;
+extern "C" void nucleus_tao_overlay_gl_present(GlSurface *gl) {
+    DcompSurface *s = gl ? (DcompSurface *)gl->dcomp : NULL;
     if (!s || !s->swapChain || !s->texture) return;
 
     /* Skia's flushAndSubmit already flushed GL; this defensive flush
@@ -371,8 +433,8 @@ extern "C" void nucleus_tao_overlay_dcomp_present(void *surface) {
     }
 }
 
-extern "C" void nucleus_tao_overlay_dcomp_resize(void *surface, int widthPx, int heightPx) {
-    DcompSurface *s = (DcompSurface *)surface;
+extern "C" void nucleus_tao_overlay_gl_resize(GlSurface *gl, int widthPx, int heightPx) {
+    DcompSurface *s = gl ? (DcompSurface *)gl->dcomp : NULL;
     if (!s) return;
     if (widthPx < 1) widthPx = 1;
     if (heightPx < 1) heightPx = 1;

@@ -12,16 +12,15 @@ import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 
 /**
- * Per-frame Skia/WGL rendering helper shared by the overlay controller
+ * Per-frame Skia/GL rendering helper shared by the overlay controller
  * and the popup scene layer. Wraps the default GL framebuffer in a
  * Skia [Surface], lets the scene paint, then presents.
  *
  * Caller must:
- *  1. have made the WGL context current (via the overlay/popup bridge),
+ *  1. have bound the surface's GL context (via the overlay/popup bridge),
  *  2. have called [DirectContext.resetGLAll] on [directContext] so Skia's
- *     GL state cache reflects reality after the external context switch,
- *  3. provide [present] which does `SwapBuffers + DwmFlush()` (the
- *     bridge's `nativeSwapBuffers` does both).
+ *     GL state cache reflects reality after the external surface switch,
+ *  3. provide [present] (the bridge's `nativeSwapBuffers`).
  */
 @OptIn(InternalComposeUiApi::class)
 internal inline fun renderGlFrame(

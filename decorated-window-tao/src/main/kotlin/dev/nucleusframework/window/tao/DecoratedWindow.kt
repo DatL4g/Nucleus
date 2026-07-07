@@ -697,7 +697,7 @@ private fun initialLinuxSize(
 }
 
 /**
- * Windows path for [DecoratedWindow]: WGL renderer + custom WndProc decoration.
+ * Windows path for [DecoratedWindow]: ANGLE/D3D11 renderer + custom WndProc decoration.
  * Boutons min/max/close drawn in Compose by the user content (the [TitleBar]
  * composable lays them out at `Modifier.align(Alignment.End)`).
  *
