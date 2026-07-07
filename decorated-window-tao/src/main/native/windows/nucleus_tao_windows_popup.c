@@ -46,6 +46,11 @@
 
 #define WHEEL_DELTA_F  120.0f
 
+/* Win8+; not in every SDK header set our /NODEFAULTLIB build pulls. */
+#ifndef WS_EX_NOREDIRECTIONBITMAP
+#define WS_EX_NOREDIRECTIONBITMAP 0x00200000L
+#endif
+
 typedef struct PopupState PopupState;
 struct PopupState {
     HWND parent;
@@ -449,8 +454,13 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
         prevDpi = pSetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
+    /* DComp backend: see the matching comment in overlay.c —
+     * WS_EX_NOREDIRECTIONBITMAP must be decided at creation time. */
+    DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+    if (nucleus_tao_overlay_backend_is_dcomp()) exStyle |= WS_EX_NOREDIRECTIONBITMAP;
+
     HWND hwnd = CreateWindowExW(
-        WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+        exStyle,
         kPopupClassName, L"",
         WS_POPUP,
         origin.x + xPx, origin.y + yPx, widthPx, heightPx,
@@ -506,6 +516,9 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetFrameInWi
     SetWindowPos(p->gl.hwnd, NULL,
         origin.x + xPx, origin.y + yPx, widthPx, heightPx,
         SWP_NOACTIVATE | SWP_NOZORDER);
+    /* DComp swapchains don't track the HWND — resize explicitly
+     * (no-op on WGL and when only the position changed). */
+    nucleus_tao_overlay_gl_resize(&p->gl, widthPx, heightPx);
 }
 
 JNIEXPORT void JNICALL
@@ -530,8 +543,8 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeMakeCurrent(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
-    if (!p || !p->gl.hdc || !p->gl.hglrc) return JNI_FALSE;
-    return wglMakeCurrent(p->gl.hdc, p->gl.hglrc) ? JNI_TRUE : JNI_FALSE;
+    if (!p) return JNI_FALSE;
+    return nucleus_tao_overlay_gl_make_current(&p->gl) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
@@ -539,9 +552,8 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSwapBuffers(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
-    if (!p || !p->gl.hdc) return;
-    SwapBuffers(p->gl.hdc);
-    DwmFlush();
+    if (!p) return;
+    nucleus_tao_overlay_gl_present(&p->gl);
 }
 
 JNIEXPORT void JNICALL

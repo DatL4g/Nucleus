@@ -51,6 +51,11 @@
 
 #define MAX_REGIONS 64
 
+/* Win8+; not in every SDK header set our /NODEFAULTLIB build pulls. */
+#ifndef WS_EX_NOREDIRECTIONBITMAP
+#define WS_EX_NOREDIRECTIONBITMAP 0x00200000L
+#endif
+
 typedef struct OwnerNode OwnerNode;
 typedef struct OverlayState OverlayState;
 
@@ -474,8 +479,16 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeCreateO
      *
      * Window-follow is implemented Kotlin-side via TaoWindow.onMoved
      * — re-issue nativeSetOverlayFrame on each owner movement. */
+    /* DComp backend: WS_EX_NOREDIRECTIONBITMAP drops the GDI redirection
+     * surface so nothing (uninitialised, opaque) composes behind the
+     * DComp visual tree. Must be decided at creation time — the flag
+     * can't be toggled later — while the WGL backend NEEDS the
+     * redirection surface for its blt-model SwapBuffers. */
+    DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+    if (nucleus_tao_overlay_backend_is_dcomp()) exStyle |= WS_EX_NOREDIRECTIONBITMAP;
+
     HWND hwnd = CreateWindowExW(
-        WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+        exStyle,
         kOverlayClassName, L"",
         WS_POPUP,
         0, 0, 1, 1,
@@ -532,6 +545,9 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOver
     SetWindowPos(s->hwnd, NULL,
         origin.x + xPx, origin.y + yPx, widthPx, heightPx,
         SWP_NOACTIVATE | SWP_NOZORDER);
+    /* DComp swapchains don't track the HWND — resize explicitly
+     * (no-op on WGL and when only the position changed). */
+    nucleus_tao_overlay_gl_resize(&s->gl, widthPx, heightPx);
 }
 
 JNIEXPORT void JNICALL
@@ -625,8 +641,8 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeMakeCur
     JNIEnv *env, jclass clazz, jlong overlay) {
     (void)env; (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;
-    if (!s || !s->gl.hdc || !s->gl.hglrc) return JNI_FALSE;
-    return wglMakeCurrent(s->gl.hdc, s->gl.hglrc) ? JNI_TRUE : JNI_FALSE;
+    if (!s) return JNI_FALSE;
+    return nucleus_tao_overlay_gl_make_current(&s->gl) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
@@ -634,9 +650,8 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSwapBuf
     JNIEnv *env, jclass clazz, jlong overlay) {
     (void)env; (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;
-    if (!s || !s->gl.hdc) return;
-    SwapBuffers(s->gl.hdc);
-    DwmFlush();
+    if (!s) return;
+    nucleus_tao_overlay_gl_present(&s->gl);
 }
 
 JNIEXPORT void JNICALL

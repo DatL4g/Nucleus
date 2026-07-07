@@ -301,7 +301,17 @@ internal class NativeViewOverlayControllerWindows(
     fun attach() {
         if (overlayHandle != 0L) return
         overlayHandle = NativeTaoWindowsOverlayBridge.nativeCreateOverlay(popupHost.parentHwnd)
-        require(overlayHandle != 0L) { "Failed to create overlay HWND" }
+        if (overlayHandle == 0L) {
+            // Overlay creation requires the host's WGL context (single-HGLRC
+            // architecture in nucleus_tao_windows_overlay_gl.c). Under the
+            // ANGLE/D3D11 render path there is none, so the transparent
+            // overlay can't be built yet. Degrade gracefully: the embedded
+            // child HWND keeps working, only the Compose `content` slot is
+            // dropped. The controller stays inert — every other entry point
+            // already no-ops on overlayHandle == 0.
+            warnOverlayUnavailableOnce()
+            return
+        }
         NativeTaoWindowsOverlayBridge.nativeSetOverlayCallback(overlayHandle, OverlayCallback())
         popupHost.registerRenderer(rendererToken) { renderFrame() }
         popupHost.registerKeyHandler(keyHandlerToken) { event ->
@@ -584,3 +594,18 @@ internal class NativeViewOverlayControllerWindows(
  */
 internal val LocalNativeViewOverlayControllerWindows =
     compositionLocalOf<NativeViewOverlayControllerWindows?> { null }
+
+private val overlayUnavailableWarned =
+    java.util.concurrent.atomic
+        .AtomicBoolean(false)
+
+private fun warnOverlayUnavailableOnce() {
+    if (!overlayUnavailableWarned.compareAndSet(false, true)) return
+    System.err.println(
+        "[NativeView] Compose overlay unavailable: the transparent overlay " +
+            "HWND requires the WGL render path, but this window renders via " +
+            "ANGLE/D3D11. The embedded native view still works; the overlay " +
+            "`content` slot is ignored. Set NUCLEUS_TAO_WIN_RENDER=wgl to " +
+            "restore it until the DirectComposition overlay path lands.",
+    )
+}

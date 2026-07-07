@@ -410,6 +410,20 @@ __declspec(dllexport) void *nucleus_tao_host_egl_config(void) {
     return (void *)sHostEglConfig;
 }
 
+/* Resolves an EGL entry point through the already-loaded libEGL.dll.
+ * The overlay+popup DLL (overlay_dcomp.cpp) uses this instead of
+ * loading/looking up libEGL itself, so all EGL resolution stays in one
+ * place and works even where GetModuleHandleW("libEGL.dll") wouldn't
+ * (name-mangled extraction). Returns NULL when ANGLE isn't loaded. */
+__declspec(dllexport) void *nucleus_tao_host_egl_proc(const char *name) {
+    if (sLibEGL) {
+        void *p = (void *)GetProcAddress(sLibEGL, name);
+        if (p) return p;
+    }
+    if (pEglGetProcAddress) return (void *)pEglGetProcAddress(name);
+    return NULL;
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     (void)hinstDLL; (void)fdwReason; (void)lpvReserved;
     return TRUE;
@@ -570,9 +584,12 @@ static GlAttachment *attachEgl(HWND hwnd) {
     if (pEglBindAPI) pEglBindAPI(EGL_OPENGL_ES_API);
 
     /* Alpha 8 + stencil 8, matching the WGL format so transparent overlay /
-     * popup surfaces can share this config. Depth unused (Skia owns it). */
+     * popup surfaces can share this config. Depth unused (Skia owns it).
+     * EGL_PBUFFER_BIT: the DComp overlay path (overlay_dcomp.cpp) reuses
+     * this exact config for its d3d-texture pbuffers — eglMakeCurrent
+     * requires surface/context config compatibility. */
     const EGLint cfgAttribs[] = {
-        EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
+        EGL_SURFACE_TYPE,    EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
         EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
         EGL_RED_SIZE,    8,
         EGL_GREEN_SIZE,  8,
@@ -804,6 +821,12 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativePresent(
     GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
     if (!att) return;
     if (att->backend == BACKEND_EGL) {
+        /* Defensive re-make-current: an overlay/popup renderer may have
+         * left its d3d-texture pbuffer bound on this thread (single
+         * shared EGLContext, see overlay_dcomp.cpp). eglSwapBuffers
+         * requires the surface to be current; re-binding when already
+         * current is an ANGLE fast-path no-op. */
+        pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
         pEglSwapBuffers(att->eglDisplay, att->eglSurface);
     } else {
         SwapBuffers(att->hdc);

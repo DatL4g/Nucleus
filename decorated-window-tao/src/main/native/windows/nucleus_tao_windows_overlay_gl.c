@@ -204,13 +204,34 @@ static void applyDwmPopupSurface(HWND hwnd) {
 }
 
 void nucleus_tao_overlay_gl_rearm_blur(GlSurface *gl) {
-    if (gl && gl->hwnd) armBlurBehind(gl->hwnd);
+    /* DComp backend: alpha comes from the composition swapchain, the
+     * blur-behind trick is neither needed nor effective. */
+    if (gl && gl->hwnd && gl->backend == NUCLEUS_TAO_OVERLAY_BACKEND_WGL) {
+        armBlurBehind(gl->hwnd);
+    }
 }
 
 BOOL nucleus_tao_overlay_gl_init(GlSurface *gl, BOOL nativeWindowPolish) {
     if (!gl || !gl->hwnd) return FALSE;
     HWND hwnd = gl->hwnd;
 
+    /* ANGLE host -> DirectComposition backend (overlay_dcomp.cpp).
+     * There is no host HGLRC to borrow, and the blur-behind trick
+     * can't surface ANGLE's alpha channel — see the header of
+     * nucleus_tao_windows_overlay_internal.h. */
+    if (nucleus_tao_overlay_backend_is_dcomp()) {
+        gl->dcomp = nucleus_tao_overlay_dcomp_create(hwnd);
+        if (!gl->dcomp) return FALSE;
+        gl->backend = NUCLEUS_TAO_OVERLAY_BACKEND_DCOMP;
+        if (nativeWindowPolish) {
+            applyDwmPolish(hwnd);
+        } else {
+            applyDwmPopupSurface(hwnd);
+        }
+        return TRUE;
+    }
+
+    gl->backend = NUCLEUS_TAO_OVERLAY_BACKEND_WGL;
     loadWglExtensions();
     resolveHostBridge();
 
@@ -284,6 +305,11 @@ BOOL nucleus_tao_overlay_gl_init(GlSurface *gl, BOOL nativeWindowPolish) {
 
 void nucleus_tao_overlay_gl_destroy(GlSurface *gl) {
     if (!gl) return;
+    if (gl->backend == NUCLEUS_TAO_OVERLAY_BACKEND_DCOMP) {
+        nucleus_tao_overlay_dcomp_destroy(gl->dcomp);
+        gl->dcomp = NULL;
+        return;
+    }
     /* gl->hglrc is the host's HGLRC — don't delete it. Just release the
      * HDC. If the host's HGLRC happens to be current on this HDC,
      * wglMakeCurrent(NULL, NULL) would also clear the host's binding,
@@ -293,6 +319,30 @@ void nucleus_tao_overlay_gl_destroy(GlSurface *gl) {
     gl->hglrc = NULL;
 }
 
-/* JNI exports for nativeMakeCurrent / nativeSwapBuffers live in
- * overlay.c and popup.c respectively — each owns the lifecycle struct
- * containing the GlSurface. */
+BOOL nucleus_tao_overlay_gl_make_current(GlSurface *gl) {
+    if (!gl) return FALSE;
+    if (gl->backend == NUCLEUS_TAO_OVERLAY_BACKEND_DCOMP) {
+        return nucleus_tao_overlay_dcomp_make_current(gl->dcomp);
+    }
+    if (!gl->hdc || !gl->hglrc) return FALSE;
+    return wglMakeCurrent(gl->hdc, gl->hglrc) ? TRUE : FALSE;
+}
+
+void nucleus_tao_overlay_gl_present(GlSurface *gl) {
+    if (!gl) return;
+    if (gl->backend == NUCLEUS_TAO_OVERLAY_BACKEND_DCOMP) {
+        nucleus_tao_overlay_dcomp_present(gl->dcomp);
+        return;
+    }
+    if (!gl->hdc) return;
+    SwapBuffers(gl->hdc);
+    DwmFlush();
+}
+
+void nucleus_tao_overlay_gl_resize(GlSurface *gl, int widthPx, int heightPx) {
+    if (!gl) return;
+    if (gl->backend == NUCLEUS_TAO_OVERLAY_BACKEND_DCOMP) {
+        nucleus_tao_overlay_dcomp_resize(gl->dcomp, widthPx, heightPx);
+    }
+    /* WGL back buffers track the HWND automatically. */
+}
