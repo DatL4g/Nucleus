@@ -477,6 +477,23 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativePresent(
     pEglSwapBuffers(att->eglDisplay, att->eglSurface);
 }
 
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeSetVSyncEnabled(
+    JNIEnv *env, jclass clazz, jlong handle, jboolean enabled)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    if (!att || !pEglSwapInterval) return;
+    /* eglSwapInterval applies to the draw surface of the current context, so
+     * make our window surface current first (an overlay/popup renderer may have
+     * left its pbuffer bound on this thread). interval 1 = pace on the display
+     * refresh (default — keeps animations aligned to VBlank); interval 0 =
+     * present immediately, set for the duration of the OS modal resize/move
+     * loop so border-drag frames don't block on VBlank. */
+    pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+    pEglSwapInterval(att->eglDisplay, enabled ? 1 : 0);
+}
+
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeWidth(
     JNIEnv *env, jclass clazz, jlong handle)

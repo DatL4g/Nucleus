@@ -140,6 +140,14 @@ internal object NativeTaoWindowsDecoBridge {
     external fun nativeIsMaximized(hwnd: Long): Boolean
 
     /**
+     * Refresh rate (Hz) of the monitor the window is on, or `0` if it can't be
+     * resolved. Used to cap the render rate during the modal resize loop (VSync
+     * is off then) so a border drag doesn't render far above the display refresh.
+     */
+    @JvmStatic
+    external fun nativeMonitorRefreshHz(hwnd: Long): Int
+
+    /**
      * Atomic unmaximize + reposition under the finger when a touch drag
      * starts on a maximized window. Returns the restored outer rect as
      * `[x, y, w, h]` in physical pixels, or `null` on failure.

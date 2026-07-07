@@ -490,3 +490,24 @@ pub(crate) static MAGNIFY_HOOK: std::sync::OnceLock<fn(crate::window::WindowId, 
 pub fn set_magnify_hook(hook: fn(crate::window::WindowId, f32)) {
   let _ = MAGNIFY_HOOK.set(hook);
 }
+
+// PATCH(nucleus): modal size/move loop hook.
+//
+// Windows runs a modal message loop between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE
+// while the user drags a resize border or the title bar. Tao has no event for
+// it, so the WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE handlers call this hook (`true`
+// on enter, `false` on exit). The embedder uses it to drop VSync
+// (`eglSwapInterval(0)`) for the duration, so the synchronous per-WM_SIZE
+// present doesn't block on the display refresh and the border tracks the cursor
+// with no added latency; paced VSync is restored on exit. Idempotent: the first
+// installed hook wins; runs on the event-loop thread inside the window
+// procedure, so it must not block or pump messages.
+pub(crate) static SIZE_MOVE_HOOK: std::sync::OnceLock<fn(crate::window::WindowId, bool)> =
+  std::sync::OnceLock::new();
+
+/// Install a hook invoked from the WM_ENTERSIZEMOVE (`true`) and WM_EXITSIZEMOVE
+/// (`false`) handlers whenever the OS modal size/move loop starts or ends.
+/// See [`SIZE_MOVE_HOOK`].
+pub fn set_size_move_hook(hook: fn(crate::window::WindowId, bool)) {
+  let _ = SIZE_MOVE_HOOK.set(hook);
+}

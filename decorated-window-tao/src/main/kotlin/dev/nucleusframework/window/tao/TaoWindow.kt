@@ -87,6 +87,9 @@ class TaoWindow internal constructor(
     @Volatile
     private var willHideListener: (() -> Unit)? = null
     private var shownListener: (() -> Unit)? = null
+
+    @Volatile
+    private var sizeMoveListener: ((Boolean) -> Unit)? = null
     private var pointerMoveListener: ((Int, Int) -> Unit)? = null
 
     @Volatile
@@ -574,6 +577,16 @@ class TaoWindow internal constructor(
         shownListener = block
     }
 
+    /**
+     * Windows only. Fires on the event-loop thread when the OS modal
+     * resize/move loop starts (`true`, WM_ENTERSIZEMOVE) and ends (`false`,
+     * WM_EXITSIZEMOVE). The host drops VSync while active so a border drag
+     * isn't throttled to the display refresh. No source on macOS / Linux.
+     */
+    fun onSizeMoveChanged(block: (active: Boolean) -> Unit) {
+        sizeMoveListener = block
+    }
+
     fun onPointerMoved(block: (xFixed: Int, yFixed: Int) -> Unit) {
         pointerMoveListener = block
     }
@@ -704,6 +717,7 @@ class TaoWindow internal constructor(
             TaoEventCode.MODIFIERS_CHANGED -> modifierState = a
             TaoEventCode.WILL_HIDE -> willHideListener?.invoke()
             TaoEventCode.SHOWN -> shownListener?.invoke()
+            TaoEventCode.SIZE_MOVE -> sizeMoveListener?.invoke(a != 0)
             TaoEventCode.SCROLL_LINE -> {
                 // AWT sends the wheel rotation as scrollDelta and leaves the
                 // platform line-count policy in MouseWheelEvent.scrollAmount.

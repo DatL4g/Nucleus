@@ -82,6 +82,18 @@ internal object NativeTaoGlBridge {
     @JvmStatic
     external fun nativePresent(handle: Long)
 
+    /**
+     * Toggles VSync via `eglSwapInterval`: `true` = pace presents on the display
+     * refresh (default), `false` = present immediately. Dropped to `false` for
+     * the duration of the OS modal resize/move loop so the synchronous
+     * per-WM_SIZE present doesn't block on VBlank while a border is dragged.
+     */
+    @JvmStatic
+    external fun nativeSetVSyncEnabled(
+        handle: Long,
+        enabled: Boolean,
+    )
+
     @JvmStatic
     external fun nativeWidth(handle: Long): Int
 
