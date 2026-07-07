@@ -156,6 +156,11 @@ pub(crate) const EVENT_WILL_HIDE: jint = 23;
 // again (GDK surface re-created), so the JVM can re-attach its EGL rendering.
 #[cfg(target_os = "linux")]
 pub(crate) const EVENT_SHOWN: jint = 24;
+// Windows only. Fired on WM_ENTERSIZEMOVE (`a = 1`) and WM_EXITSIZEMOVE
+// (`a = 0`) so the embedder can drop VSync during the OS modal resize/move
+// loop — see `on_tao_size_move`.
+#[cfg(target_os = "windows")]
+pub(crate) const EVENT_SIZE_MOVE: jint = 25;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;

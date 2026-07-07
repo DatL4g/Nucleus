@@ -683,6 +683,13 @@ object TaoEventCode {
      * shown again (GDK surface re-created) so the host can re-attach EGL.
      */
     const val SHOWN: Int = 24
+
+    /**
+     * Windows only. `a` = 1 when the OS modal resize/move loop starts
+     * (WM_ENTERSIZEMOVE), 0 when it ends (WM_EXITSIZEMOVE). The host drops
+     * VSync while active so border-drag frames don't block on VBlank.
+     */
+    const val SIZE_MOVE: Int = 25
 }
 
 /** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */

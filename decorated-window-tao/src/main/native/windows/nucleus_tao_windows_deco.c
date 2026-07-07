@@ -700,6 +700,41 @@ static int clampInt(int value, int minValue, int maxValue) {
     return value;
 }
 
+/* Refresh rate (Hz) of the monitor the window is currently on, used to cap the
+ * resize render rate while VSync is disabled during the modal resize loop.
+ * Resolves the monitor's current display mode via EnumDisplaySettingsW; falls
+ * back to GetDeviceCaps(VREFRESH), then 0 when nothing usable is available (the
+ * caller then leaves the resize loop uncapped). */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeMonitorRefreshHz(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return 0;
+
+    HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFOEXW mi;
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfoW(hMon, (MONITORINFO *)&mi)) {
+        DEVMODEW dm;
+        memset(&dm, 0, sizeof(dm));
+        dm.dmSize = sizeof(dm);
+        if (EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm)
+            && dm.dmDisplayFrequency > 1) {
+            return (jint)dm.dmDisplayFrequency;
+        }
+    }
+
+    HDC hdc = GetDC(hwnd);
+    if (hdc) {
+        int vr = GetDeviceCaps(hdc, VREFRESH);
+        ReleaseDC(hwnd, hdc);
+        if (vr > 1) return (jint)vr;
+    }
+    return 0;
+}
+
 /* Win32 IsZoomed. */
 JNIEXPORT jboolean JNICALL
 Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsMaximized(

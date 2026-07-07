@@ -22,7 +22,7 @@ use crate::events::{
 };
 #[cfg(target_os = "windows")]
 use crate::events::{
-    dispatch_trackpad_gesture, TRACKPAD_GESTURE_MAGNIFY, TRACKPAD_PHASE_CHANGED,
+    dispatch_trackpad_gesture, EVENT_SIZE_MOVE, TRACKPAD_GESTURE_MAGNIFY, TRACKPAD_PHASE_CHANGED,
     TRACKPAD_VALUE_FIXED_SCALE,
 };
 use crate::keymap;
@@ -71,6 +71,20 @@ fn on_tao_magnify(window_id: tao::window::WindowId, value: f32) {
     );
 }
 
+// Modal resize/move loop begin/end, forwarded by the vendored Tao
+// SIZE_MOVE_HOOK patch (WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE). The embedder drops
+// VSync while `active` so the synchronous per-WM_SIZE present doesn't block on
+// the display refresh during a border drag. Like the magnify hook this is never
+// re-entered by our own calls (we never programmatically enter a size/move
+// loop) and holds no Tao lock at call time, so we dispatch straight to the JVM.
+#[cfg(target_os = "windows")]
+fn on_tao_size_move(window_id: tao::window::WindowId, active: bool) {
+    let Some(handle) = handle_for(window_id) else {
+        return;
+    };
+    dispatch(handle, EVENT_SIZE_MOVE, if active { 1 } else { 0 }, 0);
+}
+
 pub(crate) fn run_event_loop_blocking() {
     // GTK backend selection. Default: let GDK auto-pick (= native Wayland on
     // a Wayland session, X11 elsewhere). The Wayland-native path goes through
@@ -116,6 +130,9 @@ pub(crate) fn run_event_loop_blocking() {
     // Trackpad pinch / Ctrl+wheel → magnify gesture (see on_tao_magnify).
     #[cfg(target_os = "windows")]
     tao::platform::windows::set_magnify_hook(on_tao_magnify);
+    // Modal resize/move loop → VSync toggle (see on_tao_size_move).
+    #[cfg(target_os = "windows")]
+    tao::platform::windows::set_size_move_hook(on_tao_size_move);
     #[cfg(target_os = "macos")]
     tao::platform::macos::set_minimized_hook(on_tao_minimized);
     #[cfg(target_os = "linux")]

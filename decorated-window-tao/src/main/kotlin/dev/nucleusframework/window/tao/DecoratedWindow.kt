@@ -842,9 +842,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
             } else {
                 w to h
             }
-        host.onResized(initialW, initialH)
         host.syncTitleBarHeight()
-        host.onRedrawRequested()
+        // onResized renders synchronously, so this doubles as the guaranteed
+        // first paint before the window is shown (no separate onRedrawRequested).
+        host.onResized(initialW, initialH)
         if (visible) window.show()
     }
     window.onResized { w, h ->
@@ -872,6 +873,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.detach()
     }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
+    window.onSizeMoveChanged { host.onResizeLoopChanged(it) }
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }

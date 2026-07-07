@@ -1029,6 +1029,10 @@ unsafe fn public_window_callback_inner<T: 'static>(
         .window_state
         .lock()
         .set_window_flags_in_place(|f| f.insert(WindowFlags::MARKER_IN_SIZE_MOVE));
+      // PATCH(nucleus): notify the embedder the modal size/move loop started.
+      if let Some(hook) = crate::platform::windows::SIZE_MOVE_HOOK.get() {
+        hook(RootWindowId(WindowId(window.0 as _)), true);
+      }
       result = ProcResult::Value(LRESULT(0));
     }
 
@@ -1039,6 +1043,11 @@ unsafe fn public_window_callback_inner<T: 'static>(
         let _ = unsafe { PostMessageW(Some(window), WM_LBUTTONUP, WPARAM::default(), lparam) };
       }
       state.set_window_flags_in_place(|f| f.remove(WindowFlags::MARKER_IN_SIZE_MOVE));
+      drop(state);
+      // PATCH(nucleus): notify the embedder the modal size/move loop ended.
+      if let Some(hook) = crate::platform::windows::SIZE_MOVE_HOOK.get() {
+        hook(RootWindowId(WindowId(window.0 as _)), false);
+      }
       result = ProcResult::Value(LRESULT(0));
     }
 
