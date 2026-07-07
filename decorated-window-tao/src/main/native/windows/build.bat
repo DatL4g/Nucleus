@@ -2,7 +2,7 @@
 REM Builds three artifacts for the Tao Windows backend:
 REM   - nucleus_tao.dll               (Rust crate, Tao + JNI)
 REM   - nucleus_tao_windows_deco.dll  (C, custom WndProc + DwmExtendFrameIntoClientArea)
-REM   - nucleus_tao_gl.dll            (C, WGL helper for Skia GL backend)
+REM   - nucleus_tao_gl.dll            (C, EGL/ANGLE helper for Skia GL backend)
 REM
 REM Outputs in src/main/resources/nucleus/native/{win32-x64,win32-aarch64}/.
 REM
@@ -23,8 +23,8 @@ set "A11Y_SRC=%SCRIPT_DIR%nucleus_tao_a11y.c"
 set "DND_SRC=%SCRIPT_DIR%nucleus_tao_dnd.c"
 set "NV_SRC=%SCRIPT_DIR%nucleus_tao_windows_native_view.c"
 set "OVERLAY_SRC=%SCRIPT_DIR%nucleus_tao_windows_overlay.c"
-set "OVERLAY_GL_SRC=%SCRIPT_DIR%nucleus_tao_windows_overlay_gl.c"
 set "POPUP_SRC=%SCRIPT_DIR%nucleus_tao_windows_popup.c"
+set "OVERLAY_DCOMP_SRC=%SCRIPT_DIR%nucleus_tao_windows_overlay_dcomp.cpp"
 set "RESOURCE_DIR=%NATIVE_DIR%\..\resources\nucleus\native"
 set "OUT_DIR_X64=%RESOURCE_DIR%\win32-x64"
 set "OUT_DIR_ARM64=%RESOURCE_DIR%\win32-aarch64"
@@ -144,7 +144,7 @@ cl /LD /O1 /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
     "%GL_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_gl.dll" ^
-    /link /NODEFAULTLIB /ENTRY:DllMain opengl32.lib gdi32.lib user32.lib kernel32.lib
+    /link /NODEFAULTLIB /ENTRY:DllMain gdi32.lib user32.lib kernel32.lib
 if errorlevel 1 (
     echo ERROR: x64 GL compilation failed >&2
     exit /b 1
@@ -180,10 +180,10 @@ REM limit JNI loader hops; the four .c files share a /NODEFAULTLIB shim
 REM defined in nucleus_tao_windows_native_view.c.
 cl /LD /O1 /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
-    "%NV_SRC%" "%OVERLAY_SRC%" "%OVERLAY_GL_SRC%" "%POPUP_SRC%" ^
+    "%NV_SRC%" "%OVERLAY_SRC%" "%POPUP_SRC%" "%OVERLAY_DCOMP_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_windows_native_view.dll" ^
     /link /NODEFAULTLIB /ENTRY:DllMain ^
-    kernel32.lib user32.lib gdi32.lib dwmapi.lib opengl32.lib
+    kernel32.lib user32.lib gdi32.lib dwmapi.lib
 if errorlevel 1 (
     echo ERROR: x64 native_view compilation failed >&2
     exit /b 1
@@ -221,7 +221,7 @@ cl /LD /O1 /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
     "%GL_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_gl.dll" ^
-    /link /ENTRY:DllMain opengl32.lib gdi32.lib user32.lib kernel32.lib
+    /link /ENTRY:DllMain gdi32.lib user32.lib kernel32.lib
 if errorlevel 1 (
     echo WARNING: ARM64 GL compilation failed >&2
     endlocal
@@ -254,10 +254,10 @@ if errorlevel 1 (
 
 cl /LD /O1 /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
-    "%NV_SRC%" "%OVERLAY_SRC%" "%OVERLAY_GL_SRC%" "%POPUP_SRC%" ^
+    "%NV_SRC%" "%OVERLAY_SRC%" "%POPUP_SRC%" "%OVERLAY_DCOMP_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_native_view.dll" ^
     /link /ENTRY:DllMain ^
-    kernel32.lib user32.lib gdi32.lib dwmapi.lib opengl32.lib
+    kernel32.lib user32.lib gdi32.lib dwmapi.lib
 if errorlevel 1 (
     echo WARNING: ARM64 native_view compilation failed >&2
     endlocal

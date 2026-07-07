@@ -178,21 +178,25 @@ static void applyRoundedClip(WebViewState &s) {
 }
 
 /**
- * Applies position + size. With CompositionController, the controller has
- * no notion of "where in the parent it lives" — that's the host's job via
- * the DComp tree. So:
- *  - `put_Bounds` carries only the **size** (origin pinned at 0,0). It
- *    defines the WebView's logical content rect; SendMouseInput coords
- *    are interpreted relative to this rect's origin (i.e. WebView-local).
+ * Applies position + size. With CompositionController, pixels are placed
+ * by the host's DComp tree, but the controller still needs the REAL
+ * bounds within the parent HWND:
+ *  - `put_Bounds` carries the full rect (origin at xPx, yPx). Rendering
+ *    ignores the origin (the visual tree owns placement), but WebView2
+ *    derives *screen* positions from parent-HWND origin + this rect for
+ *    everything it opens itself: default context menus, IME candidate
+ *    windows, accessibility rects. With the origin pinned at (0,0)
+ *    those popups appear shifted up-left by the WebView's position.
  *  - The root visual is offset to (xPx, yPx) so DComp draws the WebView
  *    where it should appear inside the parent's client area.
- *  - Callers of SendMouseInput must subtract (xPx, yPx) from the parent-
- *    client click coords to get WebView-local coords.
+ *  - SendMouseInput coords stay WebView-local regardless of the bounds
+ *    origin (per the CompositionController contract) — callers keep
+ *    subtracting (xPx, yPx) from parent-client coords.
  * Caller must `Commit()` after.
  */
 static void applyBounds(WebViewState &s) {
     if (s.controller) {
-        RECT bounds = {0, 0, s.widthPx, s.heightPx};
+        RECT bounds = {s.xPx, s.yPx, s.xPx + s.widthPx, s.yPx + s.heightPx};
         s.controller->put_Bounds(bounds);
     }
     if (s.rootVisual) {
@@ -250,10 +254,9 @@ static LRESULT CALLBACK parentSubclassProc(HWND hwnd, UINT msg, WPARAM w, LPARAM
             int x = GET_X_LPARAM(l);
             int y = GET_Y_LPARAM(l);
             if (!insideWebView(s, x, y)) break;
-            /* SendMouseInput coords are interpreted against the controller's
-             * `put_Bounds` rect (origin = 0,0, size = w×h in our model).
-             * Subtract the WebView's screen-area top-left to get coords
-             * relative to that rect. */
+            /* SendMouseInput expects WebView-local coords (relative to the
+             * WebView's own top-left, independent of the put_Bounds origin).
+             * Subtract the WebView's position in the parent client area. */
             POINT pt = {x - s->xPx, y - s->yPx};
             UINT32 mouseData = 0;
             if (msg == WM_XBUTTONDOWN || msg == WM_XBUTTONUP || msg == WM_XBUTTONDBLCLK) {
@@ -292,6 +295,18 @@ static LRESULT CALLBACK parentSubclassProc(HWND hwnd, UINT msg, WPARAM w, LPARAM
             s->compController->SendMouseInput(
                 COREWEBVIEW2_MOUSE_EVENT_KIND_LEAVE,
                 static_cast<COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS>(0), 0, pt);
+            break;  /* let the original WndProc see it too */
+        }
+        case WM_WINDOWPOSCHANGED: {
+            /* Keep WebView2's cached parent-screen mapping fresh on every
+             * geometry change, not just when Compose layout re-issues
+             * setBounds. A resize from the left/top edge moves the parent
+             * origin without necessarily producing a final layout tick, and
+             * WebView2 places its own popups (context menu, IME) from that
+             * cached mapping. Same pattern as the official WebView2
+             * composition sample (NotifyParentWindowPositionChanged on
+             * move events). Cheap: a re-query, no relayout. */
+            if (s->controller) s->controller->NotifyParentWindowPositionChanged();
             break;  /* let the original WndProc see it too */
         }
         case WM_SETCURSOR: {

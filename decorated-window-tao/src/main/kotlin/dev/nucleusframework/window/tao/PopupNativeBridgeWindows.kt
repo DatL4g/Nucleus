@@ -5,7 +5,7 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
 /**
  * Windows counterpart to the macOS [PopupNativeBridge]. Each
  * TaoPopupSceneLayerWindows owns a top-level WS_POPUP HWND with
- * WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, plus a transparent WGL surface
+ * WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, plus a transparent DComp-presented surface
  * using the host HGLRC.
  *
  * Outside-click dismissal uses a thread-local WH_MOUSE hook. The native

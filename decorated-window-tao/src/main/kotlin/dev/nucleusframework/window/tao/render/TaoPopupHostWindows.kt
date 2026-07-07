@@ -52,11 +52,12 @@ internal interface TaoPopupHostWindows {
 
     /**
      * The HOST scene's Skia DirectContext — shared with every
-     * overlay/popup on Windows. Single-HGLRC architecture: the native
-     * side gives every overlay/popup HWND the host's HGLRC (via
-     * `wglMakeCurrent(overlayDC, hostHGLRC)`), so all surfaces draw
-     * through one Skia context. resetGLAll() between draws handles the
-     * default-framebuffer state delta when wglMakeCurrent swaps HDCs.
+     * overlay/popup on Windows. Single-context architecture: every
+     * overlay/popup renders through the host's EGLContext bound to its
+     * own d3d-texture pbuffer surface (overlay_dcomp.cpp), so all
+     * surfaces draw through one Skia context. resetGLAll() between
+     * draws handles the default-framebuffer state delta when
+     * eglMakeCurrent swaps surfaces.
      */
     val hostDirectContext: DirectContext
 

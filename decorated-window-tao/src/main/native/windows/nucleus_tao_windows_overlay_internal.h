@@ -1,39 +1,69 @@
 /**
  * Internal contract between the overlay HWND lifecycle (overlay.c),
- * the popup HWND lifecycle (popup.c), and the transparent WGL
- * rendering bridge (overlay_gl.c). All three .c files are linked into
- * the same nucleus_tao_windows_native_view.dll.
+ * the popup HWND lifecycle (popup.c) and the EGL/ANGLE +
+ * DirectComposition rendering bridge (overlay_dcomp.cpp). All three
+ * files are linked into the same nucleus_tao_windows_native_view.dll.
  *
- * `GlSurface` is the minimal HWND-plus-GL state both lifecycles need.
- * Each owner (OverlayState / PopupState) embeds one as a field and
- * passes `&owner->gl` to the helpers below.
+ * `GlSurface` is the minimal HWND-plus-render state both lifecycles
+ * need. Each owner (OverlayState / PopupState) embeds one as a field
+ * and passes `&owner->gl` to the helpers below.
+ *
+ * Rendering model (see overlay_dcomp.cpp for the full picture):
+ * Compose renders through the host's EGLContext into a D3D11 texture
+ * (EGL_ANGLE_d3d_texture_client_buffer pbuffer), presented on a
+ * composition swapchain (DXGI_ALPHA_MODE_PREMULTIPLIED) attached to
+ * the HWND via a DComp target/visual. Overlay/popup HWNDs are created
+ * with WS_EX_NOREDIRECTIONBITMAP — no GDI redirection surface behind
+ * the visual tree.
  */
 #ifndef NUCLEUS_TAO_WINDOWS_OVERLAY_INTERNAL_H
 #define NUCLEUS_TAO_WINDOWS_OVERLAY_INTERNAL_H
 
 #include <windows.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     HWND  hwnd;
-    HDC   hdc;
-    HGLRC hglrc;
+    /* Opaque DcompSurface* owned by overlay_dcomp.cpp. */
+    void *dcomp;
 } GlSurface;
 
 /**
- * Resolves the host's pixel format + HGLRC from nucleus_tao_gl.dll,
- * applies them to the [hwnd] HDC, arms `DwmEnableBlurBehindWindow`
- * with the empty-region trick, and optionally applies DWM native-window
- * polish for persistent overlays. Popups pass FALSE so shadows/elevation
- * come from Compose draw bounds, matching AWT WindowComposeSceneLayer.
+ * Builds the DComp target/visual/swapchain + EGL pbuffer chain against
+ * the host's EGL display/context/config (nucleus_tao_gl.dll exports)
+ * and applies DWM styling: window polish (rounded corners, dark mode,
+ * shadow) for persistent overlays, or the flat popup surface for
+ * popups (nativeWindowPolish=FALSE — shadows/elevation come from
+ * Compose draw bounds, matching AWT WindowComposeSceneLayer).
  *
  * Caller must have set [gl]->hwnd before calling.
  */
 BOOL nucleus_tao_overlay_gl_init(GlSurface *gl, BOOL nativeWindowPolish);
 
-/** Tears down the WGL context + HDC release. Safe on partial init. */
+/** Tears down the DComp/EGL state. Safe on partial init. */
 void nucleus_tao_overlay_gl_destroy(GlSurface *gl);
 
-/** Re-arms `DwmEnableBlurBehindWindow` after WM_DWMCOMPOSITIONCHANGED. */
-void nucleus_tao_overlay_gl_rearm_blur(GlSurface *gl);
+/** Binds the surface's d3d-texture pbuffer on the calling thread via
+ *  eglMakeCurrent with the host's EGLContext. */
+BOOL nucleus_tao_overlay_gl_make_current(GlSurface *gl);
+
+/** Presents the rendered frame: CopyResource into the composition
+ *  swapchain's back buffer + Present(0) + DComp Commit. */
+void nucleus_tao_overlay_gl_present(GlSurface *gl);
+
+/**
+ * Notifies the bridge of a surface size change (physical pixels).
+ * DComp swapchains don't track the HWND: this resizes the swapchain
+ * and rebuilds the intermediate texture + pbuffer. Call BEFORE the
+ * next make_current/render. No-op when the size is unchanged.
+ */
+void nucleus_tao_overlay_gl_resize(GlSurface *gl, int widthPx, int heightPx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -6,15 +6,12 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_native_view"
 
 /**
  * JNI bridge for the Windows overlay HWND — a `WS_POPUP` owned window
- * with `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` that hosts a Compose scene
- * rendered through a transparent WGL context (`WGL_ALPHA_BITS_ARB = 8`
- * + `DwmEnableBlurBehindWindow` with an empty region).
- *
- * The overlay HGLRC joins the host's WGL share group via
- * `wglCreateContextAttribsARB(.., hostHGLRC, ..)`, sharing shaders /
- * programs / textures while keeping its own `GrDirectContext`. Pixel
- * format matches the host's exactly (`wglShareLists` requirement,
- * carried over to the ARB share path on every known driver).
+ * with `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP`
+ * that hosts a Compose scene rendered through the EGL/ANGLE +
+ * DirectComposition bridge (nucleus_tao_windows_overlay_dcomp.cpp):
+ * the host's EGLContext draws into a D3D11 texture bound as an EGL
+ * pbuffer, presented on a composition swapchain with premultiplied
+ * per-pixel alpha.
  *
  * Threading: every entry point must run on the owner HWND's UI thread.
  */
@@ -84,11 +81,11 @@ internal object NativeTaoWindowsOverlayBridge {
         callback: OverlayKeyCallback?,
     )
 
-    /** Binds the overlay's WGL context (`wglMakeCurrent`). */
+    /** Binds the overlay's pbuffer surface on the host's EGLContext. */
     @JvmStatic
     external fun nativeMakeCurrent(overlay: Long): Boolean
 
-    /** Presents the back-buffer (`SwapBuffers` followed by `DwmFlush()` for vsync). */
+    /** Presents the frame (CopyResource + `Present(0)` + DComp `Commit`). */
     @JvmStatic
     external fun nativeSwapBuffers(overlay: Long)
 

@@ -11,7 +11,7 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_deco"
  *
  * Mirrors the API of `decorated-window-jni`'s `JniWindowsDecorationBridge`,
  * minus the Skiko-AWT child-window plumbing (Tao renders into the HWND
- * directly via WGL).
+ * directly via ANGLE).
  */
 @Suppress("TooManyFunctions")
 internal object NativeTaoWindowsDecoBridge {

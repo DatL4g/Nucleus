@@ -42,7 +42,7 @@ import kotlin.math.roundToInt
  *    slot is silently ignored.
  *  - [NucleusPlatformView.HWnd] — Windows, child HWND reparented under
  *    the Tao main HWND. Supports the [content] overlay slot via a
- *    sibling top-level WS_POPUP HWND with a transparent WGL context.
+ *    sibling top-level WS_POPUP HWND rendered via DirectComposition.
  *
  * Variants whose backend isn't implemented (or whose runtime type
  * doesn't match the current OS) fall back to an empty `Box(modifier)`.
@@ -81,7 +81,7 @@ fun NativeView(
  * available.
  *
  * The [content] slot mounts a Compose scene rendered into a top-level
- * owned overlay HWND with a transparent WGL context joined to the
+ * owned overlay HWND rendered via DirectComposition against the
  * host's share group. Outside any region wrapped with
  * `Modifier.consumeOverlayPointerEvents()`, clicks fall through via
  * `WM_NCHITTEST` returning `HTTRANSPARENT` so the embedded child HWND

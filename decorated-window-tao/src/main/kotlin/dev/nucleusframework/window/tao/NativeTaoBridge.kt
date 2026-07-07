@@ -177,7 +177,7 @@ internal object NativeTaoBridge {
 
     /**
      * Windows counterpart of [nativeNsViewHandle]: returns the HWND so the JVM
-     * can attach a WGL context and apply custom decoration. Only resolvable on
+     * can attach the GL render surface and apply custom decoration. Only resolvable on
      * Windows.
      */
     @JvmStatic

@@ -3,9 +3,9 @@
  *
  * Each popup is a top-level WS_POPUP HWND owned by the parent (the Tao
  * main HWND, even for nested popups — single-level owner chain) with
- * WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW. Each owns its own transparent
- * WGL context joined to the host's share group via the shared
- * `nucleus_tao_overlay_gl_init` (rendering delegated to overlay_gl.c).
+ * WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP.
+ * Rendering goes through the shared `nucleus_tao_overlay_gl_init`
+ * EGL/ANGLE + DirectComposition bridge (overlay_dcomp.cpp).
  *
  * Outside-click dismissal:
  *   - A thread-local `WH_MOUSE` hook (mouseHookProc) observes every
@@ -45,6 +45,11 @@
 #define BTN_MIDDLE    3
 
 #define WHEEL_DELTA_F  120.0f
+
+/* Win8+; not in every SDK header set our /NODEFAULTLIB build pulls. */
+#ifndef WS_EX_NOREDIRECTIONBITMAP
+#define WS_EX_NOREDIRECTIONBITMAP 0x00200000L
+#endif
 
 typedef struct PopupState PopupState;
 struct PopupState {
@@ -401,10 +406,6 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
 
     case WM_ERASEBKGND:
         return 1;
-
-    case WM_DWMCOMPOSITIONCHANGED:
-        if (p) nucleus_tao_overlay_gl_rearm_blur(&p->gl);
-        return 0;
     }
     return DefWindowProcW(hwnd, msg, w, l);
 }
@@ -413,7 +414,6 @@ static void ensurePopupClassRegistered(void) {
     if (InterlockedCompareExchange(&sPopupClassRegistered, 1, 0) != 0) return;
     WNDCLASSW wc;
     ZeroMemory(&wc, sizeof(wc));
-    /* CS_OWNDC: stable HDC required for wglMakeCurrent across frames. */
     wc.style = CS_OWNDC;
     wc.lpfnWndProc = popupWndProc;
     wc.hInstance = GetModuleHandleW(NULL);
@@ -449,8 +449,9 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
         prevDpi = pSetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
+    /* WS_EX_NOREDIRECTIONBITMAP: see the matching comment in overlay.c. */
     HWND hwnd = CreateWindowExW(
-        WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+        WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP,
         kPopupClassName, L"",
         WS_POPUP,
         origin.x + xPx, origin.y + yPx, widthPx, heightPx,
@@ -506,6 +507,9 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetFrameInWi
     SetWindowPos(p->gl.hwnd, NULL,
         origin.x + xPx, origin.y + yPx, widthPx, heightPx,
         SWP_NOACTIVATE | SWP_NOZORDER);
+    /* DComp swapchains don't track the HWND — resize explicitly
+     * (no-op when only the position changed). */
+    nucleus_tao_overlay_gl_resize(&p->gl, widthPx, heightPx);
 }
 
 JNIEXPORT void JNICALL
@@ -530,8 +534,8 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeMakeCurrent(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
-    if (!p || !p->gl.hdc || !p->gl.hglrc) return JNI_FALSE;
-    return wglMakeCurrent(p->gl.hdc, p->gl.hglrc) ? JNI_TRUE : JNI_FALSE;
+    if (!p) return JNI_FALSE;
+    return nucleus_tao_overlay_gl_make_current(&p->gl) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
@@ -539,9 +543,8 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSwapBuffers(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
-    if (!p || !p->gl.hdc) return;
-    SwapBuffers(p->gl.hdc);
-    DwmFlush();
+    if (!p) return;
+    nucleus_tao_overlay_gl_present(&p->gl);
 }
 
 JNIEXPORT void JNICALL

@@ -28,7 +28,6 @@ import dev.nucleusframework.window.tao.NativeTaoBridge
 import dev.nucleusframework.window.tao.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.TaoEventCode
-import dev.nucleusframework.window.tao.TaoMainDispatcher
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
@@ -53,8 +52,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
@@ -62,7 +59,7 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
  * Windows variant of [TaoComposeSceneHost]. Drives a Compose scene onto the
- * Tao-owned HWND via the WGL helper, with custom title-bar decoration applied
+ * Tao-owned HWND via the ANGLE helper, with custom title-bar decoration applied
  * by [NativeTaoWindowsDecoBridge].
  *
  * Threading: every public method runs on the thread that owns the Tao event
@@ -97,23 +94,7 @@ internal class TaoComposeSceneHostWindows(
     private var hwnd: Long = 0
     private var directContext: DirectContext? = null
 
-    /**
-     * True when the active backend is EGL/ANGLE (vs WGL). Cached at [attach].
-     * Gates the off-thread present: ANGLE contexts on a shared EGLDisplay must
-     * not be driven from the swap thread while a sibling host renders.
-     */
-    private var backendIsEgl: Boolean = false
     private var scene: ComposeScene? = null
-
-    /**
-     * Presents finished frames off the event-loop thread. [onRedrawRequested]
-     * renders + flushes on this (event-loop) thread, releases the WGL context,
-     * and signals the swap thread, which re-binds the context and calls the
-     * vsync-blocking `SwapBuffers`. Keeping the present off this thread is what
-     * lets input keep flowing during the refresh wait — mirrors the Linux EGL
-     * swap thread. Created in [attach], stopped in [detach].
-     */
-    private var swapThread: SwapThread? = null
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
@@ -138,36 +119,16 @@ internal class TaoComposeSceneHostWindows(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
-    // ── Scroll vsync heartbeat ──────────────────────────────────────────────
-    // `System.nanoTime()` of the last scroll event. While within
-    // [SCROLL_PUMP_WINDOW_NS] of it, the swap thread re-pumps a frame after every
-    // present (see [maybeScheduleVsyncFrame]) so the smooth-scroll tween — driven
-    // by the frame clock in [onRedrawRequested] — ticks at the display refresh
-    // instead of the ~20 Hz wheel-event rate (WM_PAINT is starved during a
-    // WM_MOUSEWHEEL flood). Volatile: written on the event-loop thread, read on
-    // the swap thread.
-    @Volatile
-    private var lastScrollNanos: Long = 0L
-
-    // Guards against piling up more than one queued heartbeat frame at a time
-    // (the inline pump and the previous heartbeat can both try to re-arm).
-    // Set on the swap thread, cleared on the event-loop thread.
-    @Volatile
-    private var vsyncFrameQueued: Boolean = false
-
     /**
      * Renderers registered by overlay/popup scenes. Drained AFTER the
      * main scene's render in [onRedrawRequested] so each tick paints
      * into every live overlay/popup HWND in the same Tao event-loop wake.
      *
-     * Cross-context sync (per NATIVE_VIEW_WINDOWS_PLAN.md "Cross-context
-     * synchronization"): before draining, we call
-     * `directContext.flushAndSubmit()` so the GPU sees host commands
-     * before any share-group consumer reads from them; after draining,
-     * we re-make the host context current and call
-     * `directContext.resetGLAll()` so Skia re-syncs its per-context GL
-     * state cache (the overlay's own renderer will have switched contexts
-     * behind Skia's back).
+     * Cross-surface sync: before draining, the host surface was flushed
+     * (flushAndSubmit) so the GPU sees host commands first; each renderer
+     * binds its own pbuffer surface on the shared EGLContext and calls
+     * `resetGLAll()` on the shared DirectContext; afterwards the host
+     * re-binds its window surface before presenting.
      */
     private val popupRenderers: MutableMap<Any, () -> Unit> = LinkedHashMap()
 
@@ -196,9 +157,8 @@ internal class TaoComposeSceneHostWindows(
 
     /**
      * Set whenever something on the same thread might have changed the
-     * current WGL context behind Skia's back: a popup/overlay renderer
-     * registered (its DirectContext.makeGL() does an internal
-     * wglMakeCurrent), a popupRenderers tick ran. Consumed at the start
+     * bound EGL surface behind Skia's back — a popupRenderers tick ran
+     * (each renderer binds its pbuffer surface). Consumed at the start
      * of [onRedrawRequested] — calls `directContext.resetGLAll()` on
      * the host's DirectContext so Skia re-fetches GL state before
      * `flushAndSubmit` issues commands.
@@ -209,15 +169,15 @@ internal class TaoComposeSceneHostWindows(
      */
     private var hostContextDirtied: Boolean = false
 
-    // Frame pacing is delegated to VSync — `wglSwapIntervalEXT(1)` makes
-    // SwapBuffers block until the next display refresh, which keeps Compose
+    // Frame pacing is delegated to VSync — `eglSwapInterval(1)` makes
+    // eglSwapBuffers pace off the display refresh, which keeps Compose
     // animations (smooth scroll, etc.) aligned on the display cadence at the
     // monitor's native refresh rate (60/120/144/240 Hz — one frame per VBlank).
-    // The blocking SwapBuffers runs on [swapThread], not the event-loop thread:
-    // the event-loop thread renders, releases the context, and returns to pump
-    // input while the present waits for the refresh. Blocking it inline instead
-    // (the old path) starved input under a precision-touchpad WM_MOUSEWHEEL
-    // flood, dropping animation frames and making smooth-scroll judder.
+    // The present runs INLINE on the event-loop thread: a cross-thread present
+    // on ANGLE's shared per-display D3D11 device deadlocks the global display
+    // lock (seen when a sibling host such as a DecoratedDialog detaches).
+    // ANGLE's eglSwapBuffers paces fine inline — the input starvation that
+    // motivated the old WGL swap thread never applied to this backend.
 
     fun attach() {
         check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
@@ -233,53 +193,24 @@ internal class TaoComposeSceneHostWindows(
         val initialTitleBarPx = (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
         NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
 
-        // Preferred backend is ANGLE (Direct3D 11, WARP-capable on RDP/VMs);
-        // it falls back to native WGL. The native side picks per
-        // NUCLEUS_TAO_WIN_RENDER, but a successful EGL *context* doesn't
-        // guarantee Skia can build a DirectContext on it — that's only known
-        // here, after makeGLWithInterface. So if the EGL attachment can't back
-        // a DirectContext we re-attach with WGL and retry.
-        var handle = NativeTaoGlBridge.nativeAttach(hwnd)
-        require(handle != 0L) { "Failed to create render context for HWND" }
-        // ANGLE needs an EGL-assembled GL interface (eglGetProcAddress); WGL uses
-        // the default. Returns null if Skia can't build a context on this backend.
-        var ctx =
+        // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
+        // Skia needs an EGL-assembled GL interface — the default makeGL()
+        // resolves entry points via WGL/opengl32 and fails under ANGLE.
+        val handle = NativeTaoGlBridge.nativeAttach(hwnd)
+        require(handle != 0L) {
+            "Failed to create ANGLE render context for HWND " +
+                "(libEGL/libGLESv2 missing or Direct3D 11 unavailable)"
+        }
+        val ctx =
             try {
-                if (NativeTaoGlBridge.nativeBackend(handle) == BACKEND_EGL) {
-                    val intf = GLAssembledInterface.createFromNativePointers(0L, NativeTaoGlBridge.nativeEglGetProcFn())
-                    DirectContext.makeGLWithInterface(intf)
-                } else {
-                    DirectContext.makeGL()
-                }
+                val intf = GLAssembledInterface.createFromNativePointers(0L, NativeTaoGlBridge.nativeEglGetProcFn())
+                DirectContext.makeGLWithInterface(intf)
             } catch (_: RuntimeException) {
                 null
             }
-        if (ctx == null && NativeTaoGlBridge.nativeBackend(handle) == BACKEND_EGL) {
-            NativeTaoGlBridge.nativeDetach(handle)
-            handle = NativeTaoGlBridge.nativeAttachWgl(hwnd)
-            require(handle != 0L) { "Failed to create WGL context for HWND (ANGLE fallback)" }
-            ctx = DirectContext.makeGL()
-        }
         attachmentHandle = handle
-        directContext = ctx ?: error("Failed to create DirectContext for HWND")
-        backendIsEgl = NativeTaoGlBridge.nativeBackend(handle) == BACKEND_EGL
+        directContext = ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")
         attachedHostCount.incrementAndGet()
-
-        // Start the presenter — WGL only. It parks until the first frame's
-        // `requestSwap`, so it never touches the context before the event-loop
-        // thread has released it.
-        //
-        // ANGLE/EGL deliberately gets NO swap thread: a cross-thread present on
-        // ANGLE's shared per-display D3D11 device deadlocks the global display
-        // lock — the swap thread blocks inside `eglSwapBuffers` holding the lock
-        // while the event-loop thread's next `eglMakeCurrent` waits on it,
-        // freezing the whole app (seen when a sibling host such as a
-        // DecoratedDialog detaches). With no swap thread, every present runs
-        // inline on the event-loop thread, fully serialised. The off-thread
-        // present only ever mattered for WGL's vsync-blocking `SwapBuffers`
-        // (touchpad-scroll smoothness); ANGLE's `eglSwapBuffers` paces fine
-        // inline.
-        swapThread = if (backendIsEgl) null else SwapThread(attachmentHandle).also { it.start() }
 
         @OptIn(ExperimentalComposeUiApi::class)
         val dndManager =
@@ -290,7 +221,7 @@ internal class TaoComposeSceneHostWindows(
         // Match the Linux backend for the main scene: keep Compose Popup /
         // DropdownMenu / Tooltip layers inside the same GL render target
         // instead of materialising them as native WS_POPUP windows. This
-        // avoids Windows-only WGL/native-window compositor artifacts in the
+        // avoids Windows-only GL/native-window compositor artifacts in the
         // custom title bar path. NativeView overlay scenes can still opt into
         // TaoComposeSceneContextWindows when they need popups outside their
         // overlay bounds.
@@ -862,20 +793,6 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onRedrawRequested() {
-        // ── Off-thread vsync pacing ───────────────────────────────────────
-        // The previous frame's `SwapBuffers` runs on the dedicated swap thread
-        // and blocks until the display refresh. Wait for it to finish (and
-        // release the WGL context) before rendering the next frame. While the
-        // swap thread is parked in `SwapBuffers`, *this* thread keeps draining
-        // the Tao event loop — so a touchpad's WM_MOUSEWHEEL flood no longer
-        // queues behind a 16 ms main-thread present, which is what made the
-        // smooth-scroll animation drop frames and judder (mouse/JBR were fine
-        // because they never blocked input on the present). If the swap is
-        // still in flight past the timeout (minimised/occluded window), skip
-        // this frame; Compose re-arms a redraw on the next invalidation.
-        val st = swapThread
-        if (st != null && !st.waitForIdle()) return
-
         val ctx = directContext ?: return
         val sc = scene ?: return
 
@@ -894,24 +811,23 @@ internal class TaoComposeSceneHostWindows(
         frameClock.sendFrame(now)
         flushingDispatcher.drain()
 
-        // Make sure the WGL context is current on this thread (defensive — it
-        // already was since `attach`, but other tools/tests can clear it).
+        // Make sure the ES context + host window surface are current on this
+        // thread (defensive — they already were since `attach`, but overlay/
+        // popup renderers re-bind their pbuffer surfaces between frames).
         NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
-        // Consume the dirtied flag: an overlay/popup created since our last
-        // tick did its own DirectContext.makeGL() (internal wglMakeCurrent
-        // on a sibling HGLRC), or a popupRenderers loop swapped contexts.
-        // Tell Skia "external code touched GL state" so it re-fetches via
-        // glGet* before issuing flush/submit commands. resetGLAll is cheap
-        // (state-cache invalidation only); calling it on every frame
-        // unconditionally is too heavy for some drivers (nvoglv64 chokes),
-        // so we gate on the flag.
+        // Consume the dirtied flag: a popupRenderers loop swapped the bound
+        // EGL surface since our last tick. Tell Skia "external code touched
+        // GL state" so it re-fetches via glGet* before issuing flush/submit
+        // commands. resetGLAll is cheap (state-cache invalidation only);
+        // calling it on every frame unconditionally is too heavy for some
+        // drivers, so we gate on the flag.
         // Sibling-host mode: another TaoComposeSceneHostWindows is alive
         // (e.g., DecoratedDialog over a DecoratedWindow). Each host owns
-        // its own HGLRC + DirectContext, and the dialog's onRedrawRequested
-        // can run between our frames — swapping the current WGL context
-        // behind our back. Our DirectContext's per-context GL state cache
-        // is then stale relative to GL, and the next flushAndSubmit
-        // reaches a NULL pointer inside the driver. Force resetGLAll on
+        // its own EGLContext + DirectContext, and the dialog's
+        // onRedrawRequested can run between our frames — swapping the
+        // current EGL binding behind our back. Our DirectContext's
+        // per-context GL state cache is then stale, and the next
+        // flushAndSubmit faults inside the driver. Force resetGLAll on
         // every frame entry while >1 host coexists; revert to the
         // popup-only flag-gated path once it's just us.
         if (hostContextDirtied || attachedHostCount.get() > 1) {
@@ -946,50 +862,34 @@ internal class TaoComposeSceneHostWindows(
         try {
             surface.canvas.clear(0xFFFFFFFF.toInt())
             sc.render(surface.canvas.asComposeCanvas(), now)
-            // `flushAndSubmit` issues the glFlush that commits the frame to the
-            // back buffer; the actual `SwapBuffers` (present) is deferred to the
-            // swap thread below. The popup cross-context sync only needs the
-            // flush — not the present — so running popups before the present is
-            // safe.
+            // `flushAndSubmit` issues the glFlush that commits the frame to
+            // the back buffer; the present happens below, after the overlay/
+            // popup renderers (they only need the flush, not the present).
             surface.flushAndSubmit(syncCpu = false)
         } finally {
             surface.close()
             rt.close()
         }
 
-        // Drain overlay/popup renderers. Cross-context sync (per
-        // NATIVE_VIEW_WINDOWS_PLAN.md "Cross-context synchronization"):
+        // Drain overlay/popup renderers. Cross-surface sync:
         //   1. Host already flushed above (flushAndSubmit issues glFlush
         //      internally when committing the surface).
-        //   2. Each renderer below switches to its own HGLRC, calls
-        //      resetGLAll on its own DirectContext, paints, swaps.
+        //   2. Each renderer below binds its own pbuffer surface (same
+        //      EGLContext), calls resetGLAll on the shared DirectContext,
+        //      paints, presents via its DComp swapchain.
         //   3. We flag the host DirectContext dirty so the next frame's entry
         //      runs resetGLAll — Skia's GL state cache no longer reflects truth
-        //      after the external context switches.
-        // Popups run on this thread and finish before we hand the host context
-        // to the swap thread, so the host present never races a popup's
-        // context switch.
+        //      after the external surface switches.
         if (popupRenderers.isNotEmpty()) {
             val snapshot = popupRenderers.values.toList()
             for (render in snapshot) render()
             hostContextDirtied = true
         }
 
-        // Hand the host context to the swap thread for the vsync-blocking
-        // `SwapBuffers`. Release it here first: a GL context is current on one
-        // thread at a time, and the swap thread re-binds it via
-        // `nativeMakeCurrent`. This thread then returns to the event loop and
-        // keeps processing input while the present blocks for the refresh.
-        //
-        // ANGLE/EGL has no swap thread (see `attach`), so `st` is null and the
-        // present runs inline below. WGL hands off to the swap thread for the
-        // vsync-blocking `SwapBuffers`.
-        if (st != null) {
-            NativeTaoGlBridge.nativeReleaseCurrent(attachmentHandle)
-            st.requestSwap()
-        } else {
-            NativeTaoGlBridge.nativePresent(attachmentHandle)
-        }
+        // Present inline. nativePresent defensively re-binds the host's
+        // window surface first (a popup renderer may have left its pbuffer
+        // current) and eglSwapBuffers paces on the display refresh.
+        NativeTaoGlBridge.nativePresent(attachmentHandle)
     }
 
     fun onPointerMove(
@@ -1061,55 +961,6 @@ internal class TaoComposeSceneHostWindows(
                 ),
         )
 
-        // WM_PAINT-starvation mitigation for brisk scrolling. Our frame clock
-        // only ticks in [onRedrawRequested], which fires from `WM_PAINT` — the
-        // lowest-priority Win32 message, synthesized only when the queue is
-        // otherwise empty. A precision-touchpad / fast-wheel flood keeps
-        // `WM_MOUSEWHEEL` queued continuously, starving `WM_PAINT`: the
-        // smooth-scroll animation freezes mid-flood then lurches (judder).
-        // AWT/JBR don't hit this — their frame clock isn't `WM_PAINT`-driven.
-        //
-        // Compose's smooth-scroll animation is frame-clock driven (one tick per
-        // `frameClock.sendFrame`, i.e. one per [onRedrawRequested]). The inline
-        // pump below renders one frame per wheel event — but wheel events arrive
-        // at only ~20 Hz, so on their own they tick the tween at ~20 fps = the
-        // residual judder. So we also arm a vsync heartbeat: [lastScrollNanos]
-        // opens a window during which the swap thread re-pumps a frame after
-        // every present (see [maybeScheduleVsyncFrame]), driving the tween at the
-        // full display refresh independent of the wheel-event rate. The window
-        // resets on each event, so sustained scrolling stays at 60 fps and a
-        // flick's tail keeps animating until the tween settles.
-        lastScrollNanos = System.nanoTime()
-
-        // Inline bootstrap: render the first frame here (with the GL context
-        // already current on this thread) when the previous present has completed
-        // (`waitForIdle(0)` — non-blocking, never stalls input). That present then
-        // kicks off the swap-thread heartbeat. EGL/ANGLE presents inline (no swap
-        // thread, so no heartbeat) — pumping would block input, so skip it there
-        // and keep the `WM_PAINT` path.
-        val pumpSwap = swapThread
-        if (pumpSwap != null && pumpSwap.waitForIdle(0L)) onRedrawRequested()
-    }
-
-    /**
-     * Re-pumps a frame at the display refresh while a scroll is active, so
-     * Compose's frame-clock-driven smooth-scroll animation ticks at vsync rather
-     * than the ~20 Hz wheel-event rate. Called on the swap thread right after
-     * each present (the present's vsync wait is what paces the loop). Posts the
-     * render to [TaoMainDispatcher] — drained on `MAIN_EVENTS_CLEARED`, which (unlike
-     * `WM_PAINT`) is not starved by the `WM_MOUSEWHEEL` flood. The posted block
-     * re-renders → re-presents → re-arms, sustaining a vsync-paced loop until the
-     * [SCROLL_PUMP_WINDOW_NS] window lapses, then it quiesces (no idle cost: with
-     * nothing rendering there are no presents, so this is never called).
-     */
-    private fun maybeScheduleVsyncFrame() {
-        if (System.nanoTime() - lastScrollNanos >= SCROLL_PUMP_WINDOW_NS) return
-        if (vsyncFrameQueued) return
-        vsyncFrameQueued = true
-        TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
-            vsyncFrameQueued = false
-            if (System.nanoTime() - lastScrollNanos < SCROLL_PUMP_WINDOW_NS) onRedrawRequested()
-        }
     }
 
     fun onKeyEvent(
@@ -1181,7 +1032,7 @@ internal class TaoComposeSceneHostWindows(
                 // existing JNI bridge — avoids touching AWT
                 // (GraphicsEnvironment.getLocalGraphicsEnvironment) on the
                 // Tao UI thread, which on Windows can lazily initialise
-                // Java2D's D3D pipeline and conflict with the WGL context
+                // Java2D's D3D pipeline and conflict with the ES context
                 // bound to this thread (manifested as a hang + crash when
                 // a second host attached, e.g. on DecoratedDialog open).
                 if (!NativeTaoWindowsDecoBridge.isLoaded) return parentWindowSize
@@ -1204,9 +1055,9 @@ internal class TaoComposeSceneHostWindows(
                 render: () -> Unit,
             ) {
                 outer.popupRenderers[token] = render
-                // Registration site does DirectContext.makeGL() which
-                // switches the WGL context behind Skia's back — the
-                // host's GL state cache is now stale.
+                // The renderer binds its own pbuffer surface between host
+                // frames, leaving Skia's GL state cache stale — flag the
+                // host context dirty so the next frame resets it.
                 outer.hostContextDirtied = true
             }
 
@@ -1383,19 +1234,14 @@ internal class TaoComposeSceneHostWindows(
         pinchEndJob = null
         pinchActive = false
         gestureScope.cancel()
-        // Stop the presenter before touching GL: it must not be parked inside
-        // `SwapBuffers` (holding the WGL context on its thread) while we make
-        // the context current here and destroy Skia resources. shutdownAndJoin
-        // waits for any in-flight present to finish and release the context.
-        swapThread?.shutdownAndJoin()
-        swapThread = null
-        // Make THIS host's GL context current before tearing down Skia
+        // Make THIS host's ES context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this
-        // one — the onboarding window — closes) may have left its own HGLRC
-        // current on the shared event-loop thread after its last frame.
-        // Destroying our scene + DirectContext against a foreign context makes
-        // Skia issue glDelete* on the wrong context and faults inside the
-        // driver (0xC0000005). Same defensive make-current as onRedrawRequested.
+        // one — the onboarding window — closes) may have left its own
+        // EGLContext current on the shared event-loop thread after its last
+        // frame. Destroying our scene + DirectContext against a foreign
+        // context makes Skia issue glDelete* on the wrong context and faults
+        // inside the driver (0xC0000005). Same defensive make-current as
+        // onRedrawRequested.
         if (attachmentHandle != 0L) {
             NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
         }
@@ -1421,15 +1267,6 @@ internal class TaoComposeSceneHostWindows(
     }
 
     private companion object {
-        // ponytail: how long after a scroll event the vsync heartbeat keeps
-        // re-pumping frames. Must outlast Compose's smooth-scroll tween (≤100 ms
-        // animation + 50 ms ScrollProgressTimeout); 180 ms covers it with margin.
-        // Each event resets the window, so this only governs the post-flick tail.
-        private const val SCROLL_PUMP_WINDOW_NS: Long = 180_000_000L
-
-        /** Native backend kind reported by [NativeTaoGlBridge.nativeBackend] (EGL/ANGLE). */
-        private const val BACKEND_EGL: Int = 1
-
         // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
         // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f
@@ -1461,9 +1298,9 @@ internal class TaoComposeSceneHostWindows(
         /**
          * Live attached-host count across the JVM. When > 1, every host
          * shares the process with at least one sibling that owns its own
-         * HGLRC and DirectContext (e.g., main window + DecoratedDialog).
+         * EGLContext and DirectContext (e.g., main window + DecoratedDialog).
          * Skia's per-DirectContext GL state cache can drift any time the
-         * other host's onRedrawRequested swaps WGL contexts behind our
+         * other host's onRedrawRequested swaps the EGL binding behind our
          * back, so we resetGLAll on every frame entry in that regime.
          * The flag-gated path stays for the single-host case to keep the
          * single-window hot path cheap.
@@ -1474,118 +1311,6 @@ internal class TaoComposeSceneHostWindows(
                 .concurrent
                 .atomic
                 .AtomicInteger(0)
-    }
-
-    /**
-     * Presents finished frames on a dedicated thread so the event-loop thread
-     * never blocks in `SwapBuffers` (which waits for vsync with
-     * `wglSwapIntervalEXT(1)`). The event-loop thread renders, releases the WGL
-     * context, then calls [requestSwap]; the swap thread re-binds via
-     * `nativeMakeCurrent`, presents (blocking on the refresh), and releases the
-     * context again. [waitForIdle] synchronises the next render — that's what
-     * gives hardware-vsync pacing for free.
-     *
-     * The two threads never hold the context simultaneously: the render thread
-     * always releases before `requestSwap`, the swap thread waits on the work
-     * signal before binding and releases before signalling done. Mirrors the
-     * Linux EGL swap thread (`TaoComposeSceneHostLinux.SwapThread`).
-     */
-    private inner class SwapThread(
-        private val handle: Long,
-    ) : Thread("TaoSwapThread-${java.lang.Long.toHexString(handle)}") {
-        private val lock = ReentrantLock()
-        private val workCond = lock.newCondition()
-        private val idleCond = lock.newCondition()
-        private var swapPending = false
-        private var swapping = false
-        private var shutdown = false
-
-        init {
-            isDaemon = true
-        }
-
-        /** Called on the event-loop thread after `flushAndSubmit` + release. */
-        fun requestSwap() {
-            lock.withLock {
-                swapPending = true
-                workCond.signal()
-            }
-        }
-
-        /**
-         * Called on the event-loop thread at the start of the next render
-         * cycle. Blocks until the swap thread has finished any in-flight
-         * `SwapBuffers` and released the WGL context, or the timeout elapses.
-         * Returns `true` if the context is free to bind, `false` if the swap is
-         * still in flight (the caller must then skip the frame to avoid two
-         * threads holding the context at once). The timeout guards against a
-         * present that never returns — e.g. a minimised window whose driver
-         * stops pacing — so input handling on this thread can't freeze.
-         */
-        fun waitForIdle(timeoutMs: Long = 100): Boolean {
-            lock.withLock {
-                if (!swapPending && !swapping) return true
-                val deadline = System.nanoTime() + timeoutMs * 1_000_000
-                while (swapPending || swapping) {
-                    val remaining = deadline - System.nanoTime()
-                    if (remaining <= 0) return false
-                    idleCond.awaitNanos(remaining)
-                }
-                return true
-            }
-        }
-
-        fun shutdownAndJoin() {
-            lock.withLock {
-                shutdown = true
-                workCond.signalAll()
-            }
-            // Best-effort join. If parked inside `SwapBuffers`, the join can
-            // take up to one vsync interval; a little headroom is plenty.
-            join(50)
-        }
-
-        @Suppress("NestedBlockDepth", "TooGenericExceptionCaught", "PrintStackTrace")
-        override fun run() {
-            try {
-                while (true) {
-                    val doSwap =
-                        lock.withLock {
-                            while (!shutdown && !swapPending) workCond.await()
-                            if (shutdown) return
-                            swapPending = false
-                            swapping = true
-                            true
-                        }
-                    if (doSwap) {
-                        try {
-                            NativeTaoGlBridge.nativeMakeCurrent(handle)
-                            NativeTaoGlBridge.nativePresent(handle)
-                        } catch (t: Throwable) {
-                            t.printStackTrace()
-                        } finally {
-                            try {
-                                NativeTaoGlBridge.nativeReleaseCurrent(handle)
-                            } catch (_: Throwable) {
-                                // Detached underneath us; detach() handles cleanup.
-                            }
-                            lock.withLock {
-                                swapping = false
-                                idleCond.signalAll()
-                            }
-                        }
-                        // Present done (and the WGL context released). If a scroll
-                        // is active, re-pump the next frame so the smooth-scroll
-                        // tween keeps ticking at vsync — the present we just did is
-                        // the heartbeat. Outside the scroll window this is a cheap
-                        // no-op and nothing re-arms.
-                        maybeScheduleVsyncFrame()
-                    }
-                }
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
-        }
     }
 
     private inner class FlushingMainDispatcher : CoroutineDispatcher() {
