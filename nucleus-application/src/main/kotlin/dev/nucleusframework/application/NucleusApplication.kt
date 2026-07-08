@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.window.application
 import dev.nucleusframework.application.internal.TaoLauncher
+import dev.nucleusframework.core.runtime.WindowBackend
 import dev.nucleusframework.graalvm.GraalVmInitializer
 import java.util.Locale
 
@@ -67,7 +68,16 @@ fun nucleusApplication(
 
     primePlatformIntegrations(args)
 
-    when (resolveBackend(backend)) {
+    val resolved = resolveBackend(backend)
+
+    // Record the resolved backend so external libraries (depending only on
+    // core-runtime) can query WindowBackend.Current without a reflective
+    // classpath probe or a Compose composition local.
+    WindowBackend.setActive(
+        if (resolved == NucleusBackend.Tao) WindowBackend.Tao else WindowBackend.Awt,
+    )
+
+    when (resolved) {
         NucleusBackend.Tao -> TaoLauncher.run(args, content)
         NucleusBackend.Awt, NucleusBackend.Auto ->
             application {
