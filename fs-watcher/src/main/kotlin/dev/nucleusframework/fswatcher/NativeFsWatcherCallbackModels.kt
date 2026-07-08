@@ -15,6 +15,10 @@ private val nextRegistrationId = AtomicLong(1)
 
 internal fun nextNativeFsWatcherRegistrationId(): Long = nextRegistrationId.getAndIncrement()
 
+// The native bridge transports "no origin" as watcher-level registration id 0.
+// Real native registration ids start at 1, so decoding 0 back to null is safe.
+internal fun Long.nullIfWatcherLevel(): Long? = if (this == WATCHER_LEVEL_REGISTRATION_ID) null else this
+
 internal data class NativeFsWatchEventPayload(
     val watcherHandle: Long,
     val registrationId: Long,

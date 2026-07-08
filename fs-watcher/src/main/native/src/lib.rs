@@ -146,20 +146,17 @@ fn emit_event(
                 .ok()
                 .map(JObject::from)
         });
-        let j_origin_registration = match origin_native_registration_id {
-            Some(value) => env.new_object("java/lang/Long", "(J)V", &[JValue::Long(value)]).ok(),
-            None => None,
-        };
+        let origin_long = origin_native_registration_id.unwrap_or(WATCHER_LEVEL_REGISTRATION_ID);
         let null_object = JObject::null();
 
         let _ = env.call_static_method(
             bridge_class,
             "onNativeEvent",
-            "(JJLjava/lang/Long;ILjava/lang/String;Ljava/lang/String;ZI)V",
+            "(JJJILjava/lang/String;Ljava/lang/String;ZI)V",
             &[
                 JValue::Long(watcher_handle),
                 JValue::Long(registration_id),
-                JValue::Object(j_origin_registration.as_ref().unwrap_or(&null_object)),
+                JValue::Long(origin_long),
                 JValue::Int(event_kind),
                 JValue::Object(j_path.as_ref().unwrap_or(&null_object)),
                 JValue::Object(j_secondary_path.as_ref().unwrap_or(&null_object)),
@@ -197,20 +194,17 @@ fn emit_error(
                 .ok()
                 .map(JObject::from)
         });
-        let j_origin_registration = match origin_native_registration_id {
-            Some(value) => env.new_object("java/lang/Long", "(J)V", &[JValue::Long(value)]).ok(),
-            None => None,
-        };
+        let origin_long = origin_native_registration_id.unwrap_or(WATCHER_LEVEL_REGISTRATION_ID);
         let null_object = JObject::null();
 
         let _ = env.call_static_method(
             bridge_class,
             "onNativeError",
-            "(JJLjava/lang/Long;Ljava/lang/String;ZLjava/lang/String;)V",
+            "(JJJLjava/lang/String;ZLjava/lang/String;)V",
             &[
                 JValue::Long(watcher_handle),
                 JValue::Long(registration_id),
-                JValue::Object(j_origin_registration.as_ref().unwrap_or(&null_object)),
+                JValue::Long(origin_long),
                 JValue::Object(&JObject::from(j_message)),
                 JValue::Bool(if recoverable { JNI_TRUE } else { JNI_FALSE }),
                 JValue::Object(j_path.as_ref().unwrap_or(&null_object)),

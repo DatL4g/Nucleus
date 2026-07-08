@@ -613,7 +613,7 @@ class FsWatcherEventFlowTest {
                 NativeFsWatcherBridge.onNativeEvent(
                     watcher.nativeHandle,
                     WATCHER_LEVEL_REGISTRATION_ID,
-                    null,
+                    WATCHER_LEVEL_REGISTRATION_ID,
                     EVENT_KIND_OVERFLOW,
                     null,
                     null,
@@ -1254,7 +1254,7 @@ class FsWatcherEventFlowTest {
                 NativeFsWatcherBridge.onNativeEvent(
                     watcher.nativeHandle,
                     WATCHER_LEVEL_REGISTRATION_ID,
-                    null,
+                    WATCHER_LEVEL_REGISTRATION_ID,
                     EVENT_KIND_CREATED,
                     eventPath.toString(),
                     null,

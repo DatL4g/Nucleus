@@ -240,7 +240,7 @@ internal object NativeFsWatcherBridge {
     fun onNativeEvent(
         watcherHandle: Long,
         registrationId: Long,
-        originNativeRegistrationId: Long?,
+        originNativeRegistrationId: Long,
         eventKind: Int,
         path: String?,
         secondaryPath: String?,
@@ -251,7 +251,7 @@ internal object NativeFsWatcherBridge {
             NativeFsWatchEventPayload(
                 watcherHandle = watcherHandle,
                 registrationId = registrationId,
-                originNativeRegistrationId = originNativeRegistrationId,
+                originNativeRegistrationId = originNativeRegistrationId.nullIfWatcherLevel(),
                 eventKind = eventKind,
                 path = path?.let(Path::of),
                 secondaryPath = secondaryPath?.let(Path::of),
@@ -279,7 +279,7 @@ internal object NativeFsWatcherBridge {
     fun onNativeError(
         watcherHandle: Long,
         registrationId: Long,
-        originNativeRegistrationId: Long?,
+        originNativeRegistrationId: Long,
         message: String,
         recoverable: Boolean,
         path: String?,
@@ -288,7 +288,7 @@ internal object NativeFsWatcherBridge {
             NativeFsWatchErrorPayload(
                 watcherHandle = watcherHandle,
                 registrationId = registrationId,
-                originNativeRegistrationId = originNativeRegistrationId,
+                originNativeRegistrationId = originNativeRegistrationId.nullIfWatcherLevel(),
                 message = message,
                 recoverable = recoverable,
                 path = path?.let(Path::of),
