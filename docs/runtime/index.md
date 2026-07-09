@@ -16,6 +16,7 @@ Nucleus provides runtime libraries for use in your application code. All are pub
 | Notification (Linux) | `dev.nucleusframework:nucleus.notification-linux` | Freedesktop Desktop Notifications API via JNI (D-Bus) |
 | Launcher (Linux) | `dev.nucleusframework:nucleus.launcher-linux` | Unity Launcher API — badge, progress, urgency, quicklist via JNI (D-Bus) |
 | Launcher (macOS) | `dev.nucleusframework:nucleus.launcher-macos` | macOS dock context menu — custom items, submenus, click callbacks via JNI |
+| FS Watcher | `dev.nucleusframework:nucleus.fs-watcher` | Filesystem watching API with a native watcher backend |
 | Media Control | `dev.nucleusframework:nucleus.media-control` | OS media controls (play/pause, metadata, seek) — MPRIS D-Bus on Linux, MPNowPlayingInfoCenter on macOS, SystemMediaTransportControls on Windows via JNI |
 | Menu (macOS) | `dev.nucleusframework:nucleus.menu-macos` | Complete NSMenu mapping — application menu bar, items, badges, delegates, SF Symbols via JNI |
 | SF Symbols | `dev.nucleusframework:nucleus.sf-symbols` | Type-safe Apple SF Symbols constants (6 195 symbols, 21 categories) |
@@ -50,6 +51,7 @@ dependencies {
     implementation("dev.nucleusframework:nucleus.notification-linux:<version>")
     implementation("dev.nucleusframework:nucleus.launcher-linux:<version>")
     implementation("dev.nucleusframework:nucleus.launcher-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.fs-watcher:<version>")
     implementation("dev.nucleusframework:nucleus.media-control:<version>")
     implementation("dev.nucleusframework:nucleus.menu-macos:<version>")
     implementation("dev.nucleusframework:nucleus.sf-symbols:<version>")
@@ -77,7 +79,7 @@ dependencies {
 
 When ProGuard is enabled in a release build, the Nucleus Gradle plugin **automatically includes** the required rules for all Nucleus runtime libraries (`default-compose-desktop-rules.pro`). No manual configuration is needed.
 
-Libraries that use JNI (`decorated-window`, `darkmode-detector`, `system-color`, `energy-manager`, `native-ssl`, `notification-macos`, `notification-windows`, `notification-linux`, `launcher-windows`, `launcher-linux`) require `-keep` rules for their native bridge classes — these are handled by the plugin automatically.
+Libraries that use JNI (`decorated-window`, `darkmode-detector`, `fs-watcher`, `system-color`, `energy-manager`, `native-ssl`, `notification-macos`, `notification-windows`, `notification-linux`, `launcher-windows`, `launcher-linux`) require `-keep` rules for their native bridge classes — these are handled by the plugin automatically.
 
 ### Overriding the ProGuard configuration
 
@@ -123,6 +125,14 @@ When using a custom `configurationFiles`, add the following rules to your file t
     native <methods>;
 }
 -keep class dev.nucleusframework.darkmodedetector.** { *; }
+
+# Nucleus fs-watcher JNI
+# NativeFsWatcherBridge is looked up by name from native code (FindClass + GetStaticMethodID)
+-keep class dev.nucleusframework.fswatcher.NativeFsWatcherBridge {
+    native <methods>;
+    static void onNativeEvent(long, long, java.lang.Long, int, java.lang.String, java.lang.String, boolean, int);
+    static void onNativeError(long, long, java.lang.Long, java.lang.String, boolean, java.lang.String);
+}
 
 # Nucleus native-ssl JNI (macOS)
 -keep class dev.nucleusframework.nativessl.mac.NativeSslBridge {

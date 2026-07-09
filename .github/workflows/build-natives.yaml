@@ -319,6 +319,27 @@ jobs:
           toolchain: stable
           targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
 
+      - name: Build fs-watcher Windows DLLs
+        shell: cmd
+        run: call fs-watcher\src\main\native\windows\build.bat
+
+      - name: Verify fs-watcher Windows natives
+        shell: bash
+        run: |
+          for f in \
+            fs-watcher/src/main/resources/nucleus/native/win32-x64/nucleus_fs_watcher.dll \
+            fs-watcher/src/main/resources/nucleus/native/win32-aarch64/nucleus_fs_watcher.dll; do
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload fs-watcher Windows DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: fs-watcher-windows
+          path: fs-watcher/src/main/resources/nucleus/native/win32-*/
+          retention-days: 1
+
       - name: Build decorated-window-tao Windows DLLs
         shell: cmd
         run: call decorated-window-tao\src\main\native\windows\build.bat
@@ -684,6 +705,25 @@ jobs:
           toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      - name: Build fs-watcher macOS dylibs
+        run: bash fs-watcher/src/main/native/macos/build.sh
+
+      - name: Verify fs-watcher macOS natives
+        run: |
+          for f in \
+            fs-watcher/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_fs_watcher.dylib \
+            fs-watcher/src/main/resources/nucleus/native/darwin-x64/libnucleus_fs_watcher.dylib; do
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload fs-watcher macOS dylibs
+        uses: actions/upload-artifact@v4
+        with:
+          name: fs-watcher-macos
+          path: fs-watcher/src/main/resources/nucleus/native/darwin-*/
+          retention-days: 1
+
       - name: Build decorated-window-tao macOS dylibs
         run: bash decorated-window-tao/src/main/native/macos/build.sh
 
@@ -968,6 +1008,24 @@ jobs:
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu
+
+      - name: Build fs-watcher Linux native libraries
+        run: bash fs-watcher/src/main/native/linux/build.sh
+
+      - name: Verify fs-watcher Linux natives
+        run: |
+          for f in \
+            fs-watcher/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_fs_watcher.so; do
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload fs-watcher Linux shared libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: fs-watcher-linux-${{ matrix.arch }}
+          path: fs-watcher/src/main/resources/nucleus/native/linux-*/
+          retention-days: 1
 
       - name: Build decorated-window-tao Linux native libraries
         run: bash decorated-window-tao/src/main/native/linux/build.sh

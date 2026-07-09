@@ -173,6 +173,14 @@
 }
 -keep class dev.nucleusframework.darkmodedetector.** { *; }
 
+# Nucleus fs-watcher JNI
+# NativeFsWatcherBridge is looked up by name from native code (FindClass + GetStaticMethodID)
+-keep class dev.nucleusframework.fswatcher.NativeFsWatcherBridge {
+    native <methods>;
+    static void onNativeEvent(long, long, java.lang.Long, int, java.lang.String, java.lang.String, boolean, int);
+    static void onNativeError(long, long, java.lang.Long, java.lang.String, boolean, java.lang.String);
+}
+
 # Nucleus native-ssl JNI (macOS)
 -keep class dev.nucleusframework.nativessl.mac.NativeSslBridge {
     native <methods>;
