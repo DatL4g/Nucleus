@@ -790,14 +790,14 @@ Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeGetH
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeSetOverlayIcon(
-    JNIEnv *env, jclass, jobject awtWindow,
+    JNIEnv *env, jclass, jlong jHwnd,
     jint iconType, jstring jIconPath, jint iconIndex, jstring jDescription)
 {
     std::lock_guard<std::mutex> lock(g_tb_mutex);
     if (!EnsureTaskbarList()) return env->NewStringUTF("ITaskbarList3 not available");
 
-    HWND hwnd = GetHwndFromAwtWindow(env, awtWindow);
-    if (!hwnd) return env->NewStringUTF("Could not get HWND");
+    HWND hwnd = (HWND)(intptr_t)jHwnd;
+    if (!hwnd) return env->NewStringUTF("Invalid HWND");
 
     std::wstring path = toWString(env, jIconPath);
     HICON hIcon = LoadIconByType(iconType, path, iconIndex);
@@ -813,13 +813,13 @@ Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeSetO
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeClearOverlayIcon(
-    JNIEnv *env, jclass, jobject awtWindow)
+    JNIEnv *env, jclass, jlong jHwnd)
 {
     std::lock_guard<std::mutex> lock(g_tb_mutex);
     if (!EnsureTaskbarList()) return env->NewStringUTF("ITaskbarList3 not available");
 
-    HWND hwnd = GetHwndFromAwtWindow(env, awtWindow);
-    if (!hwnd) return env->NewStringUTF("Could not get HWND");
+    HWND hwnd = (HWND)(intptr_t)jHwnd;
+    if (!hwnd) return env->NewStringUTF("Invalid HWND");
 
     HRESULT hr = g_taskbarList->SetOverlayIcon(hwnd, nullptr, nullptr);
     if (FAILED(hr)) return errorString(env, "ClearOverlayIcon failed", hr);
@@ -832,7 +832,7 @@ Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeClea
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarSetButtons(
-    JNIEnv *env, jclass, jobject awtWindow,
+    JNIEnv *env, jclass, jlong jHwnd,
     jintArray jIds, jobjectArray jTooltips, jintArray jFlags,
     jintArray jIconTypes, jobjectArray jIconPaths, jintArray jIconIndices,
     jobject jCallback)
@@ -840,8 +840,8 @@ Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeThum
     std::lock_guard<std::mutex> lock(g_tb_mutex);
     if (!EnsureTaskbarList()) return env->NewStringUTF("ITaskbarList3 not available");
 
-    HWND hwnd = GetHwndFromAwtWindow(env, awtWindow);
-    if (!hwnd) return env->NewStringUTF("Could not get HWND");
+    HWND hwnd = (HWND)(intptr_t)jHwnd;
+    if (!hwnd) return env->NewStringUTF("Invalid HWND");
 
     int count = env->GetArrayLength(jIds);
     if (count <= 0 || count > 7) return env->NewStringUTF("Invalid button count (1-7)");
@@ -949,15 +949,15 @@ Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeThum
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUpdateButtons(
-    JNIEnv *env, jclass, jobject awtWindow,
+    JNIEnv *env, jclass, jlong jHwnd,
     jintArray jIds, jobjectArray jTooltips, jintArray jFlags,
     jintArray jIconTypes, jobjectArray jIconPaths, jintArray jIconIndices)
 {
     std::lock_guard<std::mutex> lock(g_tb_mutex);
     if (!EnsureTaskbarList()) return env->NewStringUTF("ITaskbarList3 not available");
 
-    HWND hwnd = GetHwndFromAwtWindow(env, awtWindow);
-    if (!hwnd) return env->NewStringUTF("Could not get HWND");
+    HWND hwnd = (HWND)(intptr_t)jHwnd;
+    if (!hwnd) return env->NewStringUTF("Invalid HWND");
 
     auto *state = (ThumbBarState *)GetPropW(hwnd, THUMBBAR_PROP);
     if (!state || !state->buttonsAdded)
@@ -994,17 +994,6 @@ Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeThum
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUnregister(
-    JNIEnv *env, jclass, jobject awtWindow)
-{
-    std::lock_guard<std::mutex> lock(g_tb_mutex);
-    HWND hwnd = GetHwndFromAwtWindow(env, awtWindow);
-    if (!hwnd) return env->NewStringUTF("Could not get HWND");
-    CleanupThumbBarState(env, hwnd);
-    return nullptr;
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUnregisterByHwnd(
     JNIEnv *env, jclass, jlong jHwnd)
 {
     std::lock_guard<std::mutex> lock(g_tb_mutex);

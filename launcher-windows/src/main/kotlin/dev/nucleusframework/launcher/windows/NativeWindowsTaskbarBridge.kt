@@ -10,7 +10,7 @@ internal object NativeWindowsTaskbarBridge {
 
     val isLoaded: Boolean get() = loaded
 
-    // ---- HWND extraction ----
+    // ---- HWND extraction (AWT interop) ----
 
     @JvmStatic
     external fun nativeGetHwnd(window: Window): Long
@@ -19,7 +19,7 @@ internal object NativeWindowsTaskbarBridge {
 
     @JvmStatic
     external fun nativeSetOverlayIcon(
-        window: Window,
+        hwnd: Long,
         iconType: Int,
         iconPath: String,
         iconIndex: Int,
@@ -27,13 +27,14 @@ internal object NativeWindowsTaskbarBridge {
     ): String?
 
     @JvmStatic
-    external fun nativeClearOverlayIcon(window: Window): String?
+    external fun nativeClearOverlayIcon(hwnd: Long): String?
 
     // ---- Thumbnail Toolbar ----
 
+    @Suppress("LongParameterList")
     @JvmStatic
     external fun nativeThumbBarSetButtons(
-        window: Window,
+        hwnd: Long,
         ids: IntArray,
         tooltips: Array<String>,
         flags: IntArray,
@@ -45,7 +46,7 @@ internal object NativeWindowsTaskbarBridge {
 
     @JvmStatic
     external fun nativeThumbBarUpdateButtons(
-        window: Window,
+        hwnd: Long,
         ids: IntArray,
         tooltips: Array<String>,
         flags: IntArray,
@@ -55,8 +56,5 @@ internal object NativeWindowsTaskbarBridge {
     ): String?
 
     @JvmStatic
-    external fun nativeThumbBarUnregister(window: Window): String?
-
-    @JvmStatic
-    external fun nativeThumbBarUnregisterByHwnd(hwnd: Long): String?
+    external fun nativeThumbBarUnregister(hwnd: Long): String?
 }

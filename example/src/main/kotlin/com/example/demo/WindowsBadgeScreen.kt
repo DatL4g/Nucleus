@@ -43,7 +43,6 @@ import dev.nucleusframework.launcher.windows.WindowsBadgeManager
 import dev.nucleusframework.launcher.windows.WindowsJumpListManager
 import dev.nucleusframework.launcher.windows.WindowsOverlayIcon
 import dev.nucleusframework.launcher.windows.WindowsThumbnailToolbar
-import java.awt.Window
 
 private const val EVENT_LOG_MAX = 30
 
@@ -58,7 +57,7 @@ private val DEMO_ICONS =
 
 @Suppress("FunctionNaming")
 @Composable
-fun WindowsLauncherScreen(window: Window) {
+fun WindowsLauncherScreen(hwnd: Long) {
     val events = remember { mutableStateListOf<String>() }
 
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -72,9 +71,9 @@ fun WindowsLauncherScreen(window: Window) {
         ) {
             BadgeSection(events)
             HorizontalDivider()
-            OverlayIconSection(window, events)
+            OverlayIconSection(hwnd, events)
             HorizontalDivider()
-            ThumbnailToolbarSection(window, events)
+            ThumbnailToolbarSection(hwnd, events)
             HorizontalDivider()
             JumpListSection(events)
             HorizontalDivider()
@@ -274,7 +273,7 @@ private fun JumpListSection(events: MutableList<String>) {
 @Suppress("FunctionNaming")
 @Composable
 private fun OverlayIconSection(
-    window: Window,
+    hwnd: Long,
     events: MutableList<String>,
 ) {
     Text("Overlay Icon", style = MaterialTheme.typography.headlineSmall)
@@ -288,7 +287,7 @@ private fun OverlayIconSection(
             Button(onClick = {
                 val ok =
                     WindowsOverlayIcon.setIcon(
-                        window,
+                        hwnd,
                         TaskbarIconSource.FromStock(stockIcon),
                         description = label,
                     )
@@ -301,7 +300,7 @@ private fun OverlayIconSection(
 
     OutlinedButton(
         onClick = {
-            val ok = WindowsOverlayIcon.clearIcon(window)
+            val ok = WindowsOverlayIcon.clearIcon(hwnd)
             val msg = if (ok) "Overlay cleared" else "Clear FAILED: ${WindowsOverlayIcon.lastError}"
             events.add(0, msg)
             if (events.size > EVENT_LOG_MAX) events.removeLast()
@@ -313,7 +312,7 @@ private fun OverlayIconSection(
 @Suppress("FunctionNaming", "LongMethod")
 @Composable
 private fun ThumbnailToolbarSection(
-    window: Window,
+    hwnd: Long,
     events: MutableList<String>,
 ) {
     var toolbarAdded by remember { mutableStateOf(false) }
@@ -326,7 +325,7 @@ private fun ThumbnailToolbarSection(
 
     DisposableEffect(Unit) {
         onDispose {
-            if (toolbarAdded) WindowsThumbnailToolbar.unregister(window)
+            if (toolbarAdded) WindowsThumbnailToolbar.unregister(hwnd)
         }
     }
 
@@ -342,7 +341,7 @@ private fun ThumbnailToolbarSection(
                         )
                     }
                 val ok =
-                    WindowsThumbnailToolbar.setButtons(window, buttons) { buttonId ->
+                    WindowsThumbnailToolbar.setButtons(hwnd, buttons) { buttonId ->
                         val name = DEMO_ICONS.getOrNull(buttonId)?.first ?: "?"
                         events.add(0, "Toolbar click: $name (id=$buttonId)")
                         if (events.size > EVENT_LOG_MAX) events.removeLast()
@@ -362,7 +361,7 @@ private fun ThumbnailToolbarSection(
 
         OutlinedButton(
             onClick = {
-                WindowsThumbnailToolbar.unregister(window)
+                WindowsThumbnailToolbar.unregister(hwnd)
                 toolbarAdded = false
                 events.add(0, "Toolbar unregistered")
                 if (events.size > EVENT_LOG_MAX) events.removeLast()

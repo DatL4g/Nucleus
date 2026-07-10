@@ -12,6 +12,10 @@ import java.util.logging.Logger
  * Unlike [WindowsBadgeManager] which requires APPX/MSIX packaging, overlay icons
  * work with **all packaging types** (APPX, NSIS, MSI, distributable).
  *
+ * Windows are addressed by raw `HWND`, so any windowing backend works: pass
+ * `TaoWindow.nativeHandle` on the Tao backend, or use the AWT overloads which
+ * resolve the `HWND` via [WindowsWindowHandle].
+ *
  * Thread-safe singleton.
  */
 object WindowsOverlayIcon {
@@ -27,13 +31,13 @@ object WindowsOverlayIcon {
     /**
      * Set an overlay icon on the taskbar button.
      *
-     * @param window      The AWT window whose taskbar button gets the overlay.
+     * @param hwnd        The `HWND` of the window whose taskbar button gets the overlay.
      * @param icon        The icon source.
      * @param description Accessibility text describing the overlay.
      * @return true if the overlay was set successfully.
      */
     fun setIcon(
-        window: Window,
+        hwnd: Long,
         icon: TaskbarIconSource,
         description: String = "",
     ): Boolean {
@@ -43,7 +47,7 @@ object WindowsOverlayIcon {
         }
         val error =
             NativeWindowsTaskbarBridge.nativeSetOverlayIcon(
-                window,
+                hwnd,
                 iconType = icon.nativeType(),
                 iconPath = icon.nativePath(),
                 iconIndex = icon.nativeIndex(),
@@ -57,23 +61,45 @@ object WindowsOverlayIcon {
     }
 
     /**
+     * Set an overlay icon on the taskbar button of an AWT window.
+     *
+     * @param window      The AWT window whose taskbar button gets the overlay.
+     * @param icon        The icon source.
+     * @param description Accessibility text describing the overlay.
+     * @return true if the overlay was set successfully.
+     */
+    fun setIcon(
+        window: Window,
+        icon: TaskbarIconSource,
+        description: String = "",
+    ): Boolean = setIcon(WindowsWindowHandle.of(window), icon, description)
+
+    /**
      * Remove the overlay icon from the taskbar button.
      *
-     * @param window The AWT window.
+     * @param hwnd The `HWND` of the window.
      * @return true if the overlay was cleared successfully.
      */
-    fun clearIcon(window: Window): Boolean {
+    fun clearIcon(hwnd: Long): Boolean {
         if (!isAvailable) {
             lastError = "Native library not available"
             return false
         }
-        val error = NativeWindowsTaskbarBridge.nativeClearOverlayIcon(window)
+        val error = NativeWindowsTaskbarBridge.nativeClearOverlayIcon(hwnd)
         lastError = error
         if (error != null) {
             logger.warning("ClearOverlayIcon failed: $error")
         }
         return error == null
     }
+
+    /**
+     * Remove the overlay icon from the taskbar button of an AWT window.
+     *
+     * @param window The AWT window.
+     * @return true if the overlay was cleared successfully.
+     */
+    fun clearIcon(window: Window): Boolean = clearIcon(WindowsWindowHandle.of(window))
 }
 
 @Suppress("MagicNumber")
