@@ -306,7 +306,8 @@ fun DecoratedWindowScope.BasicTitleBar(
                 ) {
                     val now = System.currentTimeMillis()
                     if (now - lastPress in
-                        viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
+                        viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis &&
+                        (taoWindow.isMaximized || taoWindow.isResizable)
                     ) {
                         taoWindow.setMaximized(!taoWindow.isMaximized)
                         // Cancel any in-flight touch drag — the second press

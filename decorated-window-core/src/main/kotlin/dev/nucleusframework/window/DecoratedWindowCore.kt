@@ -101,14 +101,31 @@ value class DecoratedWindowState(
     val isTiled: Boolean
         get() = state and Tiled != 0UL
 
+    /**
+     * True when the window can be resized by the user. Gates the
+     * maximize/restore caption button and title-bar double-click maximize.
+     * Kept in sync with runtime resizability changes
+     * (`Frame.setResizable`, `TaoWindow.setResizable`).
+     */
+    val isResizable: Boolean
+        get() = state and Resizable != 0UL
+
     fun copy(
         fullscreen: Boolean = isFullscreen,
         minimized: Boolean = isMinimized,
         maximized: Boolean = isMaximized,
         active: Boolean = isActive,
         tiled: Boolean = isTiled,
+        resizable: Boolean = isResizable,
     ): DecoratedWindowState =
-        of(fullscreen = fullscreen, minimized = minimized, maximized = maximized, active = active, tiled = tiled)
+        of(
+            fullscreen = fullscreen,
+            minimized = minimized,
+            maximized = maximized,
+            active = active,
+            tiled = tiled,
+            resizable = resizable,
+        )
 
     override fun toString(): String = "${javaClass.simpleName}(isFullscreen=$isFullscreen, isActive=$isActive)"
 
@@ -118,6 +135,7 @@ value class DecoratedWindowState(
         val Minimize: ULong = 1UL shl 2
         val Maximize: ULong = 1UL shl 3
         val Tiled: ULong = 1UL shl 4
+        val Resizable: ULong = 1UL shl 5
 
         fun of(
             fullscreen: Boolean = false,
@@ -125,13 +143,15 @@ value class DecoratedWindowState(
             maximized: Boolean = false,
             active: Boolean = true,
             tiled: Boolean = false,
+            resizable: Boolean = true,
         ): DecoratedWindowState =
             DecoratedWindowState(
                 (if (fullscreen) Fullscreen else 0UL) or
                     (if (minimized) Minimize else 0UL) or
                     (if (maximized) Maximize else 0UL) or
                     (if (active) Active else 0UL) or
-                    (if (tiled) Tiled else 0UL),
+                    (if (tiled) Tiled else 0UL) or
+                    (if (resizable) Resizable else 0UL),
             )
     }
 }

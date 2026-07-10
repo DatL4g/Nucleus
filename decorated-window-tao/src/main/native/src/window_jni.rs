@@ -117,6 +117,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeSetResizable(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    resizable: jboolean,
+) {
+    send_user_event(UserEvent::SetResizable {
+        handle: handle as u64,
+        resizable: resizable != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeRequestRedraw(
     _env: JNIEnv,
     _class: JClass,

@@ -190,7 +190,7 @@ private fun AwtDecoratedWindowScope.NativeWindowsTitleBar(
                                     ) {
                                         if (state.isMaximized) {
                                             window.extendedState = Frame.NORMAL
-                                        } else {
+                                        } else if (window.isResizable) {
                                             window.extendedState = Frame.MAXIMIZED_BOTH
                                         }
                                     } else {
@@ -246,7 +246,7 @@ private fun AwtDecoratedWindowScope.FallbackWindowsTitleBar(
                         if (now - lastPress in viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis) {
                             if (state.isMaximized) {
                                 window.extendedState = Frame.NORMAL
-                            } else {
+                            } else if (window.isResizable) {
                                 window.extendedState = Frame.MAXIMIZED_BOTH
                             }
                         }

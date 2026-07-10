@@ -352,6 +352,14 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetResizable { handle, resizable } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            w.set_resizable(resizable);
+                        }
+                    }
+                }
                 UserEvent::SetMinimized { handle, minimized } => {
                     {
                         let guard = WINDOWS.lock().unwrap();

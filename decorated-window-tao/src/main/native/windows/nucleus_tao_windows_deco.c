@@ -238,7 +238,10 @@ static LRESULT CALLBACK decoWndProc(
         int borderWidth = getResizeBorderWidth(hwnd, TRUE);
         int borderHeight = getResizeBorderWidth(hwnd, FALSE);
 
-        if (!IsZoomed(hwnd) && !state->isFullscreen) {
+        /* Resize borders only while the window is actually resizable —
+         * tao's set_resizable(false) drops WS_THICKFRAME at runtime. */
+        LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        if (!IsZoomed(hwnd) && !state->isFullscreen && (style & WS_THICKFRAME)) {
             if (pt.x < windowRect.left + borderWidth &&
                 pt.y < windowRect.top + borderHeight) return HTTOPLEFT;
             if (pt.x >= windowRect.right - borderWidth &&

@@ -274,6 +274,10 @@ pub(crate) enum UserEvent {
         handle: u64,
         maximized: bool,
     },
+    SetResizable {
+        handle: u64,
+        resizable: bool,
+    },
     SetMinimized {
         handle: u64,
         minimized: bool,

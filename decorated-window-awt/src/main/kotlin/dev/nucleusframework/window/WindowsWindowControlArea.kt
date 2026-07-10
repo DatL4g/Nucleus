@@ -83,9 +83,10 @@ fun TitleBarScope.WindowsWindowControlArea(
                 contentDescription = "Exit fullscreen",
             )
         } else {
-            // Maximize/Restore button (only if resizable)
+            // Maximize/Restore button (only if resizable — read from the
+            // snapshot-backed state so runtime setResizable() recomposes, #260)
             val frame = window as? Frame
-            if (frame != null && frame.isResizable) {
+            if (frame != null && state.isResizable) {
                 if (state.isMaximized) {
                     WindowsCaptionButton(
                         onClick = { frame.extendedState = Frame.NORMAL },

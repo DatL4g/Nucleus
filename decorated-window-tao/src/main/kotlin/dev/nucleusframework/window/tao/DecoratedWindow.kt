@@ -219,7 +219,8 @@ internal fun ApplicationScope.openDecoratedWindow(
     val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, ColumnScope by this {
             override val window: TaoWindow = window
-            override val state: DecoratedWindowState get() = stateHolder.value
+            override val state: DecoratedWindowState
+                get() = stateHolder.value.copy(resizable = window.isResizable)
         }
     }
 
@@ -383,7 +384,7 @@ internal fun ApplicationScope.openDecoratedWindow(
  * Native GTK decorations are kept; the user's [TitleBar] composable still
  * works as a sub-bar inside the content area.
  */
-@Suppress("FunctionNaming", "LongParameterList", "LongMethod")
+@Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 private fun ApplicationScope.openDecoratedWindowLinux(
     window: TaoWindow,
     title: String,
@@ -427,7 +428,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, ColumnScope by this {
             override val window: TaoWindow = window
-            override val state: DecoratedWindowState get() = stateHolder.value
+            override val state: DecoratedWindowState
+                get() = stateHolder.value.copy(resizable = window.isResizable)
         }
     }
 
@@ -756,7 +758,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     val scopeFactory: androidx.compose.foundation.layout.ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, androidx.compose.foundation.layout.ColumnScope by this {
             override val window: TaoWindow = window
-            override val state: DecoratedWindowState get() = stateHolder.value
+            override val state: DecoratedWindowState
+                get() = stateHolder.value.copy(resizable = window.isResizable)
         }
     }
 
