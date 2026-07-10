@@ -9,7 +9,6 @@ import dev.nucleusframework.NucleusExtension
 import org.gradle.api.Project
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.SourceSetContainer
-import org.jetbrains.kotlin.gradle.dsl.KotlinJsProjectExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
@@ -27,9 +26,6 @@ internal val Project.kotlinJvmExt: KotlinJvmProjectExtension
 
 internal val Project.kotlinJvmExtOrNull: KotlinJvmProjectExtension?
     get() = extensions.findByType(KotlinJvmProjectExtension::class.java)
-
-internal val Project.kotlinJsExtOrNull: KotlinJsProjectExtension?
-    get() = extensions.findByType(KotlinJsProjectExtension::class.java)
 
 internal val Project.javaSourceSets: SourceSetContainer
     get() = extensions.getByType(JavaPluginExtension::class.java).sourceSets
