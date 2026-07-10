@@ -146,7 +146,7 @@ fun main(args: Array<String>) =
                 state = state,
                 onCloseRequest = ::exitApplication,
                 title = "Nucleus Demo",
-                minimumSize = DpSize(1200.dp, 480.dp),
+                minimumSize = DpSize(1300.dp, 480.dp),
             ) {
                 CompositionLocalProvider(
                     LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
@@ -155,21 +155,10 @@ fun main(args: Array<String>) =
                         buildList {
                             addAll(listOf("Nucleus", "Fill Title", "Gallery", "Taskbar", "Scroll Test"))
                             add("Notifications (Common)")
-                            if (Platform.Current == Platform.MacOS ||
-                                Platform.Current == Platform.Linux ||
-                                Platform.Current == Platform.Windows
-                            ) {
-                                add("Notifications")
-                            }
-                            if (Platform.Current == Platform.Windows ||
-                                Platform.Current == Platform.Linux ||
-                                Platform.Current == Platform.MacOS
-                            ) {
-                                add("Launcher")
-                            }
+                            add("Notifications")
+                            add("Launcher")
                             add("Media Control")
                             add("Auto-Launch")
-
                             add("Hotkeys")
                             if (Platform.Current == Platform.MacOS) {
                                 add("Menu")
@@ -299,8 +288,9 @@ fun main(args: Array<String>) =
                             }
                         }
                         "Launcher" -> {
+                            val hwnd = nucleusWindow.unsafe.taoWindow?.nativeHandle ?: 0L
                             when (Platform.Current) {
-                                Platform.Windows -> WindowsLauncherScreen(nucleusWindow.unsafe.awtWindow!!)
+                                Platform.Windows -> WindowsLauncherScreen(hwnd)
                                 Platform.MacOS -> MacOsLauncherScreen()
                                 Platform.Linux -> LauncherScreen()
                                 else -> {}

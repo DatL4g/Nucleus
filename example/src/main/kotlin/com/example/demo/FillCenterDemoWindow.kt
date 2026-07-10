@@ -232,8 +232,9 @@ private fun NucleusDecoratedWindowScope.DemoWindowTabContent(
             }
         }
         "Launcher" -> {
+            val hwnd = nucleusWindow.unsafe.taoWindow?.nativeHandle ?: 0L
             when (Platform.Current) {
-                Platform.Windows -> WindowsLauncherScreen(nucleusWindow.unsafe.awtWindow!!)
+                Platform.Windows -> WindowsLauncherScreen(hwnd)
                 Platform.MacOS -> MacOsLauncherScreen()
                 Platform.Linux -> LauncherScreen()
                 else -> {}
