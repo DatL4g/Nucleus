@@ -219,6 +219,13 @@ fun ApplicationScope.DecoratedWindow(
     }
 
     // ── State → window sync ──
+    // `resizable` is consumed at builder time above; re-apply runtime changes
+    // so driving the parameter matches the AWT backends' behaviour (#260).
+    LaunchedEffect(window, resizable) {
+        if (window.isResizable != resizable) {
+            window.setResizable(resizable)
+        }
+    }
     LaunchedEffect(window, state.size, state.placement) {
         // Maximized / Fullscreen windows derive their size from the
         // OS-managed placement, not from `state.size`. Skip the

@@ -87,7 +87,7 @@ private val WindowsCloseButtonPressed = Color(0xFFF1707A)
  * returns HTCLIENT for the title bar zone — DWM never repaints native buttons
  * on top, which would otherwise happen on non-JBR JDKs.
  */
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "CyclomaticComplexMethod")
 @Composable
 internal fun WindowControlsWindows(
     win: TaoWindow,
@@ -140,8 +140,11 @@ internal fun WindowControlsWindows(
                         },
                     contentDescription = "Exit fullscreen",
                 )
-            } else if (state.isMaximized) {
-                // Maximize / Restore — switches icon based on actual window state
+            } else if (win.isResizable && state.isMaximized) {
+                // Maximize / Restore — switches icon based on actual window state.
+                // Hidden when non-resizable (win.isResizable is snapshot-backed,
+                // so runtime setResizable() recomposes — mirrors the AWT
+                // backends' WindowsWindowControlArea gating, #260).
                 WindowsCaptionButton(
                     onClick = { win.setMaximized(false) },
                     isDark = isDark,
@@ -157,7 +160,7 @@ internal fun WindowControlsWindows(
                         },
                     contentDescription = "Restore",
                 )
-            } else {
+            } else if (win.isResizable) {
                 WindowsCaptionButton(
                     onClick = { win.setMaximized(true) },
                     isDark = isDark,

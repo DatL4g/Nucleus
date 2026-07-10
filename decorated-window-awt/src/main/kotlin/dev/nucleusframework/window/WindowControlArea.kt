@@ -78,8 +78,10 @@ fun TitleBarScope.WindowControlArea(
                             alignment = buttonAlignment,
                         )
                     } else {
+                        // Gate on the snapshot-backed state so runtime
+                        // setResizable() recomposes the button (#260).
                         val frame = window as? Frame
-                        if (frame != null && frame.isResizable) {
+                        if (frame != null && state.isResizable) {
                             if (state.isMaximized) {
                                 ControlButton(
                                     onClick = { frame.extendedState = Frame.NORMAL },

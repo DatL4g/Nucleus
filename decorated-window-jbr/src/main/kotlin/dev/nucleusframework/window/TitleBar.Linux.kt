@@ -49,7 +49,7 @@ internal fun AwtDecoratedWindowScope.LinuxTitleBar(
                     ) {
                         if (state.isMaximized) {
                             window.extendedState = Frame.NORMAL
-                        } else {
+                        } else if (window.isResizable) {
                             window.extendedState = Frame.MAXIMIZED_BOTH
                         }
                     }

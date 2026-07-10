@@ -1031,7 +1031,6 @@ internal class TaoComposeSceneHostWindows(
                     keyboardModifiers = currentKeyboardModifiers,
                 ),
         )
-
     }
 
     fun onKeyEvent(

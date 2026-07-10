@@ -2,6 +2,7 @@
 
 package dev.nucleusframework.window.tao
 
+import androidx.compose.runtime.mutableStateOf
 import dev.nucleusframework.core.runtime.Platform
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
@@ -16,13 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Suppress("TooManyFunctions")
 class TaoWindow internal constructor(
     val handle: Long,
-    /**
-     * `true` when the window was created with `resizable = true`. Surfaced to
-     * Compose so [WindowControlsLinux] can hide the maximize button on
-     * non-resizable windows (matches the `decorated-window-jni` behaviour
-     * — `frame.isResizable` gates the maximize button there too).
-     */
-    val isResizable: Boolean = true,
+    isResizable: Boolean = true,
     /**
      * `true` when the window was created as a popup overlay of another window
      * (`openWindow(popupOf = …)` — GTK_WINDOW_POPUP, mapped as a `wl_subsurface`
@@ -35,6 +30,28 @@ class TaoWindow internal constructor(
      */
     val isPopup: Boolean = false,
 ) {
+    // Snapshot-backed so Compose consumers (WindowControls*, resize hit-test
+    // gating) recompose when resizability changes at runtime — the AWT
+    // backends get the same reactivity from DecoratedWindowState (#260).
+    private val resizableState = mutableStateOf(isResizable)
+
+    /**
+     * `true` when the window can currently be resized by the user. Initially
+     * the `resizable` flag the window was created with; tracks runtime
+     * [setResizable] calls. Surfaced to Compose so [WindowControlsLinux] /
+     * [WindowControlsWindows] can hide the maximize button on non-resizable
+     * windows (matches the `decorated-window-jni` behaviour).
+     */
+    val isResizable: Boolean
+        get() = resizableState.value
+
+    /** Enables/disables user resizing (borders, maximize) at runtime. */
+    fun setResizable(resizable: Boolean) {
+        if (resizableState.value == resizable) return
+        resizableState.value = resizable
+        NativeTaoBridge.nativeSetResizable(handle, resizable)
+    }
+
     @Volatile
     private var readyListener: ((Int, Int) -> Unit)? = null
 

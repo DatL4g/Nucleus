@@ -283,6 +283,12 @@ internal object NativeTaoBridge {
     )
 
     @JvmStatic
+    external fun nativeSetResizable(
+        handle: Long,
+        resizable: Boolean,
+    )
+
+    @JvmStatic
     external fun nativeSetMinimized(
         handle: Long,
         minimized: Boolean,

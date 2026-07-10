@@ -56,6 +56,7 @@ fun DecoratedWindowState.Companion.of(window: ComposeWindow): DecoratedWindowSta
         minimized = window.isMinimized,
         maximized = window.placement == WindowPlacement.Maximized,
         active = window.isActive,
+        resizable = window.isResizable,
     )
 
 /**
@@ -168,12 +169,20 @@ fun FrameWindowScope.DecoratedWindowBody(
         window.addWindowStateListener(adapter)
         window.addComponentListener(adapter)
 
+        // Frame.setResizable fires a bound property change — without this,
+        // runtime resizability changes don't recompose the title bar and the
+        // maximize button stays out of sync until the next window event (#260).
+        val resizableListener =
+            java.beans.PropertyChangeListener { updateWindowShape() }
+        window.addPropertyChangeListener("resizable", resizableListener)
+
         val quitHandlerInstalled = installSystemQuitHandler(onCloseRequest)
 
         onDispose {
             window.removeWindowListener(adapter)
             window.removeWindowStateListener(adapter)
             window.removeComponentListener(adapter)
+            window.removePropertyChangeListener("resizable", resizableListener)
             if (quitHandlerInstalled) {
                 Desktop.getDesktop().setQuitHandler(null)
             }

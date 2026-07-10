@@ -18,6 +18,7 @@ val publishVersion =
 dependencies {
     implementation(project(":core-runtime"))
     api(libs.compose.foundation)
+    testImplementation(kotlin("test"))
 }
 
 // ---------- Native JNI builds ----------

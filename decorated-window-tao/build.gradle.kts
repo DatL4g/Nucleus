@@ -20,6 +20,8 @@ dependencies {
     implementation(project(":core-runtime"))
     implementation(libs.compose.desktop.common)
     testImplementation(kotlin("test"))
+    // Skiko native runtime for the opt-in real-window smoke test
+    testImplementation(compose.desktop.currentOs)
 }
 
 java {
