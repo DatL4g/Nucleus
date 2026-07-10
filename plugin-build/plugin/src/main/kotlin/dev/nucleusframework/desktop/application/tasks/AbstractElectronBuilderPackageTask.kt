@@ -10,6 +10,7 @@ import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
@@ -330,27 +331,16 @@ abstract class AbstractElectronBuilderPackageTask
             val publish = distributions?.publish
             val anyProviderEnabled =
                 publish != null && (publish.github.enabled || publish.s3.enabled || publish.generic.enabled)
-            if (!anyProviderEnabled) {
-                logger.info("No publish provider enabled, using publish mode: never")
-                return "never"
-            }
-
-            // Priority: env var > Gradle property > DSL default
-            val envValue = System.getenv("NUCLEUS_PUBLISH_MODE")
-            if (!envValue.isNullOrBlank()) {
-                logger.info("Using publish mode from NUCLEUS_PUBLISH_MODE env var: $envValue")
-                return envValue
-            }
-
-            val propValue = publishMode.orNull
-            if (!propValue.isNullOrBlank()) {
-                logger.info("Using publish mode from Gradle property: $propValue")
-                return propValue
-            }
-
-            val dslValue = publish.publishMode.id
-            logger.info("Using publish mode from DSL: $dslValue")
-            return dslValue
+            // Priority: env var > Gradle property > DSL default (never when no provider enabled).
+            val flag =
+                UpdateYmlPublish.resolvePublishFlag(
+                    anyProviderEnabled = anyProviderEnabled,
+                    envValue = System.getenv(UpdateYmlPublish.PUBLISH_MODE_ENV),
+                    propValue = publishMode.orNull,
+                    dslValue = publish?.publishMode?.id ?: "never",
+                )
+            logger.info("Resolved electron-builder publish mode: $flag")
+            return flag
         }
 
         private fun detectNpx(): File =

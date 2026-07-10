@@ -26,6 +26,15 @@ dependencies {
     implementation(libs.thumbnailator)
     implementation(libs.asm)
 
+    // S3 auto-update manifest upload. Replaces shelling out to the `aws` CLI.
+    // Force the lightweight JDK-HttpURLConnection client to avoid pulling Netty/Apache
+    // onto the plugin classpath; we only do simple synchronous PutObject calls.
+    implementation(libs.aws.s3) {
+        exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+        exclude(group = "software.amazon.awssdk", module = "apache-client")
+    }
+    implementation(libs.aws.url.connection.client)
+
     testImplementation(libs.junit)
 }
 

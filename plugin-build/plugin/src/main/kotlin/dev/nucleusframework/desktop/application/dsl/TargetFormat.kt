@@ -60,6 +60,24 @@ enum class TargetFormat(
     val needsPluginUpdateYml: Boolean
         get() = this == Msi || this == Portable
 
+    /**
+     * Whether this format publishes a per-channel auto-update manifest (`<channel><osSuffix>.yml`),
+     * generated either by electron-builder (NSIS, NSIS-Web, DMG, ZIP-on-macOS, AppImage, DEB, RPM)
+     * or by the plugin ([needsPluginUpdateYml]: MSI, Portable).
+     *
+     * Because the manifest name is keyed only on the OS (see [updateYmlFilename]), configuring two or
+     * more of these for the same OS makes their separate electron-builder runs publish to the same
+     * key — so the manifests must be merged before publishing (see `AbstractMergeUpdateYmlTask`).
+     */
+    internal val producesUpdateManifest: Boolean
+        get() =
+            when (this) {
+                Exe, Nsis, NsisWeb, Msi, Portable, Dmg, AppImage, Deb, Rpm -> true
+                // electron-builder treats ZIP as auto-updatable only on macOS (Squirrel.Mac).
+                Zip -> targetOS == OS.MacOS
+                else -> false
+            }
+
     /** Returns the auto-update YML filename for this format and channel. */
     fun updateYmlFilename(channel: ReleaseChannel): String {
         val prefix = channel.id

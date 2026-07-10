@@ -662,7 +662,7 @@ internal class ElectronBuilderConfigGenerator {
         }
     }
 
-    private fun generatePublishConfig(
+    internal fun generatePublishConfig(
         yaml: StringBuilder,
         publish: PublishSettings,
     ) {
@@ -693,6 +693,11 @@ internal class ElectronBuilderConfigGenerator {
             appendIfNotNull(yaml, "    region", s3.region)
             appendIfNotNull(yaml, "    path", s3.path)
             appendIfNotNull(yaml, "    acl", s3.acl)
+            // Several formats (and arches) of the same OS publish to the same `<channel><osSuffix>.yml`
+            // S3 key, so they would overwrite each other. Always suppress electron-builder's per-run
+            // manifest upload and let the plugin publish a single merged manifest instead (the package
+            // artifacts are still uploaded by electron-builder). See AbstractMergeUpdateYmlTask.
+            yaml.appendLine("    publishAutoUpdate: false")
         }
         if (generic.enabled) {
             yaml.appendLine("  - provider: generic")
