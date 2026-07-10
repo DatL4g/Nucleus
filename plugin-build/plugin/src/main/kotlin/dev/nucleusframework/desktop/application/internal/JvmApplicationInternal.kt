@@ -10,7 +10,9 @@ import dev.nucleusframework.desktop.application.dsl.JvmApplication
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationBuildTypes
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.internal.utils.new
+import dev.nucleusframework.desktop.application.dsl.AdditionalLauncher
 import org.gradle.api.Action
+import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.Task
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
@@ -87,5 +89,11 @@ internal open class JvmApplicationInternal
 
         final override fun graalvm(fn: Action<GraalvmSettings>) {
             fn.execute(data.graalvm)
+        }
+
+        final override val additionalLaunchers: NamedDomainObjectContainer<AdditionalLauncher> by data::additionalLaunchers
+
+        final override fun additionalLaunchers(action: Action<NamedDomainObjectContainer<AdditionalLauncher>>) {
+            action.execute(data.additionalLaunchers)
         }
     }

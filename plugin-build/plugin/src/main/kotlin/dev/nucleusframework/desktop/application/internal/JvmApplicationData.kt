@@ -9,6 +9,8 @@ import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationBuildTypes
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.internal.utils.new
+import dev.nucleusframework.desktop.application.dsl.AdditionalLauncher
+import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
@@ -42,4 +44,6 @@ internal open class JvmApplicationData
         val nativeDistributions: JvmApplicationDistributions = objects.new()
         val buildTypes: JvmApplicationBuildTypes = objects.new()
         val graalvm: GraalvmSettings = objects.new()
+        val additionalLaunchers: NamedDomainObjectContainer<AdditionalLauncher> =
+            objects.domainObjectContainer(AdditionalLauncher::class.java)
     }
