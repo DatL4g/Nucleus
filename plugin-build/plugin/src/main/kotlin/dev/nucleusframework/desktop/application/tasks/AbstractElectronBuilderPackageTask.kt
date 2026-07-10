@@ -1357,6 +1357,15 @@ abstract class AbstractElectronBuilderPackageTask
                   esac
                 done
                 DIR="$(cd "$(dirname "$SCRIPT")" && pwd)"
+                # electron-builder's AppImage AppRun injects --no-sandbox when unprivileged user
+                # namespaces are unavailable (the Ubuntu 24.04+ default), on the assumption the
+                # binary is Chromium/Electron. This is a JVM/native app with no such sandbox, and
+                # its launcher may abort on the unknown option, so drop the flag before delegating.
+                for arg in "$@"; do
+                  shift
+                  [ "$arg" = "--no-sandbox" ] && continue
+                  set -- "$@" "$arg"
+                done
                 exec "$DIR/$$relativePath" "$@"
                 """.trimIndent() + "\n"
 
