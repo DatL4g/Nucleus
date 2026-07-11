@@ -44,6 +44,7 @@ internal object TaoDecoratedWindowAdapter {
         alwaysOnTop: Boolean,
         undecorated: Boolean,
         popupFor: NucleusWindow?,
+        nativePopupLayers: Boolean,
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
@@ -70,6 +71,7 @@ internal object TaoDecoratedWindowAdapter {
                 alwaysOnTop = alwaysOnTop,
                 undecorated = undecorated,
                 popupFor = popupFor?.unsafe?.taoWindow,
+                nativePopupLayers = nativePopupLayers,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
             ) {

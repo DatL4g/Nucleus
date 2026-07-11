@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import dev.nucleusframework.core.runtime.DeepLinkHandler
 import dev.nucleusframework.core.runtime.SingleInstanceManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,24 @@ internal object SingleInstanceRestoreBus {
 
     fun fire() {
         _signal.value = _signal.value + 1
+    }
+}
+
+/**
+ * Runs [onRestore] whenever a second instance of the application attempts to
+ * launch while this process holds the single-instance lock (requires
+ * `nucleusApplication(enableSingleInstance = true)`).
+ *
+ * Windows created through [DecoratedWindow] already restore themselves
+ * (shown, un-minimized, focused); use this hook when the app's main surface
+ * is something else — typically a tray application re-opening its popup.
+ */
+@Composable
+fun SingleInstanceRestoreEffect(onRestore: () -> Unit) {
+    val signal by SingleInstanceRestoreBus.signal.collectAsState()
+    val currentOnRestore = rememberUpdatedState(onRestore)
+    LaunchedEffect(signal) {
+        if (signal != 0) currentOnRestore.value()
     }
 }
 

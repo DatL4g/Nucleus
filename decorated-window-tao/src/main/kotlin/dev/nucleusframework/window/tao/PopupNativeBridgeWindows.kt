@@ -52,6 +52,10 @@ internal object PopupNativeBridgeWindows {
         )
     }
 
+    /**
+     * [parentHwnd] may be `0` for a standalone (ownerless) panel — [xPx]/[yPx]
+     * are then absolute screen coordinates instead of parent-client-relative.
+     */
     @JvmStatic
     external fun nativeCreatePanel(
         parentHwnd: Long,
@@ -60,6 +64,28 @@ internal object PopupNativeBridgeWindows {
         widthPx: Int,
         heightPx: Int,
     ): Long
+
+    /** Shows/hides the panel (SW_SHOWNOACTIVATE / SW_HIDE) without releasing it. */
+    @JvmStatic
+    external fun nativeSetPanelVisible(
+        panel: Long,
+        visible: Boolean,
+    )
+
+    /**
+     * Raises/restores the system timer resolution (timeBeginPeriod(1),
+     * refcounted). Required while pacing animations from JVM scheduled
+     * executors: the default ~15.6 ms quantum halves the frame rate.
+     */
+    @JvmStatic
+    external fun nativeSetHighResTimer(enable: Boolean)
+
+    /** Sets the client-area cursor from a [TaoCursorIcon] constant. */
+    @JvmStatic
+    external fun nativeSetPanelCursor(
+        panel: Long,
+        cursorIcon: Int,
+    )
 
     @JvmStatic
     external fun nativeSetFrameInWindow(

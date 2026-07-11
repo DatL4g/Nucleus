@@ -511,3 +511,80 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeHeight(
     GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
     return att ? (jint)att->heightPx : 0;
 }
+
+/* Headless bootstrap: creates the shared ANGLE display/config/context bound
+ * to a 1x1 pbuffer when no window host has attached yet. Lets standalone
+ * popup surfaces (overlay_dcomp) run in apps without any Tao window — e.g.
+ * a tray-only app whose UI lives entirely in a transparent popup panel.
+ * NOT thread-safe (check-then-init on the shared EGL statics): call only
+ * from the Tao main thread, like every entry point touching the process
+ * EGL context. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeEnsureHeadlessContext(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    if (sHostEglContext != EGL_NO_CONTEXT) return JNI_TRUE;
+    loadEgl();
+    if (!eglAvailable || !pEglGetPlatformDisplayEXT) return JNI_FALSE;
+
+    const EGLint deviceTypes[] = {
+        EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE,
+        EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE,
+    };
+    EGLDisplay dpy = EGL_NO_DISPLAY;
+    EGLint major = 0, minor = 0;
+    int i;
+    for (i = 0; i < 2; ++i) {
+        EGLDisplay d = angleD3D11Display(deviceTypes[i]);
+        if (d != EGL_NO_DISPLAY && pEglInitialize(d, &major, &minor)) { dpy = d; break; }
+    }
+    if (dpy == EGL_NO_DISPLAY) return JNI_FALSE;
+    if (pEglBindAPI) pEglBindAPI(EGL_OPENGL_ES_API);
+
+    /* Same config attribs as attachEgl so overlay/popup pbuffers stay
+     * config-compatible with this context. */
+    const EGLint cfgAttribs[] = {
+        EGL_SURFACE_TYPE,    EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+        EGL_RED_SIZE,    8,
+        EGL_GREEN_SIZE,  8,
+        EGL_BLUE_SIZE,   8,
+        EGL_ALPHA_SIZE,  8,
+        EGL_DEPTH_SIZE,  0,
+        EGL_STENCIL_SIZE, 8,
+        EGL_NONE
+    };
+    EGLConfig config = NULL;
+    EGLint numConfig = 0;
+    if (!pEglChooseConfig(dpy, cfgAttribs, &config, 1, &numConfig) || numConfig == 0) {
+        return JNI_FALSE;
+    }
+
+    PFNEGLCREATEPBUFFERSURFACEPROC pCreatePbuffer =
+        (PFNEGLCREATEPBUFFERSURFACEPROC)GetProcAddress(sLibEGL, "eglCreatePbufferSurface");
+    if (!pCreatePbuffer) return JNI_FALSE;
+    const EGLint pbAttribs[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
+    EGLSurface surface = pCreatePbuffer(dpy, config, pbAttribs);
+    if (surface == EGL_NO_SURFACE) return JNI_FALSE;
+
+    const EGLint ctxAttribs3[] = { EGL_CONTEXT_MAJOR_VERSION, 3, EGL_NONE };
+    const EGLint ctxAttribs2[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
+    EGLContext ctx = pEglCreateContext(dpy, config, EGL_NO_CONTEXT, ctxAttribs3);
+    if (ctx == EGL_NO_CONTEXT) {
+        ctx = pEglCreateContext(dpy, config, EGL_NO_CONTEXT, ctxAttribs2);
+    }
+    if (ctx == EGL_NO_CONTEXT) {
+        pEglDestroySurface(dpy, surface);
+        return JNI_FALSE;
+    }
+    if (!pEglMakeCurrent(dpy, surface, surface, ctx)) {
+        pEglDestroyContext(dpy, ctx);
+        pEglDestroySurface(dpy, surface);
+        return JNI_FALSE;
+    }
+    sHostEglDisplay = dpy;
+    sHostEglContext = ctx;
+    sHostEglConfig  = config;
+    return JNI_TRUE;
+}
