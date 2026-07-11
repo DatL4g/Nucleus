@@ -69,6 +69,12 @@ fun ApplicationScope.DecoratedWindow(
     popupFor: TaoWindow? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
+    /**
+     * Materialise Compose Popup layers as native transparent windows
+     * (NSPanel / WS_POPUP HWND) instead of drawing them inline in this
+     * window's render target. Windows/macOS only; ignored on Linux.
+     */
+    nativePopupLayers: Boolean = false,
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
     // Parent composition locals bridged into this window's own ComposeScene from
     // the first composition (see [openDecoratedWindow]). Defaults to null for
@@ -139,6 +145,7 @@ fun ApplicationScope.DecoratedWindow(
                     popupFor = popupFor,
                     onPreviewKeyEvent = { latestPreview(it) },
                     onKeyEvent = { latestKey(it) },
+                    nativePopupLayers = nativePopupLayers,
                     macOSStyle = macOSStyle,
                     initialCompositionLocalContext = compositionLocalContext,
                     content = {

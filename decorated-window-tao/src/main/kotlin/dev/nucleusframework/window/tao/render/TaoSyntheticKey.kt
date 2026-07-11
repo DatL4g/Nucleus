@@ -122,6 +122,51 @@ private fun awtModifierMask(
         (if (isAlt) InputEvent.ALT_DOWN_MASK else 0) or
         (if (isMeta) InputEvent.META_DOWN_MASK else 0)
 
+/**
+ * Full key dispatch for a scene fed straight from a native popup/overlay
+ * callback (popup layers, standalone panels, native-view overlays):
+ * preview handler → scene → synthetic KEY_TYPED insertion on key-down →
+ * fallback handler. Window hosts keep their own richer pipeline (modifier
+ * tracking, popup handler chains).
+ *
+ * Native callbacks don't report a key location, and desktop `Key.*`
+ * constants are declared with `KEY_LOCATION_STANDARD` — since `Key`
+ * equality encodes the location, anything else (e.g. UNKNOWN) makes every
+ * non-character key (Backspace, Enter, arrows…) unmatchable.
+ */
+@OptIn(InternalComposeUiApi::class)
+internal fun ComposeScene.dispatchNativeKeyEvent(
+    type: Int,
+    vkCode: Int,
+    codePoint: Int,
+    modifiers: Int,
+    onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null,
+    onKeyEvent: ((KeyEvent) -> Boolean)? = null,
+) {
+    val isShift = modifiers and TaoNativeWireFormat.MOD_SHIFT != 0
+    val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
+    val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
+    val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
+    val ev =
+        taoKeyEvent(
+            keyDown = type == TaoNativeWireFormat.KEY_DOWN,
+            vkCode = vkCode,
+            keyLocation = java.awt.event.KeyEvent.KEY_LOCATION_STANDARD,
+            isShift = isShift,
+            isCtrl = isCtrl,
+            isAlt = isAlt,
+            isMeta = isMeta,
+            codePoint = codePoint,
+        )
+    if (onPreviewKeyEvent?.invoke(ev) == true) return
+    val consumed = sendKeyEvent(ev)
+    if (type == TaoNativeWireFormat.KEY_DOWN) {
+        dispatchSyntheticKeyTyped(codePoint, isShift, isCtrl, isAlt, isMeta)
+    }
+    if (consumed) return
+    onKeyEvent?.invoke(ev)
+}
+
 /** Heuristic: ASCII control range and Cmd/Ctrl combos are not text input. */
 internal fun Int.isPrintableTextInput(
     isCtrl: Boolean,

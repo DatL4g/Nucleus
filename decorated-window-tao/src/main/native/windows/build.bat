@@ -183,7 +183,7 @@ cl /LD /O1 /GS- /nologo ^
     "%NV_SRC%" "%OVERLAY_SRC%" "%POPUP_SRC%" "%OVERLAY_DCOMP_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_windows_native_view.dll" ^
     /link /NODEFAULTLIB /ENTRY:DllMain ^
-    kernel32.lib user32.lib gdi32.lib dwmapi.lib
+    kernel32.lib user32.lib gdi32.lib dwmapi.lib winmm.lib
 if errorlevel 1 (
     echo ERROR: x64 native_view compilation failed >&2
     exit /b 1
@@ -257,7 +257,7 @@ cl /LD /O1 /GS- /nologo ^
     "%NV_SRC%" "%OVERLAY_SRC%" "%POPUP_SRC%" "%OVERLAY_DCOMP_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_native_view.dll" ^
     /link /ENTRY:DllMain ^
-    kernel32.lib user32.lib gdi32.lib dwmapi.lib
+    kernel32.lib user32.lib gdi32.lib dwmapi.lib winmm.lib
 if errorlevel 1 (
     echo WARNING: ARM64 native_view compilation failed >&2
     endlocal

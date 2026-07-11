@@ -39,6 +39,11 @@ fun NucleusApplicationScope.DecoratedWindow(
     // parent-relative). For cursor-following overlays such as drag ghosts.
     // Ignored by the AWT backend and on macOS/Windows.
     popupFor: NucleusWindow? = null,
+    // Materialise Compose Popup layers as native transparent windows
+    // (NSPanel / WS_POPUP HWND) instead of drawing them inline in this
+    // window's render target. Honoured by the Tao backend on Windows/macOS;
+    // ignored by AWT and on Linux.
+    nativePopupLayers: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -92,6 +97,7 @@ fun NucleusApplicationScope.DecoratedWindow(
                 alwaysOnTop = alwaysOnTop,
                 undecorated = undecorated,
                 popupFor = popupFor,
+                nativePopupLayers = nativePopupLayers,
                 minimumSize = minimumSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,

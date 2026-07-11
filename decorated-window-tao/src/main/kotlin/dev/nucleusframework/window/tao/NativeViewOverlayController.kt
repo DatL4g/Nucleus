@@ -22,9 +22,8 @@ import dev.nucleusframework.window.tao.render.TaoComposeSceneContext
 import dev.nucleusframework.window.tao.render.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.render.TaoPopupHost
 import dev.nucleusframework.window.tao.render.TaoRecordedSurface
-import dev.nucleusframework.window.tao.render.dispatchSyntheticKeyTyped
+import dev.nucleusframework.window.tao.render.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.render.recordSceneToPicture
-import dev.nucleusframework.window.tao.render.taoKeyEvent
 import org.jetbrains.skia.DirectContext
 import kotlin.coroutines.CoroutineContext
 
@@ -179,26 +178,12 @@ internal class NativeViewOverlayController(
             codePoint: Int,
             modifiers: Int,
         ) {
-            val sc = scene ?: return
-            val isShift = modifiers and TaoNativeWireFormat.MOD_SHIFT != 0
-            val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
-            val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
-            val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
-            sc.sendKeyEvent(
-                taoKeyEvent(
-                    keyDown = type == TaoNativeWireFormat.KEY_DOWN,
-                    vkCode = vkCode,
-                    keyLocation = 0,
-                    isShift = isShift,
-                    isCtrl = isCtrl,
-                    isAlt = isAlt,
-                    isMeta = isMeta,
-                    codePoint = codePoint,
-                ),
+            scene?.dispatchNativeKeyEvent(
+                type = type,
+                vkCode = vkCode,
+                codePoint = codePoint,
+                modifiers = modifiers,
             )
-            if (type == TaoNativeWireFormat.KEY_DOWN) {
-                sc.dispatchSyntheticKeyTyped(codePoint, isShift, isCtrl, isAlt, isMeta)
-            }
         }
     }
 

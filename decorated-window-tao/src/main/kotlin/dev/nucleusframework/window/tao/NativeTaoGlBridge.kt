@@ -99,4 +99,14 @@ internal object NativeTaoGlBridge {
 
     @JvmStatic
     external fun nativeHeight(handle: Long): Int
+
+    /**
+     * Bootstraps the shared ANGLE display/config/context against a 1x1
+     * pbuffer when no window host has attached yet. Standalone popup panels
+     * (see [TaoStandalonePopup]) need the shared context to exist before
+     * `nativeCreatePanel`; in apps that already opened a Tao window this is
+     * a cheap no-op. Returns `false` when ANGLE/D3D11 is unavailable.
+     */
+    @JvmStatic
+    external fun nativeEnsureHeadlessContext(): Boolean
 }

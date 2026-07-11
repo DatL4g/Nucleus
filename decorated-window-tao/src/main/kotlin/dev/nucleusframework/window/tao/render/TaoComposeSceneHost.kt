@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
+import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -117,6 +118,14 @@ internal class TaoComposeSceneHost(
      * BaseComposeScene picks it up. Set once before [attach].
      */
     var semanticsOwnerListener: PlatformContext.SemanticsOwnerListener? = null
+
+    /**
+     * When true, Compose Popup / DropdownMenu / Tooltip layers materialise as
+     * native NSPanels ([TaoPopupSceneLayer]) instead of drawing inside this
+     * window's Metal render target. Opt-in — see the Windows counterpart.
+     * Set before [attach].
+     */
+    var nativePopupLayers: Boolean = false
 
     // Mirrors `PlatformWindowContext.desktop.kt` — Compose's `Popup` framework
     // reads `LocalWindowInfo.current.containerSize` to know how large the host
@@ -295,24 +304,45 @@ internal class TaoComposeSceneHost(
                 textToolbar = textToolbar,
             )
 
+        val hostPopupHost = if (nativePopupLayers) popupHost() else null
         scene =
-            // Match Windows and Linux for the main host scene: Compose
-            // Popup / DropdownMenu / Tooltip content stays in the same
-            // Metal render target instead of becoming a native NSPanel.
-            // NativeView overlay scenes still opt into TaoComposeSceneContext
-            // when their popups must float above an embedded AppKit view.
-            CanvasLayersComposeScene(
-                density = Density(scale),
-                layoutDirection = GlobalLayoutDirection,
-                size = IntSize(widthPx, heightPx),
-                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                platformContext = taoPlatformContext,
-                invalidate = {
-                    // Schedule a frame on the render loop (coalesced); it renders
-                    // then waits for the next vsync. See startRenderLoop.
-                    frameDispatcher?.scheduleFrame()
-                },
-            ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            if (hostPopupHost != null) {
+                // Opt-in path (e.g. tray popups): every Popup becomes a native
+                // NSPanel owned by this window, so popup content can extend
+                // beyond — and float independently of — the window bounds.
+                PlatformLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = GlobalLayoutDirection,
+                    size = IntSize(widthPx, heightPx),
+                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                    composeSceneContext =
+                        TaoComposeSceneContext(
+                            platformContext = taoPlatformContext,
+                            popupHost = hostPopupHost,
+                        ),
+                    invalidate = {
+                        frameDispatcher?.scheduleFrame()
+                    },
+                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            } else {
+                // Match Windows and Linux for the main host scene: Compose
+                // Popup / DropdownMenu / Tooltip content stays in the same
+                // Metal render target instead of becoming a native NSPanel.
+                // NativeView overlay scenes still opt into TaoComposeSceneContext
+                // when their popups must float above an embedded AppKit view.
+                CanvasLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = GlobalLayoutDirection,
+                    size = IntSize(widthPx, heightPx),
+                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                    platformContext = taoPlatformContext,
+                    invalidate = {
+                        // Schedule a frame on the render loop (coalesced); it renders
+                        // then waits for the next vsync. See startRenderLoop.
+                        frameDispatcher?.scheduleFrame()
+                    },
+                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            }
 
         registerInboundDnD()
     }

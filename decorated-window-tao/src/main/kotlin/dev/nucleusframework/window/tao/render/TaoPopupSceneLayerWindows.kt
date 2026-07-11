@@ -62,8 +62,12 @@ internal class TaoPopupSceneLayerWindows(
      */
     private var released = false
 
+    // Work-area sized (not parent-window sized) so a popup larger than its
+    // owner window lays out at full size — mirrors the macOS
+    // TaoPopupSceneLayer contract. Critical for tiny owner windows (e.g. the
+    // tray-popup anchor pattern) where the parent is only a few px.
     private val sceneLayoutSize: IntSize =
-        host.parentWindowSize.let {
+        host.workAreaSize.let {
             IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
         }
     private var drawBounds: IntRect = IntRect(0, 0, 1, 1)
@@ -161,25 +165,14 @@ internal class TaoPopupSceneLayerWindows(
             codePoint: Int,
             modifiers: Int,
         ) {
-            val isShift = modifiers and TaoNativeWireFormat.MOD_SHIFT != 0
-            val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
-            val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
-            val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
-            val ev =
-                taoKeyEvent(
-                    keyDown = type == TaoNativeWireFormat.KEY_DOWN,
-                    vkCode = vkCode,
-                    keyLocation = 0,
-                    isShift = isShift,
-                    isCtrl = isCtrl,
-                    isAlt = isAlt,
-                    isMeta = isMeta,
-                    codePoint = codePoint,
-                )
-            if (onPreviewKeyEvent?.invoke(ev) == true) return
-            val consumed = innerScene.sendKeyEvent(ev)
-            if (consumed) return
-            onKeyEvent?.invoke(ev)
+            innerScene.dispatchNativeKeyEvent(
+                type = type,
+                vkCode = vkCode,
+                codePoint = codePoint,
+                modifiers = modifiers,
+                onPreviewKeyEvent = onPreviewKeyEvent,
+                onKeyEvent = onKeyEvent,
+            )
         }
     }
 

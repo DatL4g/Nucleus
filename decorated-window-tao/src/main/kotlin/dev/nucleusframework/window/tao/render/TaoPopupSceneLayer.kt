@@ -244,28 +244,14 @@ internal class TaoPopupSceneLayer(
             codePoint: Int,
             modifiers: Int,
         ) {
-            val isShift = modifiers and TaoNativeWireFormat.MOD_SHIFT != 0
-            val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
-            val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
-            val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
-            val ev =
-                taoKeyEvent(
-                    keyDown = type == TaoNativeWireFormat.KEY_DOWN,
-                    vkCode = vkCode,
-                    keyLocation = 0,
-                    isShift = isShift,
-                    isCtrl = isCtrl,
-                    isAlt = isAlt,
-                    isMeta = isMeta,
-                    codePoint = codePoint,
-                )
-            if (onPreviewKeyEvent?.invoke(ev) == true) return
-            val consumed = innerScene.sendKeyEvent(ev)
-            if (type == TaoNativeWireFormat.KEY_DOWN) {
-                innerScene.dispatchSyntheticKeyTyped(codePoint, isShift, isCtrl, isAlt, isMeta)
-            }
-            if (consumed) return
-            onKeyEvent?.invoke(ev)
+            innerScene.dispatchNativeKeyEvent(
+                type = type,
+                vkCode = vkCode,
+                codePoint = codePoint,
+                modifiers = modifiers,
+                onPreviewKeyEvent = onPreviewKeyEvent,
+                onKeyEvent = onKeyEvent,
+            )
         }
     }
 

@@ -19,6 +19,7 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
+import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -87,6 +88,15 @@ internal class TaoComposeSceneHostWindows(
      * BaseComposeScene picks it up. Set once before [attach].
      */
     var semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null
+
+    /**
+     * When true, Compose Popup / DropdownMenu / Tooltip layers materialise as
+     * real per-pixel-transparent top-level HWNDs ([TaoPopupSceneLayerWindows])
+     * instead of drawing inside this window's render target. Opt-in because
+     * the inline default avoids Windows-only compositor artifacts in the
+     * custom title-bar path. Set before [attach].
+     */
+    var nativePopupLayers: Boolean = false
 
     private val windowInfo = WindowsTaoWindowInfo()
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
@@ -258,13 +268,32 @@ internal class TaoComposeSceneHostWindows(
                 textToolbar = textToolbar,
             )
         scene =
-            CanvasLayersComposeScene(
-                density = Density(scale),
-                layoutDirection = GlobalLayoutDirection,
-                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                platformContext = platformContext,
-                invalidate = { window.requestRedraw() },
-            ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            if (nativePopupLayers) {
+                // Opt-in path (e.g. tray popups): every Popup becomes a
+                // transparent WS_POPUP HWND owned by this window, so popup
+                // content can extend beyond — and float independently of —
+                // the window bounds. popupHost() is non-null here: hwnd and
+                // directContext were both set above.
+                PlatformLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = GlobalLayoutDirection,
+                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                    composeSceneContext =
+                        TaoComposeSceneContextWindows(
+                            platformContext = platformContext,
+                            popupHost = requireNotNull(popupHost()),
+                        ),
+                    invalidate = { window.requestRedraw() },
+                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            } else {
+                CanvasLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = GlobalLayoutDirection,
+                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                    platformContext = platformContext,
+                    invalidate = { window.requestRedraw() },
+                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            }
 
         registerInboundDnD()
         registerTouchInput()
@@ -1336,7 +1365,7 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    private companion object {
+    internal companion object {
         // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
         // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f
@@ -1374,8 +1403,12 @@ internal class TaoComposeSceneHostWindows(
          * back, so we resetGLAll on every frame entry in that regime.
          * The flag-gated path stays for the single-host case to keep the
          * single-window hot path cheap.
+         *
+         * internal: standalone popup hosts (TaoStandalonePopupHost) share
+         * the process EGL context too and register themselves here so window
+         * hosts re-sync their Skia GL state cache.
          */
-        private val attachedHostCount =
+        internal val attachedHostCount =
             java
                 .util
                 .concurrent
