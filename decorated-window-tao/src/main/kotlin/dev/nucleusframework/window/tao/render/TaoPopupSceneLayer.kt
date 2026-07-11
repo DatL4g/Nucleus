@@ -162,11 +162,19 @@ internal class TaoPopupSceneLayer(
      * default (false) leaves text fields uneditable. We always say "yes,
      * focused" because the popup, by virtue of being on screen via Compose
      * intent, is logically focused from the app's perspective.
+     *
+     * `containerSize` MUST be the work-area-sized [sceneLayoutSize], not the
+     * owner window (or popup) size: `Popup.skiko.kt` composes its measure
+     * policy inside this layer's scene and, with `clippingEnabled` (the
+     * default), clamps the popup position into `LocalWindowInfo.containerSize`
+     * (`clipPosition`). Reporting the owner window size here pins every popup
+     * inside the window — the whole point of native popup layers is to escape
+     * it. Same contract as [TaoPopupSceneLayerWindows]'s popupWindowInfo.
      */
     private val popupWindowInfo: androidx.compose.ui.platform.WindowInfo =
         object : androidx.compose.ui.platform.WindowInfo {
             override val isWindowFocused: Boolean = true
-            override val containerSize: IntSize get() = IntSize(widthPx, heightPx)
+            override val containerSize: IntSize get() = sceneLayoutSize
         }
 
     private val innerScene: ComposeScene =
