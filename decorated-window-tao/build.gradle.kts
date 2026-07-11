@@ -97,6 +97,25 @@ tasks.configureEach {
     }
 }
 
+// ── macOS standalone-popup smoke check ──────────────────────────────────────
+// AppKit requires the NSPanel to be created on the macOS main thread. Gradle's
+// test worker runs tests off the main thread, so the macOS smoke check runs as
+// a main() via JavaExec (process main thread = macOS main thread). Windows uses
+// the in-process JUnit test in StandalonePanelNativeSmokeTest.
+
+val smokeStandalonePanelMac by tasks.registering(JavaExec::class) {
+    description = "Smoke-checks the macOS standalone-popup native chain (ownerless NSPanel + Metal)"
+    group = "verification"
+    onlyIf { Os.isFamily(Os.FAMILY_MAC) }
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.nucleusframework.window.tao.StandalonePanelMacSmokeMain")
+    // Run main() on thread 0 (the macOS main thread). The JVM normally runs
+    // main() on a spawned pthread, but AppKit only permits NSWindow/NSPanel
+    // creation on the true main thread. -XstartOnFirstThread is the same flag
+    // LWJGL/GLFW use on macOS.
+    jvmArgs("-XstartOnFirstThread")
+}
+
 // ── Maven publication ──────────────────────────────────────────────────────
 
 mavenPublishing {

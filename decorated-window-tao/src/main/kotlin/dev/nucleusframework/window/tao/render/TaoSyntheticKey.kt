@@ -7,6 +7,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.scene.ComposeScene
+import dev.nucleusframework.core.runtime.Platform
 import java.awt.Component
 import java.awt.event.InputEvent
 
@@ -133,6 +134,10 @@ private fun awtModifierMask(
  * constants are declared with `KEY_LOCATION_STANDARD` — since `Key`
  * equality encodes the location, anything else (e.g. UNKNOWN) makes every
  * non-character key (Backspace, Enter, arrows…) unmatchable.
+ *
+ * [vkCode] is the platform's native virtual-key code: Windows `VK_*` values
+ * match the AWT codes Compose's `Key` constants use, but macOS `NSEvent.keyCode`
+ * (`kVK_*`) values do not and are translated via [macNativeKeyToAwt].
  */
 @OptIn(InternalComposeUiApi::class)
 internal fun ComposeScene.dispatchNativeKeyEvent(
@@ -147,11 +152,17 @@ internal fun ComposeScene.dispatchNativeKeyEvent(
     val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
     val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
     val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
+    val (awtVkCode, keyLocation) =
+        if (Platform.Current == Platform.MacOS) {
+            macNativeKeyToAwt(vkCode, codePoint)
+        } else {
+            vkCode to java.awt.event.KeyEvent.KEY_LOCATION_STANDARD
+        }
     val ev =
         taoKeyEvent(
             keyDown = type == TaoNativeWireFormat.KEY_DOWN,
-            vkCode = vkCode,
-            keyLocation = java.awt.event.KeyEvent.KEY_LOCATION_STANDARD,
+            vkCode = awtVkCode,
+            keyLocation = keyLocation,
             isShift = isShift,
             isCtrl = isCtrl,
             isAlt = isAlt,
@@ -167,11 +178,16 @@ internal fun ComposeScene.dispatchNativeKeyEvent(
     onKeyEvent?.invoke(ev)
 }
 
-/** Heuristic: ASCII control range and Cmd/Ctrl combos are not text input. */
+/**
+ * Heuristic: ASCII control range, Cmd/Ctrl combos and Apple's function-key
+ * Unicode range are not text input. macOS reports arrows/F-keys/Home… as
+ * PUA code points (`NSEvent.characters` = U+F700–U+F8FF) which would
+ * otherwise be inserted into text fields as tofu glyphs.
+ */
 internal fun Int.isPrintableTextInput(
     isCtrl: Boolean,
     isMeta: Boolean,
-): Boolean = this >= 0x20 && this != 0x7F && !isCtrl && !isMeta
+): Boolean = this >= 0x20 && this != 0x7F && this !in 0xF700..0xF8FF && !isCtrl && !isMeta
 
 /**
  * AWT requires a non-null `Component` as the source of every key event.
