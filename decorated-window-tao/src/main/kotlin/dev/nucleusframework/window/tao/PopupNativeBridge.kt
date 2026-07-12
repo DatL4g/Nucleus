@@ -58,6 +58,21 @@ internal object PopupNativeBridge {
         heightPx: Int,
     )
 
+    /**
+     * Repositions an ownerless (standalone) panel on the primary screen using
+     * top-left-origin physical pixels. The standalone counterpart of
+     * [nativeSetFrameInWindow]: no parent window, AppKit Y is flipped against
+     * the full screen frame (menu bar included) on the native side.
+     */
+    @JvmStatic
+    external fun nativeSetFrameOnScreen(
+        panel: Long,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+    )
+
     /** Brings the panel front (regardless of activation state). */
     @JvmStatic
     external fun nativeOrderFront(panel: Long)
@@ -151,6 +166,17 @@ internal object PopupNativeBridge {
     external fun nativeSetIgnoresMouseEvents(
         panel: Long,
         ignore: Boolean,
+    )
+
+    /**
+     * Applies a [TaoCursorIcon] code to the panel: stored on the content view
+     * (re-asserted by AppKit's `cursorUpdate:`) and set immediately while the
+     * panel is visible.
+     */
+    @JvmStatic
+    external fun nativeSetPanelCursor(
+        panel: Long,
+        iconCode: Int,
     )
 
     /** Installs the JNI [EventCallback] on the panel's content view. Pass `null` to remove. */

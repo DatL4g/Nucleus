@@ -109,6 +109,7 @@ static const char kCallbackEnableKey = 2; // BOOL — flipped to NO on release
 static const char kRegionEnableKey   = 3; // BOOL — region-based hitTest mode
 static const char kRegionDataKey     = 4; // NSData with float[count*4] (x, y, w, h) in pixels
 static const char kRegionCountKey    = 5; // NSNumber<int>
+static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanelCursor
 
 // Forward declaration: the panel class is defined further down but the
 // content view's `maybeBecomeKey:` needs to refer to it.
@@ -183,6 +184,7 @@ static const char kRegionCountKey    = 5; // NSNumber<int>
     }
     NSTrackingAreaOptions opts = NSTrackingMouseMoved
                                | NSTrackingMouseEnteredAndExited
+                               | NSTrackingCursorUpdate
                                | NSTrackingActiveInKeyWindow
                                | NSTrackingActiveAlways
                                | NSTrackingInVisibleRect;
@@ -192,6 +194,20 @@ static const char kRegionCountKey    = 5; // NSNumber<int>
                owner:self
             userInfo:nil];
     [self addTrackingArea:ta];
+}
+
+/* Re-asserts the Compose-requested cursor whenever AppKit decides the
+ * cursor needs refreshing (entering the view, window ordering changes).
+ * Only active once `nativeSetPanelCursor` stored a cursor — owner-based
+ * popups that route cursor changes through their host window keep the
+ * default responder behaviour. */
+- (void)cursorUpdate:(NSEvent *)event {
+    NSCursor *cursor = objc_getAssociatedObject(self, &kCursorKey);
+    if (cursor != nil) {
+        [cursor set];
+    } else {
+        [super cursorUpdate:event];
+    }
 }
 
 - (jobject)takeCallbackOrNil {
@@ -294,8 +310,12 @@ static const char kRegionCountKey    = 5; // NSNumber<int>
 @interface NucleusTaoPopupPanel : NSPanel
 @property (nonatomic, weak) NSWindow *parentHostWindow;
 @property (nonatomic) BOOL canKey;
-@property (nonatomic, strong) id outsideMonitor;        // NSEvent monitor token
-@property (nonatomic, strong) NSValue *outsideListenerVal; // jobject global ref boxed
+// YES for an ownerless (standalone) panel: no parent window, screen-coord
+// positioning, global outside-click monitor, and makeKeyWindow on focusable.
+@property (nonatomic) BOOL isStandalone;
+@property (nonatomic, strong) id outsideMonitor;           // local NSEvent monitor token
+@property (nonatomic, strong) id outsideGlobalMonitor;       // global NSEvent monitor token (standalone only)
+@property (nonatomic, strong) NSValue *outsideListenerVal;  // jobject global ref boxed
 @end
 
 @implementation NucleusTaoPopupPanel
@@ -374,6 +394,28 @@ static NSRect to_screen_frame(NSWindow *parent, jint xPx, jint yPx, jint wPx, ji
                       wPt, hPt);
 }
 
+/* Ownerless variant: positions the panel on the primary screen using
+ * top-left-origin physical-pixel coordinates (the space the Kotlin host
+ * works in). AppKit's screen coords are bottom-left points, so we flip Y
+ * against the full screen frame (includes the menu bar — the tray icon sits
+ * at the very top, so the menu-bar height must NOT be subtracted). */
+static NSRect to_screen_frame_ownerless(jint xPx, jint yPx, jint wPx, jint hPx) {
+    NSScreen *screen = [NSScreen mainScreen];
+    if (screen == nil) {
+        return NSMakeRect((CGFloat)xPx, (CGFloat)yPx, (CGFloat)wPx, (CGFloat)hPx);
+    }
+    CGFloat scale = screen.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    NSRect screenFrame = screen.frame;
+    CGFloat xPt = (CGFloat)xPx / scale;
+    CGFloat yTopPt = (CGFloat)yPx / scale;
+    CGFloat wPt = (CGFloat)wPx / scale;
+    CGFloat hPt = (CGFloat)hPx / scale;
+    return NSMakeRect(screenFrame.origin.x + xPt,
+                      screenFrame.origin.y + screenFrame.size.height - yTopPt - hPt,
+                      wPt, hPt);
+}
+
 /* ================================================================== */
 /*  JNI exports                                                        */
 /*  Package: dev.nucleusframework.window.tao                 */
@@ -387,6 +429,45 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeCreatePanel(
     jint xPx, jint yPx, jint widthPx, jint heightPx)
 {
     (void)env; (void)clazz;
+
+    // Ownerless (standalone) panel: no parent window. Positioned on the
+    // primary screen in top-left-origin physical pixels. Used by tray-style
+    // popups that must float with no backing window in the process.
+    if (parentNsViewPtr == 0) {
+        NSRect frame = to_screen_frame_ownerless(xPx, yPx, widthPx, heightPx);
+        NSWindowStyleMask mask = NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel;
+
+        NucleusTaoPopupPanel *panel =
+            [[NucleusTaoPopupPanel alloc] initWithContentRect:frame
+                                                    styleMask:mask
+                                                      backing:NSBackingStoreBuffered
+                                                        defer:NO];
+        panel.parentHostWindow = nil;
+        panel.isStandalone = YES;
+        panel.canKey = NO; // toggled via nativeSetFocusable
+        panel.opaque = NO;
+        panel.backgroundColor = [NSColor clearColor];
+        panel.hasShadow = YES;
+        panel.level = NSPopUpMenuWindowLevel;
+        panel.hidesOnDeactivate = NO;
+        panel.animationBehavior = NSWindowAnimationBehaviorNone;
+        panel.movableByWindowBackground = NO;
+        panel.releasedWhenClosed = NO;
+        // Standalone tray popups need keyboard focus without activating the
+        // app: `becomesKeyOnlyIfNeeded` + the explicit makeKeyWindow we trigger
+        // from nativeSetFocusable (no host window to lose its active look).
+        [panel setBecomesKeyOnlyIfNeeded:YES];
+
+        NucleusTaoPopupContent *contentView =
+            [[NucleusTaoPopupContent alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
+        contentView.wantsLayer = YES;
+        panel.contentView = contentView;
+
+        // Not added as a child window — ownerless by design.
+        void *retained = (__bridge_retained void *)panel;
+        return (jlong)(uintptr_t)retained;
+    }
+
     NSWindow *parent = window_from_view(parentNsViewPtr);
     if (parent == nil) return 0;
 
@@ -399,6 +480,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeCreatePanel(
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
     panel.parentHostWindow = parent;
+    panel.isStandalone = NO;
     panel.canKey = NO; // toggled via nativeSetFocusable
     panel.opaque = NO;
     panel.backgroundColor = [NSColor clearColor];
@@ -428,6 +510,21 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeCreatePanel(
     return (jlong)(uintptr_t)retained;
 }
 
+/* Ownerless screen-coord setter: repositions a standalone panel on the
+ * primary screen using top-left-origin physical pixels. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFrameOnScreen(
+    JNIEnv *env, jclass clazz,
+    jlong panelPtr,
+    jint xPx, jint yPx, jint widthPx, jint heightPx)
+{
+    (void)env; (void)clazz;
+    if (panelPtr == 0) return;
+    NucleusTaoPopupPanel *panel = (__bridge NucleusTaoPopupPanel *)(void *)(uintptr_t)panelPtr;
+    NSRect frame = to_screen_frame_ownerless(xPx, yPx, widthPx, heightPx);
+    [panel setFrame:frame display:YES];
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFrameInWindow(
     JNIEnv *env, jclass clazz,
@@ -451,6 +548,13 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeOrderFront(
     if (panelPtr == 0) return;
     NucleusTaoPopupPanel *panel = (__bridge NucleusTaoPopupPanel *)(void *)(uintptr_t)panelPtr;
     [panel orderFrontRegardless];
+    // Standalone tray popups take key focus on show: a makeKeyWindow issued
+    // while the panel was still ordered out (e.g. from nativeSetFocusable at
+    // setup time) is a no-op, so it must be (re)applied here. Non-activating
+    // panel style keeps the previously active app unactivated.
+    if (panel.isStandalone && panel.canKey && !panel.isKeyWindow) {
+        [panel makeKeyWindow];
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -471,6 +575,14 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFocusable(
     if (panelPtr == 0) return;
     NucleusTaoPopupPanel *panel = (__bridge NucleusTaoPopupPanel *)(void *)(uintptr_t)panelPtr;
     panel.canKey = focusable ? YES : NO;
+    // Standalone (ownerless) tray popups have no host window whose "active"
+    // appearance could be disrupted, so it's safe — and necessary — to take
+    // key focus immediately when the panel becomes focusable: an ownerless
+    // non-activating panel otherwise never receives keyDown events. The owner
+    // -based path keeps the original "only on demand" behaviour.
+    if (panel.isStandalone && focusable && !panel.isKeyWindow) {
+        [panel makeKeyWindow];
+    }
     // Deliberately NOT calling `[panel makeKeyWindow]` here. With
     // `becomesKeyOnlyIfNeeded = YES` (set in nativeCreatePanel), AppKit
     // grants the panel key status only when the user clicks on a
@@ -495,6 +607,42 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetIgnoresMouseEven
     if (panelPtr == 0) return;
     NucleusTaoPopupPanel *panel = (__bridge NucleusTaoPopupPanel *)(void *)(uintptr_t)panelPtr;
     [panel setIgnoresMouseEvents:ignore ? YES : NO];
+}
+
+/* Maps the shared TaoCursorIcon wire codes (NativeTaoBridge.kt) to AppKit
+ * cursors. Codes without a public NSCursor equivalent (WAIT, HELP, the
+ * diagonal resizes) fall back to the arrow. */
+static NSCursor *cursorForCode(jint code) {
+    switch (code) {
+        case 1:  return [NSCursor IBeamCursor];               // TEXT
+        case 2:  return [NSCursor pointingHandCursor];        // HAND
+        case 3:  return [NSCursor crosshairCursor];           // CROSSHAIR
+        case 5:  return [NSCursor openHandCursor];            // MOVE
+        case 6:  return [NSCursor operationNotAllowedCursor]; // NOT_ALLOWED
+        case 9:  return [NSCursor resizeLeftRightCursor];     // EW_RESIZE
+        case 10: return [NSCursor resizeUpDownCursor];        // NS_RESIZE
+        default: return [NSCursor arrowCursor];
+    }
+}
+
+/* Applies a Compose-requested cursor to the panel. Stores the cursor on the
+ * content view (re-asserted by `cursorUpdate:` on enter/window changes) and
+ * sets it immediately — Compose only calls this while the pointer is over
+ * the panel, so an instant [set] is always appropriate. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetPanelCursor(
+    JNIEnv *env, jclass clazz, jlong panelPtr, jint iconCode)
+{
+    (void)env; (void)clazz;
+    if (panelPtr == 0) return;
+    NucleusTaoPopupPanel *panel = (__bridge NucleusTaoPopupPanel *)(void *)(uintptr_t)panelPtr;
+    NucleusTaoPopupContent *content = (NucleusTaoPopupContent *)panel.contentView;
+    if (content == nil) return;
+    NSCursor *cursor = cursorForCode(iconCode);
+    objc_setAssociatedObject(content, &kCursorKey, cursor, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (panel.isVisible) {
+        [cursor set];
+    }
 }
 
 /* Toggles region-based hit-testing. Used by `NativeView`'s overlay
@@ -574,13 +722,24 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetEventCallback(
     objc_setAssociatedObject(content, &kCallbackEnableKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
-/* Installs a process-wide NSEvent monitor that fires for every left/right
- * mouseDown anywhere in the app. When the click does NOT target this
- * panel, calls back into Java's `OutsideClickListener.onOutsideClick`
- * which Compose's Popup framework wires to `dismissOnClickOutside`.
+/* Installs an NSEvent monitor that fires for every left/right/other
+ * mouseDown and calls back into Java's `OutsideClickListener.onOutsideClick`
+ * (wired to Compose's `dismissOnClickOutside`) when the click does NOT target
+ * this panel.
  *
- * The monitor returns the event unchanged so AppKit dispatches it
- * normally (we observe; we don't consume). */
+ * Two scopes:
+ *  - A **local** monitor always installed: sees events delivered to *this
+ *    app*. Same-window clicks (inside the popup) are skipped; any other
+ *    in-app click (e.g. on the tray status item, or another window of the
+ *    app) fires the listener. This is what owner-based popups need.
+ *  - A **global** monitor installed only for standalone (ownerless) panels:
+ *    sees mouseDowns delivered to *other* applications (global monitors never
+ *    receive events for our own app). A tray popup with no backing window
+ *    must also dismiss when the user clicks the desktop or another app, which
+ *    the local monitor can't observe.
+ *
+ * Both monitors return the event unchanged so AppKit dispatches it normally
+ * (we observe; we don't consume). */
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeInstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panelPtr, jobject listener)
@@ -591,6 +750,10 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeInstallOutsideClick
     if (panel.outsideMonitor != nil) {
         [NSEvent removeMonitor:panel.outsideMonitor];
         panel.outsideMonitor = nil;
+    }
+    if (panel.outsideGlobalMonitor != nil) {
+        [NSEvent removeMonitor:panel.outsideGlobalMonitor];
+        panel.outsideGlobalMonitor = nil;
     }
     if (panel.outsideListenerVal != nil) {
         jobject prev = (jobject)panel.outsideListenerVal.pointerValue;
@@ -604,6 +767,8 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeInstallOutsideClick
     __weak NucleusTaoPopupPanel *weakPanel = panel;
     NSEventMask mask = NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown |
                        NSEventMaskOtherMouseDown;
+
+    // Local monitor — in-app clicks not on this panel.
     panel.outsideMonitor = [NSEvent
         addLocalMonitorForEventsMatchingMask:mask
                                      handler:^NSEvent *(NSEvent *e) {
@@ -627,6 +792,32 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeInstallOutsideClick
         if ((*jenv)->ExceptionCheck(jenv)) (*jenv)->ExceptionClear(jenv);
         return e;
     }];
+
+    // Global monitor — clicks in OTHER apps. Only needed for standalone
+    // (ownerless) panels: an owner-based popup dismisses via its host window's
+    // focus loss, and installing a global monitor would change that working
+    // path's behaviour. Global monitors never receive events for our own app,
+    // so no window filtering is required here.
+    if (panel.isStandalone) {
+        panel.outsideGlobalMonitor = [NSEvent
+            addGlobalMonitorForEventsMatchingMask:mask
+                                           handler:^(NSEvent *e) {
+            NucleusTaoPopupPanel *p = weakPanel;
+            if (p == nil) return;
+            NSValue *box = p.outsideListenerVal;
+            if (box == nil) return;
+            jobject cb = (jobject)box.pointerValue;
+            if (cb == NULL) return;
+            JNIEnv *jenv = attachThread();
+            if (jenv == NULL) return;
+            jint type = EVT_PTR_DOWN;
+            jint btn = 1;
+            if (e.type == NSEventTypeRightMouseDown) btn = 2;
+            else if (e.type == NSEventTypeOtherMouseDown) btn = 3;
+            (*jenv)->CallVoidMethod(jenv, cb, sOutsideOnClickMethod, type, btn);
+            if ((*jenv)->ExceptionCheck(jenv)) (*jenv)->ExceptionClear(jenv);
+        }];
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -639,6 +830,10 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeUninstallOutsideCli
     if (panel.outsideMonitor != nil) {
         [NSEvent removeMonitor:panel.outsideMonitor];
         panel.outsideMonitor = nil;
+    }
+    if (panel.outsideGlobalMonitor != nil) {
+        [NSEvent removeMonitor:panel.outsideGlobalMonitor];
+        panel.outsideGlobalMonitor = nil;
     }
     if (panel.outsideListenerVal != nil) {
         jobject prev = (jobject)panel.outsideListenerVal.pointerValue;
@@ -667,10 +862,14 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeRelease(
         }
     }
 
-    // Drop outside monitor + listener global ref.
+    // Drop outside monitors + listener global ref.
     if (panel.outsideMonitor != nil) {
         [NSEvent removeMonitor:panel.outsideMonitor];
         panel.outsideMonitor = nil;
+    }
+    if (panel.outsideGlobalMonitor != nil) {
+        [NSEvent removeMonitor:panel.outsideGlobalMonitor];
+        panel.outsideGlobalMonitor = nil;
     }
     if (panel.outsideListenerVal != nil) {
         jobject prev = (jobject)panel.outsideListenerVal.pointerValue;

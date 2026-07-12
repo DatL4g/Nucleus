@@ -9,8 +9,11 @@ import kotlin.test.assertTrue
 
 /**
  * Verifies the native chain behind the standalone popup panel without any
- * Tao event loop: headless EGL context bootstrap, ownerless panel creation,
- * context binding and Skia DirectContext creation. Windows-only.
+ * Tao event loop: ownerless panel creation, surface attach and Skia
+ * DirectContext creation. Windows-only — see [StandalonePanelMacSmokeMain]
+ * for the macOS equivalent (AppKit requires the NSPanel be created on the
+ * main thread, so it runs as a `main()` via the `smokeStandalonePanelMac`
+ * JavaExec task, not as a JUnit test in the off-main test worker).
  */
 class StandalonePanelNativeSmokeTest {
     @Test

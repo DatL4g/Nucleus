@@ -12,6 +12,7 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
  * side compares clicks against the logical content rect, not the inflated
  * draw-bounds HWND used for Compose-drawn elevation.
  */
+@Suppress("TooManyFunctions")
 internal object PopupNativeBridgeWindows {
     private const val LIBRARY_NAME = "nucleus_tao_windows_native_view"
 
