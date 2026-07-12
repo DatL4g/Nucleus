@@ -230,6 +230,8 @@ internal class TaoComposeSceneHostWindows(
             dev.nucleusframework.window.tao.NativeTaoDManipBridge.isLoaded &&
             dev.nucleusframework.window.tao.NativeTaoDManipBridge
                 .nativeAttach(hwnd)
+        dev.nucleusframework.window.tao.TaoScrollDiagnostics
+            .directManipulationAttached = dmanipAttached
 
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()
@@ -1064,6 +1066,12 @@ internal class TaoComposeSceneHostWindows(
             wheelFling.cancel()
         }
         dmanipSessionActive = active
+        dev.nucleusframework.window.tao.TaoScrollDiagnostics.directManipulationSession = active
+        // While the OS runs a manipulation, keep frames coming at vsync so
+        // the fetch pumps DManip at render cadence — Chromium pumps from its
+        // BeginFrame the same way. The native 8ms timer (~15.6ms real
+        // granularity) remains as a backstop when nothing else invalidates.
+        if (active) window.requestRedraw()
 
         val scaleDelta = dmanipDeltas[2]
         if (kotlin.math.abs(scaleDelta - 1f) > DMANIP_SCALE_EPSILON) {

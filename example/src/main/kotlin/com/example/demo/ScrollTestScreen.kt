@@ -35,6 +35,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.tao.TaoScrollDiagnostics
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
@@ -93,6 +94,8 @@ fun ScrollTestScreen() {
     var liveRawY by remember { mutableStateOf(0f) }
     var liveValue by remember { mutableStateOf(0) }
     var fps by remember { mutableStateOf(0) }
+    var inertiaLabel by remember { mutableStateOf("inactive") }
+    var backendLabel by remember { mutableStateOf("?") }
 
     // Live render FPS = frame-clock ticks per second. This is the metric the
     // scroll-cadence fix changes (the smooth-scroll tween ticks once per frame):
@@ -123,6 +126,14 @@ fun ScrollTestScreen() {
         while (true) {
             delay(40)
             liveValue = scrollState.value
+            inertiaLabel =
+                when {
+                    TaoScrollDiagnostics.directManipulationSession -> "OS (DManip)"
+                    TaoScrollDiagnostics.softwareFlingActive -> "logicielle (fling)"
+                    else -> "inactive"
+                }
+            backendLabel =
+                if (TaoScrollDiagnostics.directManipulationAttached) "DManip" else "molette"
             val now = System.nanoTime() / 1_000_000
             if (meter.inGesture && now - meter.lastTimeMs >= IDLE_MS) {
                 val px = scrollState.value - meter.startValuePx
@@ -158,6 +169,8 @@ fun ScrollTestScreen() {
                 value = liveValue,
                 maxValue = scrollState.maxValue,
                 fps = fps,
+                inertiaLabel = inertiaLabel,
+                backendLabel = backendLabel,
                 onReset = {
                     gestures.clear()
                     counter = 0
@@ -231,6 +244,8 @@ private fun StatsPanel(
     value: Int,
     maxValue: Int,
     fps: Int,
+    inertiaLabel: String,
+    backendLabel: String,
     onReset: () -> Unit,
     onCopy: () -> Unit,
 ) {
@@ -247,6 +262,11 @@ private fun StatsPanel(
         Text(
             "live rawΔy = %+.3f   |   offset = %d / %d   |   avg px/gesture = %.0f   |   render = %d fps"
                 .format(liveRawY, value, maxValue, avgPx, fps),
+            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            "backend = $backendLabel   |   inertie = $inertiaLabel",
             fontFamily = FontFamily.Monospace,
             style = MaterialTheme.typography.bodyMedium,
         )

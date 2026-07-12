@@ -282,6 +282,10 @@ static LRESULT CALLBACK DManipSubclassProc(HWND hwnd,
           SetTimer(hwnd, DMANIP_TIMER_ID, DMANIP_TIMER_MS, nullptr);
           s->timerActive = TRUE;
         }
+        /* Pump immediately: waiting for the first WM_TIMER tick (8 ms
+         * nominal, ~15.6 ms real granularity) plus a paint adds a visible
+         * dead window at gesture start on hard flicks. */
+        PumpAndInvalidate(s);
       }
       break;
     }
