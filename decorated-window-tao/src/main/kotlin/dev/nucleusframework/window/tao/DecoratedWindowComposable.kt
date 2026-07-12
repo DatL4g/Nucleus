@@ -86,7 +86,10 @@ fun ApplicationScope.DecoratedWindow(
      *   it wins.
      * - Windows: drops this window's taskbar button and Alt+Tab entry
      *   (`WS_EX_TOOLWINDOW`). Per-window.
-     * - Linux: no-op.
+     * - Linux: drops this window's taskbar and pager entries (GTK
+     *   skip-taskbar/skip-pager hints, `_NET_WM_STATE_SKIP_TASKBAR`).
+     *   Per-window; effective on X11 and XWayland, no-op on native Wayland,
+     *   which has no client-side taskbar opt-out.
      *
      * Applied at window creation.
      */

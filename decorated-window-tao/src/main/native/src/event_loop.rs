@@ -209,7 +209,16 @@ pub(crate) fn run_event_loop_blocking() {
                         use tao::platform::windows::WindowBuilderExtWindows;
                         builder = builder.with_skip_taskbar(skip_taskbar);
                     }
-                    #[cfg(not(target_os = "windows"))]
+                    // Linux: GTK skip-taskbar + skip-pager hints
+                    // (_NET_WM_STATE_SKIP_TASKBAR). Effective on X11 and
+                    // XWayland; silently ignored on native Wayland, which has
+                    // no client-side taskbar opt-out protocol.
+                    #[cfg(target_os = "linux")]
+                    {
+                        use tao::platform::unix::WindowBuilderExtUnix;
+                        builder = builder.with_skip_taskbar(skip_taskbar);
+                    }
+                    #[cfg(target_os = "macos")]
                     let _ = skip_taskbar;
                     // Linux: build cursor-following overlays as GTK_WINDOW_POPUP
                     // transient children — on Wayland GDK maps them as

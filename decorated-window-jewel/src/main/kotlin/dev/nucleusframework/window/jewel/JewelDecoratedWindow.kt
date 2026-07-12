@@ -93,7 +93,8 @@ fun NucleusApplicationScope.JewelDecoratedWindow(
     // (parent-relative coordinates). For drag ghosts. Ignored elsewhere.
     popupFor: NucleusWindow? = null,
     // Hide this window from the OS taskbar/Dock while it stays visible and
-    // focusable (Tao backend; macOS + Windows). No-op on AWT and Linux.
+    // focusable (Tao backend; on Linux effective on X11/XWayland only).
+    // No-op on AWT.
     hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
