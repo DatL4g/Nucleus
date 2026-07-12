@@ -144,16 +144,6 @@ internal class TaoComposeSceneHostWindows(
     private var heightPx: Int = 0
     private var scale: Float = 1f
 
-    /**
-     * While the OS modal resize loop is active (VSync off, see
-     * [onResizeLoopChanged]) this is the minimum spacing between resize
-     * repaints — a frame cap that coalesces the WM_SIZE flood down to roughly
-     * the display refresh so we don't render far above what the monitor shows.
-     * 0 = uncapped (outside the loop, or when the refresh rate is unknown).
-     */
-    private var resizeFrameIntervalNanos: Long = 0L
-    private var lastResizePaintNanos: Long = 0L
-
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
@@ -818,22 +808,6 @@ internal class TaoComposeSceneHostWindows(
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
 
-        // Frame cap during the modal resize loop. VSync is off then (see
-        // onResizeLoopChanged), so nothing paces the render loop: Win32 can
-        // deliver WM_SIZE far above the display refresh and we'd render frames
-        // the monitor never shows — the CPU/GPU spike observed during resize.
-        // Coalesce the burst to ~refresh by skipping repaints that fall inside
-        // one frame interval. The swap-chain resize (nativeResize) is deferred
-        // to the frame we actually paint, so a coalesced-out WM_SIZE never
-        // leaves an enlarged-but-unpainted (black) surface: the child simply
-        // lags the window by at most one refresh interval, which the monitor
-        // can't display anyway. The final size is reconciled on loop exit.
-        if (resizeFrameIntervalNanos > 0L) {
-            val now = System.nanoTime()
-            if (now - lastResizePaintNanos < resizeFrameIntervalNanos) return
-            lastResizePaintNanos = now
-        }
-
         NativeTaoGlBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         // Paint synchronously instead of deferring via requestRedraw().
         //
@@ -858,24 +832,16 @@ internal class TaoComposeSceneHostWindows(
      * WM_EXITSIZEMOVE). VSync is dropped while the loop is active so the
      * synchronous per-WM_SIZE present in [onResized] doesn't block on the
      * display refresh — the window edge tracks the cursor with no added
-     * latency. To stop that from turning into an uncapped render loop (VSync
-     * being the usual frame limiter), [onResized] paces itself to the monitor
-     * refresh via [resizeFrameIntervalNanos] for the duration. On exit VSync is
-     * restored and the swap chain is reconciled to the exact final size (a
-     * coalesced-out last WM_SIZE may have left it one step behind).
+     * latency. Every WM_SIZE is resized and painted atomically; allowing the
+     * scene size to advance while the ANGLE child surface remains at an older
+     * size makes DWM stretch the old frame and visibly shifts the title bar.
+     * On exit VSync is restored and the final size is presented once more.
      */
     fun onResizeLoopChanged(active: Boolean) {
         if (attachmentHandle == 0L) return
         if (active) {
             NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
-            val hz = if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeMonitorRefreshHz(hwnd) else 0
-            // Allow ~10% headroom over the refresh period so timing jitter
-            // doesn't drop every other frame into the next interval (beating
-            // down to half-rate). Unknown refresh (0) leaves the loop uncapped.
-            resizeFrameIntervalNanos = if (hz > 1) 1_000_000_000L / hz * 9 / 10 else 0L
-            lastResizePaintNanos = 0L
         } else {
-            resizeFrameIntervalNanos = 0L
             NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
             NativeTaoGlBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
             onRedrawRequested()
