@@ -5,7 +5,8 @@
 
 package dev.nucleusframework.desktop.application.tasks
 
-import dev.nucleusframework.desktop.application.internal.NativeLibArchDetector
+import dev.nucleusframework.desktop.application.internal.SandboxJarRewriter
+import dev.nucleusframework.desktop.application.internal.SandboxMarkers
 import dev.nucleusframework.desktop.application.internal.files.mangledName
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
 import org.gradle.api.file.ConfigurableFileCollection
@@ -13,6 +14,7 @@ import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFile
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
+import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
@@ -21,22 +23,29 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
-import java.io.FileOutputStream
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
+import java.util.Properties
 
 /**
- * Strips native libraries from dependency JARs when sandboxing is enabled.
+ * Strips native libraries from dependency JARs when sandboxing is enabled and rewrites the
+ * extract-and-load call sites that would otherwise break in store distributions (issue #317).
  *
- * Since [AbstractExtractNativeLibsTask] already extracts native libs into the app resources
- * directory, keeping them inside the JARs would cause duplication in the final package.
- * This task rewrites JARs without native lib entries (.dylib, .jnilib, .so, .dll).
+ * For each native-lib entry the task writes a small unique **marker** file at the same resource
+ * path (instead of bare stripping) and records `sha256(marker) -> bundled lib filename` in a
+ * manifest. It rewrites every `System.load(String)` / `Runtime.load(String)` call site in
+ * dependency classes to route through the runtime shim
+ * `dev.nucleusframework.sandbox.NucleusSandboxLoader.load`, and injects the shim JAR onto the app
+ * classpath. At runtime a third-party loader extracts the marker to temp and calls `System.load`;
+ * the shim hashes it, looks the bundled signed copy up in the manifest, and loads that instead.
+ * `System.loadLibrary`-first loaders are intentionally untouched (they already work via
+ * `java.library.path`). Reflection-based `System.load` calls escape rewriting (documented gap).
  *
- * Output JARs use content-hash-mangled filenames to avoid collisions when multiple
- * input JARs share the same simple name (common in multi-module projects).
+ * JARs matching [keepNativeLibsInJar] are copied verbatim (real native libs kept, no rewrite) —
+ * an escape hatch for loaders that validate the extracted content (magic bytes/checksums) and
+ * would reject a marker.
+ *
+ * The jar-rewrite logic lives in [SandboxJarRewriter] (unit-tested); this task wires Gradle
+ * inputs/outputs and emits the manifest. Output JARs use content-hash-mangled filenames
+ * ([mangledName]) to avoid collisions when multiple input JARs share the same simple name.
  */
 @DisableCachingByDefault(because = "Rewrites JARs to strip native libs; fast and not worth caching")
 abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
@@ -49,6 +58,18 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
+
+    /** Receives `nucleus-sandbox-manifest.properties` (`sha256(marker)=bundledLibName`). */
+    @get:OutputDirectory
+    abstract val manifestOutputDir: DirectoryProperty
+
+    /**
+     * Substrings matched against input JAR simple names. A JAR whose name contains any entry here
+     * is copied verbatim (native libs kept, classes not rewritten) — escape hatch for loaders that
+     * validate extracted content and would reject a marker.
+     */
+    @get:Input
+    abstract val keepNativeLibsInJar: SetProperty<String>
 
     @get:Internal
     val mainJarInOutputDir: Provider<RegularFile>
@@ -66,8 +87,20 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
         if (outDir.exists()) outDir.deleteRecursively()
         outDir.mkdirs()
 
+        val manifestDir = manifestOutputDir.get().asFile
+        if (manifestDir.exists()) manifestDir.deleteRecursively()
+        manifestDir.mkdirs()
+
+        val manifest = Properties()
+        val escapeMatchers = keepNativeLibsInJar.get()
         val expectedMainJarName = mainJarName.get()
-        var strippedCount = 0
+        var markedCount = 0
+        var keptCount = 0
+        var rewrittenClassCount = 0
+
+        // Inject the runtime shim JAR onto the app classpath (fixed name, not mangled).
+        SandboxJarRewriter.injectShimJar(outDir)
+        logger.lifecycle("Sandboxing: injected runtime shim JAR '{}'", SandboxMarkers.SHIM_JAR_NAME)
 
         for (file in inputJars.files) {
             if (!file.exists()) continue
@@ -85,65 +118,42 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
                 continue
             }
 
-            // Quick check: does this JAR contain any native libs?
-            var hasNativeLibs = false
-            ZipInputStream(BufferedInputStream(file.inputStream())).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory && NativeLibArchDetector.isNativeLib(entry.name)) {
-                        hasNativeLibs = true
-                        break
-                    }
-                    entry = zis.nextEntry
-                }
-            }
-
-            if (!hasNativeLibs) {
+            val keepReal = escapeMatchers.any { file.name.contains(it) }
+            if (keepReal) {
                 file.copyTo(outputFile, overwrite = true)
+                keptCount += SandboxJarRewriter.countNativeLibs(file)
+                logger.lifecycle("Sandboxing: kept native libs verbatim in {} (escape hatch)", file.name)
                 continue
             }
 
-            // Rewrite JAR without native lib entries
-            ZipInputStream(BufferedInputStream(file.inputStream())).use { zis ->
-                ZipOutputStream(BufferedOutputStream(FileOutputStream(outputFile))).use { zos ->
-                    var entry = zis.nextEntry
-                    while (entry != null) {
-                        if (!entry.isDirectory && NativeLibArchDetector.isNativeLib(entry.name)) {
-                            logger.lifecycle(
-                                "Sandboxing: stripped '{}' from {}",
-                                entry.name,
-                                file.name,
-                            )
-                            strippedCount++
-                        } else {
-                            zos.putNextEntry(
-                                ZipEntry(entry.name).apply {
-                                    time = entry.time
-                                    if (entry.method == ZipEntry.STORED) {
-                                        method = ZipEntry.STORED
-                                        size = entry.size
-                                        compressedSize = entry.compressedSize
-                                        crc = entry.crc
-                                    }
-                                },
-                            )
-                            if (!entry.isDirectory) {
-                                zis.copyTo(zos)
-                            }
-                            zos.closeEntry()
-                        }
-                        entry = zis.nextEntry
-                    }
-                }
+            if (!SandboxJarRewriter.hasNativeLibs(file)) {
+                // No native libs to mark — but still rewrite System.load call sites in classes,
+                // which is cheap and keeps the shim passthrough consistent across the classpath.
             }
+
+            val result = SandboxJarRewriter.rewriteJar(file, outputFile, outputFileName, keepReal = false, logger)
+            for ((sha, bundledName) in result.manifest) {
+                manifest.setProperty(sha, bundledName)
+            }
+            markedCount += result.markedLibs
+            rewrittenClassCount += result.rewrittenClasses
         }
 
-        if (strippedCount > 0) {
-            logger.lifecycle(
-                "Sandboxing: stripped {} native lib(s) from JARs to avoid duplication with extracted resources",
-                strippedCount,
-            )
-        }
+        // Emit the manifest next to the extracted native libs (packaged into app resources).
+        val manifestFile = manifestDir.resolve(SandboxMarkers.MANIFEST_FILENAME)
+        manifest.store(
+            manifestFile.outputStream().buffered(),
+            "Nucleus sandbox native-lib redirect manifest: sha256(marker)=bundledLibName",
+        )
+
+        logger.lifecycle(
+            "Sandboxing: marked {} native lib(s), rewrote {} class(es), kept {} lib(s) verbatim; " +
+                "manifest at {}",
+            markedCount,
+            rewrittenClassCount,
+            keptCount,
+            manifestFile,
+        )
     }
 
     private companion object {

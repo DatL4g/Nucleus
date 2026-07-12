@@ -12,6 +12,18 @@ dependencyLocking {
     lockAllConfigurations()
 }
 
+// === Sandbox runtime shim source set ===
+// Declared before `dependencies` so the shim classes can be exposed to tests below.
+// A tiny Java-only source set compiled into a standalone JAR embedded as a resource
+// (nucleus/sandbox/nucleus-sandbox-shim.jar) inside the plugin artifact. The sandboxed packaging
+// pipeline (AbstractStripNativeLibsFromJarsTask) extracts this JAR onto the packaged app's
+// classpath at build time so rewritten System.load call sites can route through
+// dev.nucleusframework.sandbox.NucleusSandboxLoader. Kept as a separate source set so the shim
+// class never lands on the plugin's own classpath as a class — only the packaged JAR resource does.
+val sandboxShimSourceSet = sourceSets.create("sandboxShim") {
+    java.setSrcDirs(listOf("src/sandboxShim/java"))
+}
+
 dependencies {
     implementation(kotlin("stdlib"))
     implementation(gradleApi())
@@ -36,6 +48,10 @@ dependencies {
     implementation(libs.aws.url.connection.client)
 
     testImplementation(libs.junit)
+    // Expose the sandbox shim classes to tests so NucleusSandboxLoader.resolveBundled can be
+    // exercised directly (the shim ships only as an embedded JAR resource, not on the main
+    // plugin classpath, so it must be added explicitly here).
+    testImplementation(sandboxShimSourceSet.output)
 }
 
 apply(from = "test-analysis-libraries.gradle.kts")
@@ -49,6 +65,27 @@ java {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
 }
+
+// === Sandbox runtime shim jar + embedding ===
+val sandboxShimJar by tasks.registering(Jar::class) {
+    archiveFileName.set("nucleus-sandbox-shim.jar")
+    // Nest under nucleus/sandbox/ so processResources places it at that path inside the
+    // plugin JAR, resolvable via getResourceAsStream("/nucleus/sandbox/nucleus-sandbox-shim.jar").
+    // Output must live OUTSIDE the sandboxShim source set's own resources dir, otherwise the
+    // jar would re-include itself via `from(...)`.
+    destinationDirectory.set(layout.buildDirectory.dir("sandboxShimEmbed/nucleus/sandbox"))
+    // Package only the compiled classes — NOT `sourceSet.output` (which includes the resources
+    // dir and would pull in stale/self-nested jars from prior runs).
+    from(sandboxShimSourceSet.output.classesDirs)
+    // Deterministic, reproducible resource (no timestamps from the build host).
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
+// Make the embedded shim JAR part of the main resources so it ships inside the plugin
+// artifact AND is on the test runtime classpath (strip-task unit tests read it as a resource).
+sourceSets.main.get().resources.srcDir(layout.buildDirectory.dir("sandboxShimEmbed"))
+tasks.named("processResources") { dependsOn(sandboxShimJar) }
 
 kotlin {
     compilerOptions {
