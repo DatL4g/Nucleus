@@ -47,10 +47,12 @@ internal object NativeTaoDManipBridge {
     external fun nativeDetach(hwnd: Long)
 
     /**
-     * Drains accumulated manipulation deltas into [out] (size >= 3):
+     * Drains accumulated manipulation deltas into [out] (size >= 4):
      * `out[0]`/`out[1]` = pan delta X/Y in physical px since the last fetch,
-     * `out[2]` = multiplicative scale delta (1.0 = no zoom). Returns the
-     * current `STATUS_*`.
+     * `out[2]` = multiplicative scale delta (1.0 = no zoom),
+     * `out[3]` = cumulative touchpad hit-test count (0 forever = legacy
+     * driver, DManip can't engage on that machine). Returns the current
+     * `STATUS_*`.
      */
     @JvmStatic
     external fun nativeFetch(

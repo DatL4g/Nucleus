@@ -1049,7 +1049,7 @@ internal class TaoComposeSceneHostWindows(
     // ── DirectManipulation drain ────────────────────────────────────────
     private var dmanipAttached = false
     private var dmanipSessionActive = false
-    private val dmanipDeltas = FloatArray(3)
+    private val dmanipDeltas = FloatArray(4)
 
     @OptIn(ExperimentalComposeUiApi::class)
     private fun drainDirectManipulation() {
@@ -1067,6 +1067,8 @@ internal class TaoComposeSceneHostWindows(
         }
         dmanipSessionActive = active
         dev.nucleusframework.window.tao.TaoScrollDiagnostics.directManipulationSession = active
+        dev.nucleusframework.window.tao.TaoScrollDiagnostics.directManipulationContacts =
+            dmanipDeltas[3].toInt()
         // While the OS runs a manipulation, keep frames coming at vsync so
         // the fetch pumps DManip at render cadence — Chromium pumps from its
         // BeginFrame the same way. The native 8ms timer (~15.6ms real

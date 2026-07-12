@@ -116,6 +116,25 @@ class TaoWheelFlingTest {
     }
 
     @Test
+    fun deceleratingReleaseDoesNotGlide() {
+        Harness().use { h ->
+            // Fast start, then the fingers slow to a near-stop before lifting
+            // (precise positioning). The release velocity must come from the
+            // deceleration tail, not the earlier speed — no drift allowed.
+            var t = 0L
+            repeat(4) {
+                h.fling.onUserScroll(0f, 1.5f, t)
+                t += 8
+            }
+            h.fling.onUserScroll(0f, 0.05f, 60L)
+            h.fling.onUserScroll(0f, 0.03f, 85L)
+            h.fling.onUserScroll(0f, 0.02f, 110L)
+            assertFalse(h.awaitGlideStart(timeoutMs = 300))
+            assertTrue(h.emitted.isEmpty(), "a decelerated release must stop in place")
+        }
+    }
+
+    @Test
     fun tooFewEventsDoNotGlide() {
         Harness().use { h ->
             // A lone coalesced quantum (or two) has no measurable duration —
