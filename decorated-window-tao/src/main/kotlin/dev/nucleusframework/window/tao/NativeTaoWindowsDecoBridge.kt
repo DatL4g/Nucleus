@@ -156,13 +156,15 @@ internal object NativeTaoWindowsDecoBridge {
     /**
      * Windows analogue of the macOS "hidden from Dock" activation policy.
      *
-     * `hidden = true` adds `WS_EX_TOOLWINDOW` and clears `WS_EX_APPWINDOW`, so
-     * the window drops off the taskbar and the Alt+Tab switcher while staying
-     * visible and focusable; `false` restores the standard taskbar button.
+     * `hidden = true` owns the window to a hidden helper window and adds
+     * `WS_EX_TOOLWINDOW` / clears `WS_EX_APPWINDOW`, so it drops off the taskbar
+     * and the Alt+Tab switcher while staying visible and focusable; `false`
+     * restores the standard taskbar button. The owner window is what makes the
+     * exclusion survive activation (Alt+Tab) — the ex-style alone is only
+     * sampled at first show (same technique as WinForms `ShowInTaskbar=false`).
      *
      * Per-HWND (unlike macOS, where the policy is app-wide). Applied at
-     * `attach()` while the window is still hidden, so the taskbar samples the
-     * updated ex-style on the first show.
+     * `attach()` while the window is still hidden.
      */
     @JvmStatic
     external fun nativeSetHiddenFromDock(

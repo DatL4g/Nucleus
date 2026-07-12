@@ -833,19 +833,46 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetWindowO
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+/* Process-wide hidden owner window used to keep hiddenFromDock windows off the
+ * taskbar (see nativeSetHiddenFromDock). Created lazily on the UI thread, never
+ * destroyed. */
+static HWND g_hiddenTaskbarOwner = NULL;
+
+static HWND getHiddenTaskbarOwner(void) {
+    if (g_hiddenTaskbarOwner && IsWindow(g_hiddenTaskbarOwner)) {
+        return g_hiddenTaskbarOwner;
+    }
+    /* A 0-size, never-shown popup off-screen. WS_EX_TOOLWINDOW keeps the owner
+     * itself off the taskbar; the predefined "Static" class avoids registering
+     * one from this /NODEFAULTLIB DLL. */
+    g_hiddenTaskbarOwner = CreateWindowExW(
+        WS_EX_TOOLWINDOW, L"Static", L"", WS_POPUP,
+        -32000, -32000, 0, 0,
+        NULL, NULL, GetModuleHandleW(NULL), NULL);
+    return g_hiddenTaskbarOwner;
+}
+
 /* Hides or restores the window's taskbar button — the Windows analogue of the
  * macOS "hidden from Dock" activation policy.
  *
- *   hidden == TRUE  → add WS_EX_TOOLWINDOW, remove WS_EX_APPWINDOW: the window
+ *   hidden == TRUE  → owns the window to a hidden helper window and adds
+ *                     WS_EX_TOOLWINDOW / clears WS_EX_APPWINDOW. The window
  *                     drops off the taskbar and the Alt+Tab switcher while
  *                     staying visible and focusable (like macOS Accessory).
  *   hidden == FALSE → the reverse (standard taskbar button + Alt+Tab entry).
  *
- * The taskbar samples the ex-style when a top-level window transitions to
- * visible, so a live change is only honoured after a hide/show cycle. When the
- * window is already visible we cycle it; when it is still hidden (the normal
- * case — this is applied at attach(), before the first paint shows the window)
- * the style is simply staged for the upcoming show. */
+ * Why an owner window rather than the ex-style alone: WS_EX_TOOLWINDOW is only
+ * sampled when the shell first shows the window, so the taskbar button comes
+ * back the next time the window is activated through Alt+Tab / the switcher. An
+ * owned top-level window that lacks WS_EX_APPWINDOW is *structurally* excluded
+ * from the taskbar and stays excluded across activation — the same technique
+ * WinForms uses for `ShowInTaskbar = false`. The hidden owner is 0-size and
+ * never shown, so it imposes no visible z-order or minimise coupling.
+ *
+ * The ex-style is sampled on show, so a live change also needs a hide/show
+ * cycle when the window is already visible; when it is still hidden (the normal
+ * case — applied at attach(), before the first paint shows the window) the
+ * change is simply staged for the upcoming show. */
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetHiddenFromDock(
     JNIEnv *env, jclass clazz, jlong hwndLong, jboolean hidden)
@@ -856,17 +883,28 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetHiddenF
 
     LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
     LONG_PTR updated = exStyle;
+    HWND desiredOwner;
     if (hidden) {
         updated |= WS_EX_TOOLWINDOW;
         updated &= ~(LONG_PTR)WS_EX_APPWINDOW;
+        desiredOwner = getHiddenTaskbarOwner();
     } else {
         updated &= ~(LONG_PTR)WS_EX_TOOLWINDOW;
         updated |= WS_EX_APPWINDOW;
+        desiredOwner = NULL;
     }
-    if (updated == exStyle) return;
 
+    HWND currentOwner = (HWND)(uintptr_t)GetWindowLongPtrW(hwnd, GWLP_HWNDPARENT);
+    BOOL ownerChanged = (currentOwner != desiredOwner);
+    BOOL styleChanged = (updated != exStyle);
+    if (!ownerChanged && !styleChanged) return;
+
+    /* The taskbar only re-evaluates on a visibility transition, so cycle the
+     * window when it is already visible; otherwise stage the change for the
+     * upcoming show. */
     BOOL wasVisible = IsWindowVisible(hwnd);
     if (wasVisible) ShowWindow(hwnd, SW_HIDE);
-    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, updated);
+    if (styleChanged) SetWindowLongPtrW(hwnd, GWL_EXSTYLE, updated);
+    if (ownerChanged) SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, (LONG_PTR)(uintptr_t)desiredOwner);
     if (wasVisible) ShowWindow(hwnd, SW_SHOW);
 }
