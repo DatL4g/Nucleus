@@ -42,6 +42,19 @@
 /* Placement new without <new> — /NODEFAULTLIB forbids the CRT header. */
 inline void* operator new(size_t, void* where) noexcept { return where; }
 
+/* GUID operator== lowers to memcmp, which lives in the CRT we don't link.
+ * Same shim family as deco.c's memset. #pragma function stops MSVC from
+ * folding the definition back into the intrinsic. */
+#pragma function(memcmp)
+extern "C" int memcmp(const void* s1, const void* s2, size_t n) {
+  const unsigned char* a = (const unsigned char*)s1;
+  const unsigned char* b = (const unsigned char*)s2;
+  for (size_t i = 0; i < n; i++) {
+    if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
+}
+
 #define DMANIP_SUBCLASS_ID ((UINT_PTR)0xD3A1)
 #define DMANIP_TIMER_ID ((UINT_PTR)0xD3A2)
 #define DMANIP_TIMER_MS 8

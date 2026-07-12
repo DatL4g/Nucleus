@@ -131,7 +131,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-cl /LD /O1 /GS- /nologo ^
+cl /LD /O1 /GS- /GR- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%DECO_SRC%" "%DMANIP_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_windows_deco.dll" ^
@@ -208,7 +208,7 @@ if errorlevel 1 (
 
 REM ARM64 MSVC doesn't inline Interlocked* intrinsics — they live in the C
 REM runtime, so /NODEFAULTLIB must be omitted on this target.
-cl /LD /O1 /GS- /nologo ^
+cl /LD /O1 /GS- /GR- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%DECO_SRC%" "%DMANIP_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_deco.dll" ^
