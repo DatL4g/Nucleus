@@ -113,8 +113,8 @@ internal fun ApplicationScope.openDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     // Materialise Compose Popup layers as native transparent windows
-    // (NSPanel / WS_POPUP HWND) instead of drawing them inline in this
-    // window's render target. Windows/macOS only; ignored on Linux.
+    // (NSPanel / WS_POPUP HWND / Tao popup window on Linux) instead of
+    // drawing them inline in this window's render target.
     nativePopupLayers: Boolean = false,
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
     // Parent composition locals to bridge into this window's own ComposeScene
@@ -184,6 +184,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             onPreviewKeyEvent,
             onKeyEvent,
             initialCompositionLocalContext,
+            nativePopupLayers,
             content,
         )
     }
@@ -406,9 +407,11 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     onPreviewKeyEvent: (KeyEvent) -> Boolean,
     onKeyEvent: (KeyEvent) -> Boolean,
     initialCompositionLocalContext: CompositionLocalContext?,
+    nativePopupLayers: Boolean,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host = TaoComposeSceneHostLinux(window)
+    host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)

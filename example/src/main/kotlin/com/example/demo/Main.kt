@@ -147,6 +147,7 @@ fun main(args: Array<String>) =
                 onCloseRequest = ::exitApplication,
                 title = "Nucleus Demo",
                 minimumSize = DpSize(1300.dp, 480.dp),
+                nativePopupLayers = true,
             ) {
                 CompositionLocalProvider(
                     LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
