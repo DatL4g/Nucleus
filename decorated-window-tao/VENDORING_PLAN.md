@@ -32,7 +32,7 @@ Every phase below is **atomic**:
 1. Apply one patch to `vendor/tao/`.
 2. Regenerate the matching `vendor/tao-patches/000X-*.patch` file.
 3. Delete the external workaround that the patch obsoletes.
-4. Build and run the affected sample (`sample-tao` / `sample-cmp`).
+4. Build and run the affected sample (`tao-demo` / `cmp-demo`).
 5. Run the **E2E checklist** for that phase.
 6. Run `./gradlew preMerge` on the affected OS.
 7. Commit (`feat(tao-patch): <title>`) — one commit per phase.
@@ -61,7 +61,7 @@ If the E2E test fails: revert the phase commit, reopen the patch, do **not** sta
 **E2E gate (all platforms):**
 
 - [ ] `cargo build --release` succeeds, native libs are byte-comparable to the pre-vendoring build (modulo timestamps).
-- [ ] `./gradlew :sample-tao:run` opens, renders Compose, closes cleanly on Linux **and** Windows **and** macOS.
+- [ ] `./gradlew :examples:tao-demo:run` opens, renders Compose, closes cleanly on Linux **and** Windows **and** macOS.
 - [ ] `./gradlew preMerge` is green on all three OSes.
 
 **Commit:** `chore(decorated-window-tao): vendor tao 0.35.0 (no patches yet)`
@@ -348,7 +348,7 @@ Estimated cost per bump: 30 min – 2 h depending on conflict density.
 - Each phase's commit removes its corresponding external hack — no half-finished phases.
 - `vendor/tao-patches/README.md` lists every patch with rationale and (when applicable) link to the upstream issue / PR.
 - `./gradlew preMerge` is green on all three OSes after each phase.
-- `sample-tao` and `sample-cmp` pass manual E2E checklists for the affected feature.
+- `tao-demo` and `cmp-demo` pass manual E2E checklists for the affected feature.
 - After Phase 12, the codebase has zero remaining tao-related hacks except the four explicitly out-of-scope ones above.
 
 ---

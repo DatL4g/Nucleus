@@ -206,7 +206,7 @@ Each phase is **atomic**: write code, build, smoke-test on a Windows machine, co
 ### Phase 0 — Cleanup (0.25 d)
 - Delete stale `*.obj` files in `src/main/native/windows/`.
 - Add `.gitignore` rule.
-- Confirm baseline `./gradlew :sample-tao:run` still works on Windows (no overlay yet).
+- Confirm baseline `./gradlew :examples:tao-demo:run` still works on Windows (no overlay yet).
 
 **Commit:** `chore(decorated-window-tao): clean stale native obj artifacts`
 
@@ -300,7 +300,7 @@ Port `NativeViewOverlayController.kt` (macOS) line-by-line:
 
 **Cross-cutting benefit:** context menus / `DropdownMenu` / `Tooltip` / `BasicTextField` context menus in the **main** Compose scene now also render as proper top-level HWNDs, can extend beyond the window, dismiss on outside-click. Today they're confined to the canvas because Windows uses `CanvasLayersComposeScene`.
 
-**Smoke test:** in `sample-tao`, right-click a `BasicTextField` in the main scene (not the overlay) — context menu opens, can extend below the window edge.
+**Smoke test:** in `tao-demo`, right-click a `BasicTextField` in the main scene (not the overlay) — context menu opens, can extend below the window edge.
 
 **Commit:** `feat(decorated-window-tao): use PlatformLayersComposeScene on Windows`
 
@@ -318,9 +318,9 @@ Pattern mirrors macOS `popupKeyHandlers`:
 - `SampleWebViewWindowsBridge.kt` + native code wrapping WebView2 (or, for v1, a stub `CreateWindowEx("EDIT", ...)` so the sample builds without WebView2 Runtime dependency).
 - Extend `WebViewTab.kt` to call `createSampleWebViewPlatformView()` returning `NucleusPlatformView.HWnd` on Windows.
 
-**Smoke test:** `./gradlew :sample-tao:run` on Windows shows the WebView/EDIT child with the floating NavPill overlay above; clicking buttons and typing the URL field works; right-click on the field opens a context menu that can extend outside the window.
+**Smoke test:** `./gradlew :examples:tao-demo:run` on Windows shows the WebView/EDIT child with the floating NavPill overlay above; clicking buttons and typing the URL field works; right-click on the field opens a context menu that can extend outside the window.
 
-**Commit:** `feat(sample-tao): wire NativeView WebView demo on Windows`
+**Commit:** `feat(tao-demo): wire NativeView WebView demo on Windows`
 
 ### Phase 10 — GPU matrix validation (1 d)
 Test on:

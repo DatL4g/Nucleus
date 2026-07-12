@@ -132,7 +132,7 @@ The existing decoupling between `innerScene.size` (layout constraint, fixed) and
 6. ⏳ **Windows layer** — swap constant in `TaoPopupSceneLayerWindows`.
 7. ⏳ **GraalVM metadata** — outbound JNI methods don't need explicit registration (resolved by symbol lookup); revisit if a new callback class is introduced.
 8. **Manual verify** on each OS:
-   - `example` app: open the title-bar tooltips at various window sizes — they should never be clipped by owner height.
+   - `nucleus-demo` app: open the title-bar tooltips at various window sizes — they should never be clipped by owner height.
    - Resize main window to 400×300 in the gallery; open the `DropdownMenu` on the gallery's color screen. Content should lay out unconstrained relative to the screen, not the owner.
    - Drag the window to the right edge; open a context menu that would extend past the owner's right edge. Expect normal layout (Compose's PositionProvider flips it, since now it knows the full space).
 

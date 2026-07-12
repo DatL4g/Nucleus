@@ -283,23 +283,23 @@ jobs:
 
       - name: Build packages
         shell: bash
-        run: ./gradlew :example:packageReleaseDistributionForCurrentOS --stacktrace --no-daemon
+        run: ./gradlew :examples:nucleus-demo:packageReleaseDistributionForCurrentOS --stacktrace --no-daemon
 
       - name: Create sandboxed app ZIP (macOS only)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          SANDBOXED_APP="$(find example/build/compose/binaries -path '*/app-sandboxed/*.app' -type d | head -1)"
+          SANDBOXED_APP="$(find examples/nucleus-demo/build/compose/binaries -path '*/app-sandboxed/*.app' -type d | head -1)"
           if [[ -n "$SANDBOXED_APP" ]]; then
             APP_NAME="$(basename "$SANDBOXED_APP")"
             # Derive name from existing ZIP to keep consistent naming
-            EXISTING_ZIP="$(find example/build/compose/binaries -name '*.zip' -type f | head -1)"
+            EXISTING_ZIP="$(find examples/nucleus-demo/build/compose/binaries -name '*.zip' -type f | head -1)"
             if [[ -n "$EXISTING_ZIP" ]]; then
               BASE="$(basename "$EXISTING_ZIP" .zip)"
-              SANDBOXED_ZIP="example/build/compose/binaries/sandboxed-${BASE}.zip"
+              SANDBOXED_ZIP="examples/nucleus-demo/build/compose/binaries/sandboxed-${BASE}.zip"
             else
               ARCH="$(uname -m | sed 's/x86_64/x64/;s/arm64/arm64/')"
-              SANDBOXED_ZIP="example/build/compose/binaries/sandboxed-${APP_NAME%.app}-${ARCH}.zip"
+              SANDBOXED_ZIP="examples/nucleus-demo/build/compose/binaries/sandboxed-${APP_NAME%.app}-${ARCH}.zip"
             fi
             echo "==> Zipping sandboxed .app: $SANDBOXED_APP → $SANDBOXED_ZIP"
             ditto -c -k --keepParent "$SANDBOXED_APP" "$SANDBOXED_ZIP"
@@ -313,29 +313,29 @@ jobs:
         with:
           name: release-assets-${{ runner.os }}-${{ matrix.arch }}
           path: |
-            example/build/compose/binaries/**/*.deb
-            example/build/compose/binaries/**/*.rpm
-            example/build/compose/binaries/**/*.pub.asc
-            example/build/compose/binaries/**/*.pacman
-            example/build/compose/binaries/**/*.snap
-            example/build/compose/binaries/**/*.flatpak
-            example/build/compose/binaries/**/*.AppImage
-            example/build/compose/binaries/**/*.appimage
-            example/build/compose/binaries/**/*.msi
-            example/build/compose/binaries/**/*.exe
-            example/build/compose/binaries/**/*.appx
-            !example/build/compose/binaries/**/runtime/**
-            example/build/compose/binaries/**/*.7z
-            example/build/compose/binaries/**/*.pkg
-            example/build/compose/binaries/**/*.dmg
-            example/build/compose/binaries/**/*.zip
-            example/build/compose/binaries/sandboxed-*.zip
-            example/build/compose/binaries/**/*.tar
-            example/build/compose/binaries/**/*.tar.gz
-            example/build/compose/binaries/**/*.blockmap
-            example/build/compose/binaries/**/signing-metadata.json
-            example/build/compose/binaries/**/packaging-metadata.json
-            !example/build/compose/binaries/**/app/**
+            examples/nucleus-demo/build/compose/binaries/**/*.deb
+            examples/nucleus-demo/build/compose/binaries/**/*.rpm
+            examples/nucleus-demo/build/compose/binaries/**/*.pub.asc
+            examples/nucleus-demo/build/compose/binaries/**/*.pacman
+            examples/nucleus-demo/build/compose/binaries/**/*.snap
+            examples/nucleus-demo/build/compose/binaries/**/*.flatpak
+            examples/nucleus-demo/build/compose/binaries/**/*.AppImage
+            examples/nucleus-demo/build/compose/binaries/**/*.appimage
+            examples/nucleus-demo/build/compose/binaries/**/*.msi
+            examples/nucleus-demo/build/compose/binaries/**/*.exe
+            examples/nucleus-demo/build/compose/binaries/**/*.appx
+            !examples/nucleus-demo/build/compose/binaries/**/runtime/**
+            examples/nucleus-demo/build/compose/binaries/**/*.7z
+            examples/nucleus-demo/build/compose/binaries/**/*.pkg
+            examples/nucleus-demo/build/compose/binaries/**/*.dmg
+            examples/nucleus-demo/build/compose/binaries/**/*.zip
+            examples/nucleus-demo/build/compose/binaries/sandboxed-*.zip
+            examples/nucleus-demo/build/compose/binaries/**/*.tar
+            examples/nucleus-demo/build/compose/binaries/**/*.tar.gz
+            examples/nucleus-demo/build/compose/binaries/**/*.blockmap
+            examples/nucleus-demo/build/compose/binaries/**/signing-metadata.json
+            examples/nucleus-demo/build/compose/binaries/**/packaging-metadata.json
+            !examples/nucleus-demo/build/compose/binaries/**/app/**
           if-no-files-found: error
 
   universal-macos:
@@ -356,7 +356,7 @@ jobs:
         with:
           sparse-checkout: |
             .github/actions
-            example/packaging/macos
+            examples/nucleus-demo/packaging/macos
           fetch-depth: 1
 
       - name: Setup Node.js
@@ -405,10 +405,10 @@ jobs:
           app-store-identity: ${{ secrets.MAC_APP_STORE_APPLICATION }}
           installer-identity: ${{ secrets.MAC_APP_STORE_INSTALLER }}
           keychain-path: ${{ steps.signing.outputs.keychain-path }}
-          entitlements-file: example/packaging/macos/entitlements.plist
-          runtime-entitlements-file: example/packaging/macos/runtime-entitlements.plist
-          sandboxed-entitlements-file: example/packaging/macos/entitlements-sandbox.plist
-          sandboxed-runtime-entitlements-file: example/packaging/macos/runtime-entitlements-sandbox.plist
+          entitlements-file: examples/nucleus-demo/packaging/macos/entitlements.plist
+          runtime-entitlements-file: examples/nucleus-demo/packaging/macos/runtime-entitlements.plist
+          sandboxed-entitlements-file: examples/nucleus-demo/packaging/macos/entitlements-sandbox.plist
+          sandboxed-runtime-entitlements-file: examples/nucleus-demo/packaging/macos/runtime-entitlements-sandbox.plist
           provisioning-profile: ${{ env.PROVISIONING }}
           runtime-provisioning-profile: ${{ env.RUNTIME_PROVISIONING }}
 
@@ -480,7 +480,7 @@ jobs:
         with:
           sparse-checkout: |
             .github/actions
-            example/packaging
+            examples/nucleus-demo/packaging
           fetch-depth: 1
 
       - name: Download Windows amd64 artifacts

@@ -258,7 +258,7 @@ jobs:
 
       - name: Build packages
         shell: bash
-        run: ./gradlew :example:packageReleaseDistributionForCurrentOS --stacktrace --no-daemon
+        run: ./gradlew :examples:nucleus-demo:packageReleaseDistributionForCurrentOS --stacktrace --no-daemon
 
       - name: Upload packaged artifacts
         if: always()
@@ -266,24 +266,24 @@ jobs:
         with:
           name: test-packages-${{ runner.os }}-${{ matrix.arch }}
           path: |
-            example/build/compose/binaries/**/*.deb
-            example/build/compose/binaries/**/*.rpm
-            example/build/compose/binaries/**/*.pub.asc
-            example/build/compose/binaries/**/*.pacman
-            example/build/compose/binaries/**/*.snap
-            example/build/compose/binaries/**/*.flatpak
-            example/build/compose/binaries/**/*.AppImage
-            example/build/compose/binaries/**/*.appimage
-            example/build/compose/binaries/**/*.msi
-            example/build/compose/binaries/**/*.exe
-            example/build/compose/binaries/**/*.appx
-            !example/build/compose/binaries/**/runtime/**
-            example/build/compose/binaries/**/*.7z
-            example/build/compose/binaries/**/*.pkg
-            example/build/compose/binaries/**/*.dmg
-            example/build/compose/binaries/**/*.zip
-            example/build/compose/binaries/**/*.tar
-            example/build/compose/binaries/**/*.tar.gz
-            example/build/compose/binaries/**/*.blockmap
-            !example/build/compose/binaries/**/app/**
+            examples/nucleus-demo/build/compose/binaries/**/*.deb
+            examples/nucleus-demo/build/compose/binaries/**/*.rpm
+            examples/nucleus-demo/build/compose/binaries/**/*.pub.asc
+            examples/nucleus-demo/build/compose/binaries/**/*.pacman
+            examples/nucleus-demo/build/compose/binaries/**/*.snap
+            examples/nucleus-demo/build/compose/binaries/**/*.flatpak
+            examples/nucleus-demo/build/compose/binaries/**/*.AppImage
+            examples/nucleus-demo/build/compose/binaries/**/*.appimage
+            examples/nucleus-demo/build/compose/binaries/**/*.msi
+            examples/nucleus-demo/build/compose/binaries/**/*.exe
+            examples/nucleus-demo/build/compose/binaries/**/*.appx
+            !examples/nucleus-demo/build/compose/binaries/**/runtime/**
+            examples/nucleus-demo/build/compose/binaries/**/*.7z
+            examples/nucleus-demo/build/compose/binaries/**/*.pkg
+            examples/nucleus-demo/build/compose/binaries/**/*.dmg
+            examples/nucleus-demo/build/compose/binaries/**/*.zip
+            examples/nucleus-demo/build/compose/binaries/**/*.tar
+            examples/nucleus-demo/build/compose/binaries/**/*.tar.gz
+            examples/nucleus-demo/build/compose/binaries/**/*.blockmap
+            !examples/nucleus-demo/build/compose/binaries/**/app/**
           if-no-files-found: warn

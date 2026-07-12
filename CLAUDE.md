@@ -26,12 +26,12 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 - `decorated-window-material2` - Material 2 color mapping
 - `decorated-window-material3` - Material 3 color mapping
 - `plugin-build/plugin` - Gradle plugin for packaging & distribution
-- `example` / `jewel-sample` / `sample-cmp` - Sample applications
+- `examples/` - Demo & sample applications (consolidated): `nucleus-demo` (flagship), `tao-demo`, `jni-demo`, `jewel-demo`, `cmp-demo` (KMP), `scheduler-demo`, `service-management-demo`, `system-info-demo`, `fs-watcher-smoke`, `extra-launcher-demo`, plus `shared` (Compose helper used by tao/jni demos)
 
 ## Build & Run
 
 ```bash
-./gradlew run                                    # Run example app
+./gradlew :examples:nucleus-demo:run            # Run the flagship demo app
 ./gradlew packageDistributionForCurrentOS        # Package for current OS
 ./gradlew packageReleaseDistributionForCurrentOS # Release build with ProGuard
 ./gradlew preMerge                               # Full CI verification

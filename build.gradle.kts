@@ -16,7 +16,7 @@ plugins {
 }
 
 val demoProjects =
-    setOf("example", "jewel-sample", "system-info-demo", "sample-cmp", "scheduler-demo", "service-management-demo")
+    setOf("nucleus-demo", "compose-demo", "jewel-demo", "system-info-demo", "cmp-demo", "scheduler-demo", "service-management-demo")
 
 val nativeBuildTaskPrefix = "buildNative"
 
@@ -204,7 +204,7 @@ tasks.register("preMerge") {
     dependsOn(":launcher-linux:check")
     dependsOn(":scheduler:check")
     dependsOn(":fs-watcher:check")
-    dependsOn(":example:check")
+    dependsOn(":examples:nucleus-demo:check")
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:check"))
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
 }

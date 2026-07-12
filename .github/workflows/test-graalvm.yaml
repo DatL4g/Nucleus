@@ -217,7 +217,7 @@ jobs:
 
       - name: Build GraalVM native image
         shell: bash
-        run: ./gradlew :example:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace
+        run: ./gradlew :examples:nucleus-demo:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace
 
       - name: Upload GraalVM artifacts
         if: always()
@@ -225,5 +225,5 @@ jobs:
         with:
           name: graalvm-${{ runner.os }}
           path: |
-            example/build/compose/tmp/**/graalvm/output/**
+            examples/nucleus-demo/build/compose/tmp/**/graalvm/output/**
           if-no-files-found: warn

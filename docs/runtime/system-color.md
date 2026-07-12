@@ -95,7 +95,7 @@ When the user changes their accent color in system settings, `systemAccentColor(
 The Nucleus example app uses this exact approach — you can test it by running:
 
 ```bash
-./gradlew :example:run
+./gradlew :examples:nucleus-demo:run
 ```
 
 ## API Reference

@@ -4,7 +4,7 @@
 #
 # Usage:
 #   pwsh scripts/dump-uia-tree.ps1 -Process java
-#   pwsh scripts/dump-uia-tree.ps1 -Title "sample-tao"
+#   pwsh scripts/dump-uia-tree.ps1 -Title "tao-demo"
 #   pwsh scripts/dump-uia-tree.ps1 -Title "sample" -MaxDepth 4 -Json
 #
 # Output: indented tree (default) or JSON (-Json), one line per element with

@@ -269,11 +269,11 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
-            ./gradlew :jewel-sample:packageGraalvmDeb -PnativeMarch=compatibility --no-daemon --stacktrace
+            ./gradlew :examples:jewel-demo:packageGraalvmDeb -PnativeMarch=compatibility --no-daemon --stacktrace
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            ./gradlew :jewel-sample:packageGraalvmDmg -PnativeMarch=compatibility --no-daemon --stacktrace
+            ./gradlew :examples:jewel-demo:packageGraalvmDmg -PnativeMarch=compatibility --no-daemon --stacktrace
           elif [ "$RUNNER_OS" = "Windows" ]; then
-            ./gradlew :jewel-sample:packageGraalvmNsis -PnativeMarch=compatibility --no-daemon --stacktrace
+            ./gradlew :examples:jewel-demo:packageGraalvmNsis -PnativeMarch=compatibility --no-daemon --stacktrace
           fi
 
       - name: Upload GraalVM artifacts
@@ -281,7 +281,7 @@ jobs:
         with:
           name: graalvm-jewel-${{ runner.os }}-${{ matrix.arch }}
           path: |
-            jewel-sample/build/compose/binaries/**/graalvm-*/**
+            examples/jewel-demo/build/compose/binaries/**/graalvm-*/**
           if-no-files-found: error
 
   publish:
