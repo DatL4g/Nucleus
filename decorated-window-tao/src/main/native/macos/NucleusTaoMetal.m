@@ -114,6 +114,8 @@ static void removeFullScreenButtons(NSWindow *window);
 static void updateFullScreenButtonsPosition(NSWindow *window);
 static void installMenuBarMonitor(NSView *view);
 static void removeMenuBarMonitor(NSWindow *window);
+static void neutralizeToolbarFullScreenWindows(void);
+static void ensureTaoMenuBarEventHandler(void);
 
 // ── JVM caching for native → Java callbacks ──────────────────────────────
 // Mirrors the corresponding block in decorated-window-jni's JniMacTitleBar.m.
@@ -306,8 +308,30 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
 //      created via [NSWindow standardWindowButton:forStyleMask:] — they look
 //      identical to the real traffic-lights and accept the standard actions.
 
+// Neutralizes the NSToolbarFullScreenWindow overlay AppKit creates lazily in
+// fullscreen (despite its name it hosts the re-parented native title bar, so
+// it exists even without an NSToolbar). When the menu bar is revealed on
+// pre-Tahoe non-notch screens, this overlay slides in over our Compose title
+// bar, drawing a drop shadow / titlebar separator hairline and stray titlebar
+// chrome (issue #310 B2/B4; separator fix mirrors Firefox bug 1700211).
+// Mirrors decorated-window-jni's function of the same name.
+static void neutralizeToolbarFullScreenWindows(void) {
+    Class cls = NSClassFromString(@"NSToolbarFullScreenWindow");
+    if (cls == nil) return;
+    for (NSWindow *win in NSApp.windows) {
+        if (![win isKindOfClass:cls]) continue;
+        if (!win.ignoresMouseEvents) win.ignoresMouseEvents = YES;
+        if (!win.contentView.hidden) win.contentView.hidden = YES;
+        if (win.hasShadow) win.hasShadow = NO;
+        if (@available(macOS 11.0, *)) {
+            if (win.titlebarSeparatorStyle != NSTitlebarSeparatorStyleNone) {
+                win.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
+            }
+        }
+    }
+}
+
 @interface NucleusTaoButtonsView : NSView {
-    BOOL _dispatching;
     BOOL _mouseInside;
 }
 @end
@@ -321,27 +345,29 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
     NSTrackingArea *ta = [[NSTrackingArea alloc]
         initWithRect:NSZeroRect
              options:(NSTrackingMouseEnteredAndExited |
-                      NSTrackingActiveInKeyWindow |
+                      NSTrackingActiveAlways |
                       NSTrackingInVisibleRect)
                owner:self
             userInfo:nil];
     [self addTrackingArea:ta];
 }
+// The buttons only repaint their glyphs when explicitly invalidated: they
+// query _mouseInGroup: at draw time. Synthesizing mouseEntered:/mouseExited:
+// on the buttons instead leaves _NSThemeWidget in an inconsistent hover
+// state on pre-Tahoe macOS — only the zoom button repainted, and its glyph
+// never cleared on exit (issue #310 B1).
+- (void)setButtonsNeedDisplay {
+    for (NSView *btn in self.subviews) [btn setNeedsDisplay:YES];
+}
 - (void)mouseEntered:(NSEvent *)event {
-    if (_dispatching) return;
-    _dispatching = YES;
+    (void)event;
     _mouseInside = YES;
-    [super mouseEntered:event];
-    for (NSView *btn in self.subviews) [btn mouseEntered:event];
-    _dispatching = NO;
+    [self setButtonsNeedDisplay];
 }
 - (void)mouseExited:(NSEvent *)event {
-    if (_dispatching) return;
-    _dispatching = YES;
+    (void)event;
     _mouseInside = NO;
-    [super mouseExited:event];
-    for (NSView *btn in self.subviews) [btn mouseExited:event];
-    _dispatching = NO;
+    [self setButtonsNeedDisplay];
 }
 // Private AppKit hook: standard window buttons ask their superview whether
 // the traffic-light group is hovered before drawing the glyphs. Without it,
@@ -358,13 +384,11 @@ static void computeButtonMetrics(float titleBarHeight,
                                  float *outOffset) {
     float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
     *outBtnWidth  = fminf(titleBarHeight * 0.5f, kMinHeightForFullSize * 0.5f);
-    if (isTahoeOrLater()) {
-        *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
-    } else {
-        // Keep the pre-Tahoe native 14x16 pt aspect so the glyphs aren't
-        // squashed on older macOS.
-        *outBtnHeight = (*outBtnWidth) * (16.0f / 14.0f);
-    }
+    // JBR's correction, valid on every macOS version: AppKit adds a constant
+    // 2 pt to the resulting frame height, so width * 14/12 - 2 keeps the
+    // circles perfectly round. The former pre-Tahoe 16/14 "native aspect"
+    // stretched them vertically (issue #310 follow-up).
+    *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
     *outOffset    = shrinkFactor * defaultButtonOffset();
 }
 
@@ -562,6 +586,11 @@ static OSStatus taoMenuBarRevealHandler(EventHandlerCallRef handler,
                                         EventRef event, void *userData) {
     (void)userData;
     UInt32 kind = GetEventKind(event);
+    // Pre-Tahoe: every menu-bar transition may lazily (re)create AppKit's
+    // fullscreen title-bar overlay window; keep it neutralized (#310 B2/B4).
+    if (!isTahoeOrLater() && !atomic_load(&sMetalShutdownInProgress)) {
+        neutralizeToolbarFullScreenWindows();
+    }
     if (kind == kTaoMenuBarRevealEventKind) {
         CGFloat fraction = 0;
         GetEventParameter(event, FOUR_CHAR_CODE('rvlf'), typeCGFloat, NULL,
@@ -794,11 +823,32 @@ static void removeMenuBarMonitor(NSWindow *window) {
     NSView *btn = [w standardWindowButton:NSWindowCloseButton];
     NSView *tbc = btn ? btn.superview.superview : nil;
     if (tbc != nil) tbc.hidden = YES;
+    // Also hide the standard buttons themselves: when the menu bar is
+    // revealed, AppKit can re-host the native title bar in its fullscreen
+    // overlay window, bypassing the hidden container (issue #310 B2).
+    // Restored in didExitFS.
+    [[w standardWindowButton:NSWindowCloseButton] setHidden:YES];
+    [[w standardWindowButton:NSWindowMiniaturizeButton] setHidden:YES];
+    [[w standardWindowButton:NSWindowZoomButton] setHidden:YES];
     // newFullscreenControls — install the menu bar monitor so the title bar
     // and traffic-lights animate down as the system menu bar slides in.
     NSNumber *newCtrls = objc_getAssociatedObject(w, &kTaoNewFullscreenControlsKey);
     if (newCtrls != nil && newCtrls.boolValue) {
         installMenuBarMonitor(_view);
+    }
+    // Pre-Tahoe: the Safari-style title bar is disabled, but AppKit still
+    // creates its fullscreen title-bar overlay lazily (often only on the
+    // first menu-bar reveal). Neutralize it now, once more after AppKit's
+    // lazy setup, and keep the Carbon menu-bar handler installed so every
+    // later reveal re-neutralizes a re-created overlay (issue #310 B2/B4).
+    if (!isTahoeOrLater()) {
+        neutralizeToolbarFullScreenWindows();
+        ensureTaoMenuBarEventHandler();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            if (atomic_load(&sMetalShutdownInProgress)) return;
+            neutralizeToolbarFullScreenWindows();
+        });
     }
 }
 
@@ -988,6 +1038,12 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeConfigureChrome(
         win.styleMask |= NSWindowStyleMaskFullSizeContentView;
         win.titlebarAppearsTransparent = YES;
         win.titleVisibility = NSWindowTitleHidden;
+        // The Compose title bar draws its own edge; without this the window
+        // paints a hairline under the (transparent) native title-bar zone,
+        // including on the fullscreen menu-bar reveal (issue #310 B4).
+        if (@available(macOS 11.0, *)) {
+            win.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
+        }
         win.movableByWindowBackground = NO;
         // Disable native window dragging entirely. Without this, AppKit's
         // NSTitlebarContainerView intercepts mouse-downs in the title-bar
@@ -1173,9 +1229,9 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
     NSNumber *rtlNum = objc_getAssociatedObject(window, &kTaoButtonsRtlKey);
     BOOL rtl = rtlNum != nil && rtlNum.boolValue;
 
-    // Pre-Tahoe keeps the native 14x16 pt button aspect (no -2 pt trim).
-    CGFloat sizeRatio    = isTahoeOrLater() ? (14.0 / 12.0) : (16.0 / 14.0);
-    CGFloat sizeConstant = isTahoeOrLater() ? -2.0 : 0.0;
+    // Same aspect correction as computeButtonMetrics — see the comment there.
+    CGFloat sizeRatio    = 14.0 / 12.0;
+    CGFloat sizeConstant = -2.0;
 
     NSArray *buttons = @[closeBtn, miniBtn, zoomBtn];
     [buttons enumerateObjectsUsingBlock:^(NSView *btn, NSUInteger idx, BOOL *stop) {
