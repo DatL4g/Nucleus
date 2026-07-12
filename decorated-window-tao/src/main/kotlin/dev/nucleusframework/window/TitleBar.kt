@@ -1,7 +1,5 @@
 package dev.nucleusframework.window
 
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
@@ -64,11 +62,6 @@ private val isLinuxKde: Boolean =
     Platform.Current == Platform.Linux &&
         LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
-// Matches `decorated-window-jni/TitleBar.MacOS.kt::MENU_BAR_ANIMATION_MS`.
-// The Compose menu-bar offset animation has to track AppKit's own
-// auto-hide/auto-show transition timing so the title bar slides in lockstep
-// with the system menu bar — visually identical to Safari's fullscreen.
-private const val MENU_BAR_ANIMATION_MS = 200
 private const val WINDOW_RECT_COMPONENT_COUNT = 4
 private const val SCREEN_POINT_COMPONENT_COUNT = 2
 
@@ -215,10 +208,12 @@ fun DecoratedWindowScope.BasicTitleBar(
         NativeMetalBridge.menuBarOffsetFlow(currentNsView)
     }.collectAsState()
 
-    val menuBarOffset by animateDpAsState(
-        targetValue = if (isFullscreenWithNewControls) menuBarOffsetPt.dp else 0.dp,
-        animationSpec = tween(durationMillis = MENU_BAR_ANIMATION_MS),
-    )
+    // The native side streams the live menu-bar reveal fraction (Carbon
+    // kEventClassMenu — see NucleusTaoMetal.m), so the offset is applied
+    // as-is: the system animation drives the title bar directly, like
+    // Chrome's fullscreen toolbar. Animating here again would trail AppKit's
+    // own slide by the tween duration.
+    val menuBarOffset = if (isFullscreenWithNewControls) menuBarOffsetPt.dp else 0.dp
 
     // Push the resolved title-bar background into the Skia clear color
     // (re-applied every frame in `TaoComposeSceneHost`) so any Compose

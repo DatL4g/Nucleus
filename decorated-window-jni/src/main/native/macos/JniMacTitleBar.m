@@ -30,6 +30,26 @@ static const float kToolbarExtraInset    = 6.0f;
 // the title bar height beyond the default doesn't push buttons further right.
 static const float kDefaultTitleBarHeight = 40.0f;
 static const float kMaxButtonLeftMargin   = kDefaultTitleBarHeight / 2.0f;
+// Pre-Tahoe native traffic-lights: 20 pt between button centers, and the
+// standard buttons keep their natural 14x16 pt frame (12 pt visible circle).
+static const float kLegacyButtonOffset    = 20.0f;
+
+// macOS 26 (Tahoe) introduced larger, wider-spaced traffic-lights, the large
+// corner radius and the Safari-style fullscreen title bar. Everything gated
+// on this check falls back to the classic pre-Tahoe chrome (issue #310).
+static BOOL isTahoeOrLater(void) {
+    static BOOL result = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSOperatingSystemVersion v = (NSOperatingSystemVersion){26, 0, 0};
+        result = [[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:v];
+    });
+    return result;
+}
+
+static float defaultButtonOffset(void) {
+    return isTahoeOrLater() ? kDefaultButtonOffset : kLegacyButtonOffset;
+}
 
 // _adjustWindowToScreen swizzle state
 static IMP sOriginalAdjustWindowToScreen = NULL;
@@ -119,6 +139,7 @@ static void notifyMenuBarOffsetChanged(NSWindow *window, float offset) {
 // activates the grouped traffic-light hover state (colored icons on hover).
 @interface NucleusButtonsView : NSView {
     BOOL _dispatching;
+    BOOL _mouseInside;
 }
 @end
 
@@ -142,6 +163,7 @@ static void notifyMenuBarOffsetChanged(NSWindow *window, float offset) {
 - (void)mouseEntered:(NSEvent *)event {
     if (_dispatching) return;
     _dispatching = YES;
+    _mouseInside = YES;
     [super mouseEntered:event];
     for (NSView *btn in self.subviews) {
         [btn mouseEntered:event];
@@ -152,11 +174,21 @@ static void notifyMenuBarOffsetChanged(NSWindow *window, float offset) {
 - (void)mouseExited:(NSEvent *)event {
     if (_dispatching) return;
     _dispatching = YES;
+    _mouseInside = NO;
     [super mouseExited:event];
     for (NSView *btn in self.subviews) {
         [btn mouseExited:event];
     }
     _dispatching = NO;
+}
+
+// Private AppKit hook: standard window buttons ask their superview whether
+// the traffic-light group is hovered before drawing the glyphs. Without it,
+// pre-Tahoe systems never show the symbols on hover (mirrors JBR's
+// AWTButtonsView).
+- (BOOL)_mouseInGroup:(NSButton *)button {
+    (void)button;
+    return _mouseInside;
 }
 
 @end
@@ -201,8 +233,13 @@ static void notifyMenuBarOffsetChanged(NSWindow *window, float offset) {
     if ([objc_getAssociatedObject(w, &kLargeCornerRadiusKey) boolValue]) {
         w.toolbar = nil;
     }
-    [w setTitlebarAppearsTransparent:NO];
-    [w setTitleVisibility:NSWindowTitleVisible];
+    // Restore the standard chrome so AppKit's fullscreen animation can run.
+    // Tahoe-only: on older macOS this briefly reveals the opaque native
+    // title bar sliding to the top during the transition (issue #310).
+    if (isTahoeOrLater()) {
+        [w setTitlebarAppearsTransparent:NO];
+        [w setTitleVisibility:NSWindowTitleVisible];
+    }
     [w setMovable:YES];
 }
 
@@ -483,8 +520,14 @@ static void neutralizeToolbarFullScreenWindows(void) {
 static void computeButtonMetrics(float titleBarHeight, float *outBtnWidth, float *outBtnHeight, float *outOffset) {
     float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
     *outBtnWidth  = fminf(titleBarHeight * 0.5f, kMinHeightForFullSize * 0.5f);
-    *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
-    *outOffset    = shrinkFactor * kDefaultButtonOffset;
+    if (isTahoeOrLater()) {
+        *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
+    } else {
+        // Keep the pre-Tahoe native 14x16 pt aspect so the glyphs aren't
+        // squashed on older macOS.
+        *outBtnHeight = (*outBtnWidth) * (16.0f / 14.0f);
+    }
+    *outOffset    = shrinkFactor * defaultButtonOffset();
 }
 
 // Creates replacement traffic-light buttons in the content view,
@@ -577,6 +620,10 @@ static float getMenuBarOffsetForWindow(NSWindow *window) {
 // All handlers run on the macOS main thread, so AppKit reads are safe.
 // When the offset changes, Kotlin is notified via JNI callback.
 static void installMenuBarMonitor(NSWindow *window) {
+    // Safari-style fullscreen title bar (slide down with the menu bar) is a
+    // Tahoe-era behaviour; on older macOS it produces a phantom padding and
+    // a seam line in the title-bar area (issue #310 B4/C).
+    if (!isTahoeOrLater()) return;
     removeMenuBarMonitor(window);
 
     __weak NSWindow *weakWindow = window;
@@ -900,13 +947,17 @@ static void applyConstraints(NSWindow *window, float height) {
 
     BOOL isRTL = [objc_getAssociatedObject(window, &kRTLKey) boolValue];
     float shrinkFactor = fminf(height / kMinHeightForFullSize, 1.0f);
-    float offset       = shrinkFactor * kDefaultButtonOffset;
+    float offset       = shrinkFactor * defaultButtonOffset();
     float extraInset   = window.toolbar ? kToolbarExtraInset : 0.0f;
     float margin       = fminf(height / 2.0f, kMaxButtonLeftMargin) + extraInset;
 
     NSLayoutAnchor *anchorEdge = isRTL
         ? titlebarContainer.rightAnchor
         : titlebarContainer.leftAnchor;
+
+    // Pre-Tahoe keeps the native 14x16 pt button aspect (no -2 pt trim).
+    CGFloat sizeRatio    = isTahoeOrLater() ? (14.0 / 12.0) : (16.0 / 14.0);
+    CGFloat sizeConstant = isTahoeOrLater() ? -2.0 : 0.0;
 
     NSArray *buttons = @[closeBtn, miniBtn, zoomBtn];
     [buttons enumerateObjectsUsingBlock:^(NSView *btn, NSUInteger idx, BOOL *stop) {
@@ -916,8 +967,8 @@ static void applyConstraints(NSWindow *window, float height) {
             [btn.widthAnchor  constraintLessThanOrEqualToAnchor:titlebarContainer.heightAnchor
                                                      multiplier:0.5],
             [btn.heightAnchor constraintEqualToAnchor:btn.widthAnchor
-                                           multiplier:14.0 / 12.0
-                                             constant:-2.0],
+                                           multiplier:sizeRatio
+                                             constant:sizeConstant],
             [btn.centerYAnchor constraintEqualToAnchor:titlebarContainer.topAnchor
                                               constant:height / 2.0f],
             [btn.centerXAnchor constraintEqualToAnchor:anchorEdge
@@ -1040,7 +1091,7 @@ Java_dev_nucleusframework_window_utils_macos_JniMacTitleBarBridge_nativeApplyTit
     float extraInset = largeRadius ? kToolbarExtraInset : 0.0f;
 
     float shrink     = fminf(heightPt / kMinHeightForFullSize, 1.0f);
-    float btnOffset  = shrink * kDefaultButtonOffset;
+    float btnOffset  = shrink * defaultButtonOffset();
     float leftMargin = fminf(heightPt / 2.0f, kMaxButtonLeftMargin) + extraInset;
     float leftInset  = 2.0f * leftMargin + 2.0f * btnOffset;
     float capturedHeight = heightPt;
@@ -1227,7 +1278,8 @@ Java_dev_nucleusframework_window_utils_macos_JniMacTitleBarBridge_nativeSetNewFu
     if (nsWindowPtr == 0) return;
     ensureJVMCached(env);
     void *rawPtr = (void *)nsWindowPtr;
-    BOOL flag = (BOOL)enabled;
+    // Force-disable on pre-Tahoe systems — see installMenuBarMonitor.
+    BOOL flag = (BOOL)enabled && isTahoeOrLater();
     dispatch_async(dispatch_get_main_queue(), ^{
         if (atomic_load(&sShutdownInProgress)) return;
         @autoreleasepool {
@@ -1346,7 +1398,11 @@ Java_dev_nucleusframework_window_utils_macos_JniMacTitleBarBridge_nativeSetLarge
 
     if (nsWindowPtr == 0) return;
     void *rawPtr = (void *)nsWindowPtr;
-    BOOL flag = (enabled == JNI_TRUE);
+    // Pre-Tahoe systems do not draw the new corners even with a toolbar
+    // attached; force-disable so we don't install a useless toolbar that
+    // shifts the buttons (kToolbarExtraInset) and spawns the AppKit
+    // NSToolbarFullScreenWindow overlay in fullscreen (issue #310).
+    BOOL flag = (enabled == JNI_TRUE) && isTahoeOrLater();
 
     dispatch_async(dispatch_get_main_queue(), ^{
         if (atomic_load(&sShutdownInProgress)) return;
