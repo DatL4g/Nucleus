@@ -1,3 +1,4 @@
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -84,8 +85,15 @@ val sandboxShimJar by tasks.registering(Jar::class) {
 
 // Make the embedded shim JAR part of the main resources so it ships inside the plugin
 // artifact AND is on the test runtime classpath (strip-task unit tests read it as a resource).
-sourceSets.main.get().resources.srcDir(layout.buildDirectory.dir("sandboxShimEmbed"))
-tasks.named("processResources") { dependsOn(sandboxShimJar) }
+// Wired through processResources' `from(...)` rather than a resources srcDir: this keeps the
+// generated binary out of `main.allSource`, so it flows only into the runtime jar and never into
+// sourcesJar. Using the task provider as the copy source also declares the dependency implicitly,
+// avoiding the "uses output without declaring dependency" validation failure.
+tasks.named<ProcessResources>("processResources") {
+    from(sandboxShimJar) {
+        into("nucleus/sandbox")
+    }
+}
 
 kotlin {
     compilerOptions {
