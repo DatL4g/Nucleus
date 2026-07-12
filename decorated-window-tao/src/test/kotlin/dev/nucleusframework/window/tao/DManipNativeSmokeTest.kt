@@ -9,8 +9,13 @@ import kotlin.test.assertTrue
  * Verifies the DirectManipulation native chain against a real HWND without
  * any Tao event loop: COM manager/viewport creation, subclass install,
  * idle fetch semantics, and clean detach. Windows-only (self-skips
- * elsewhere, like [StandalonePanelNativeSmokeTest]); executed for real on
- * the windows-latest CI runner right after the DLLs are built.
+ * elsewhere); executed for real on the windows-latest CI runner right
+ * after the DLLs are built.
+ *
+ * The HWND is a bare hidden STATIC window created by the bridge — the
+ * DComp-backed standalone panels can't initialize in the runner's
+ * non-interactive session (no compositor), and DirectManipulation needs
+ * neither GL nor composition.
  *
  * Touchpad input can't be synthesized headlessly — gesture/inertia
  * behavior is validated on-device — but this catches the failure modes a
@@ -23,21 +28,10 @@ class DManipNativeSmokeTest {
         if (!System.getProperty("os.name", "").lowercase().contains("win")) return
 
         assertTrue(NativeTaoDManipBridge.isLoaded, "nucleus_tao_windows_deco failed to load")
-        assertTrue(PopupNativeBridgeWindows.isLoaded, "nucleus_tao_windows_native_view failed to load")
 
-        val panel =
-            PopupNativeBridgeWindows.nativeCreatePanel(
-                parentHwnd = 0L,
-                xPx = -32_000,
-                yPx = -32_000,
-                widthPx = 300,
-                heightPx = 200,
-            )
-        assertNotEquals(0L, panel, "ownerless panel creation failed")
+        val hwnd = NativeTaoDManipBridge.nativeCreateTestHwnd()
+        assertNotEquals(0L, hwnd, "bare test HWND creation failed")
         try {
-            val hwnd = PopupNativeBridgeWindows.nativeContentHwnd(panel)
-            assertNotEquals(0L, hwnd, "panel content HWND unavailable")
-
             assertTrue(
                 NativeTaoDManipBridge.nativeAttach(hwnd),
                 "DirectManipulation viewport attach failed (COM/manager/viewport)",
@@ -57,7 +51,7 @@ class DManipNativeSmokeTest {
                 "fetch after detach must report unavailable",
             )
         } finally {
-            PopupNativeBridgeWindows.nativeRelease(panel)
+            NativeTaoDManipBridge.nativeDestroyTestHwnd(hwnd)
         }
     }
 }

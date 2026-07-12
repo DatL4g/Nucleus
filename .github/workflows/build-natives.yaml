@@ -376,15 +376,17 @@ jobs:
             echo "OK: $f ($(wc -c < "$f") bytes)"
           done
 
-      # Exercise the freshly built DLLs against real HWNDs on the Windows
-      # runner: standalone-panel GL pipeline + DirectManipulation viewport
-      # smoke (COM attach, idle fetch, detach). These tests self-skip on
-      # non-Windows, so this is the only place they actually execute in CI.
+      # Exercise the freshly built DLLs against a real HWND on the Windows
+      # runner: DirectManipulation viewport smoke (COM attach, idle fetch,
+      # detach). Self-skips on non-Windows, so this is the only place it
+      # actually executes in CI. StandalonePanelNativeSmokeTest is NOT run
+      # here: its DComp-backed panel can't initialize in the runner's
+      # non-interactive session (no compositor) — it remains an on-device
+      # test only.
       - name: Run decorated-window-tao Windows native smoke tests
         shell: bash
         run: |
           ./gradlew :decorated-window-tao:test --no-daemon \
-            --tests "dev.nucleusframework.window.tao.StandalonePanelNativeSmokeTest" \
             --tests "dev.nucleusframework.window.tao.DManipNativeSmokeTest"
 
       - name: Upload decorated-window-tao Windows DLLs

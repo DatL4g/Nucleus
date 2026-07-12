@@ -57,4 +57,12 @@ internal object NativeTaoDManipBridge {
         hwnd: Long,
         out: FloatArray,
     ): Int
+
+    /** Test-only: bare hidden HWND (STATIC class) for the CI smoke test. */
+    @JvmStatic
+    external fun nativeCreateTestHwnd(): Long
+
+    /** Test-only: destroys a [nativeCreateTestHwnd] window. */
+    @JvmStatic
+    external fun nativeDestroyTestHwnd(hwnd: Long)
 }

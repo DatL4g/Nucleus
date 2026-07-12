@@ -472,4 +472,31 @@ Java_dev_nucleusframework_window_tao_NativeTaoDManipBridge_nativeFetch(
   return (jint)s->status;
 }
 
+/*
+ * Test-only: a bare hidden top-level window for the CI smoke test. The
+ * "STATIC" system class needs no registration, no GL/DComp, and works in
+ * the non-interactive runner session (the DComp-backed panels don't —
+ * no compositor there).
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoDManipBridge_nativeCreateTestHwnd(
+    JNIEnv* env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+  HWND hwnd = CreateWindowExW(0, L"STATIC", L"NucleusDManipSmoke",
+                              WS_OVERLAPPED, -32000, -32000, 300, 200,
+                              nullptr, nullptr, GetModuleHandleW(nullptr),
+                              nullptr);
+  return (jlong)(UINT_PTR)hwnd;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoDManipBridge_nativeDestroyTestHwnd(
+    JNIEnv* env, jclass clazz, jlong hwndHandle) {
+  (void)env;
+  (void)clazz;
+  HWND hwnd = (HWND)(UINT_PTR)hwndHandle;
+  if (hwnd) DestroyWindow(hwnd);
+}
+
 } /* extern "C" */
