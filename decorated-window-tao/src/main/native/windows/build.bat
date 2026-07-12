@@ -18,7 +18,7 @@ setlocal enabledelayedexpansion
 set "SCRIPT_DIR=%~dp0"
 set "NATIVE_DIR=%SCRIPT_DIR%.."
 set "DECO_SRC=%SCRIPT_DIR%nucleus_tao_windows_deco.c"
-set "DMANIP_SRC=%SCRIPT_DIR%nucleus_tao_dmanip.cpp"
+
 set "GL_SRC=%SCRIPT_DIR%nucleus_tao_gl.c"
 set "A11Y_SRC=%SCRIPT_DIR%nucleus_tao_a11y.c"
 set "DND_SRC=%SCRIPT_DIR%nucleus_tao_dnd.c"
@@ -133,7 +133,7 @@ if errorlevel 1 (
 
 cl /LD /O1 /GS- /GR- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
-    "%DECO_SRC%" "%DMANIP_SRC%" ^
+    "%DECO_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_windows_deco.dll" ^
     /link /NODEFAULTLIB /ENTRY:DllMain kernel32.lib user32.lib dwmapi.lib gdi32.lib shell32.lib ^
     ole32.lib uuid.lib comctl32.lib
@@ -210,7 +210,7 @@ REM ARM64 MSVC doesn't inline Interlocked* intrinsics — they live in the C
 REM runtime, so /NODEFAULTLIB must be omitted on this target.
 cl /LD /O1 /GS- /GR- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
-    "%DECO_SRC%" "%DMANIP_SRC%" ^
+    "%DECO_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_deco.dll" ^
     /link /ENTRY:DllMain kernel32.lib user32.lib dwmapi.lib gdi32.lib shell32.lib ^
     ole32.lib uuid.lib comctl32.lib

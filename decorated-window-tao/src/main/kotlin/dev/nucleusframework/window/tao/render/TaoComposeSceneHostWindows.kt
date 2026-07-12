@@ -112,30 +112,13 @@ internal class TaoComposeSceneHostWindows(
     private val flushingDispatcher = FlushingMainDispatcher()
 
     /**
-     * Scope for host-owned gesture work (trackpad-pinch idle-end debounce,
-     * synthetic wheel fling). Runs on [flushingDispatcher] so resumed
-     * continuations land on the event-loop thread; `delay` itself ticks on
-     * the shared coroutines scheduler, and [frameClock] paces the fling's
-     * `withFrameNanos` loop at the render cadence. Cancelled in [detach].
+     * Scope for host-owned gesture work (trackpad-pinch idle-end debounce).
+     * Runs on [flushingDispatcher] so resumed continuations land on the
+     * event-loop thread; `delay` itself ticks on the shared coroutines
+     * scheduler. Cancelled in [detach].
      */
     private val gestureScope =
         CoroutineScope(coroutineContext + flushingDispatcher + frameClock + SupervisorJob())
-
-    /**
-     * Chrome-like scroll inertia for touchpad flicks — Windows delivers no
-     * momentum events on the wheel path, so the glide is synthesized here
-     * and re-enters the scene as regular (precise) wheel ticks.
-     */
-    private val wheelFling =
-        TaoWheelFling(
-            scope = gestureScope,
-            pixelsPerTick = ChromeScrollConfig.WINDOWS_PIXELS_PER_TICK,
-            emitTicks = { dxTicks, dyTicks ->
-                sendScrollToScene(
-                    TaoPointerScrollEvent(dxAwt = dxTicks, dyAwt = dyTicks, scrollAmount = 1),
-                )
-            },
-        )
 
     /** Floating text-selection bar shown on touch selection. */
     private val textToolbar = TaoTextToolbar()
@@ -220,18 +203,6 @@ internal class TaoComposeSceneHostWindows(
         scale = NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f
         val initialTitleBarPx = (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
         NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
-
-        // DirectManipulation viewport — the OS-computed precision-touchpad
-        // pipeline (pan/pinch/inertia), Chrome's architecture on Windows.
-        // Contacts owned by the viewport stop synthesizing WM_MOUSEWHEEL, so
-        // the wheel path (ChromeScrollConfig + TaoWheelFling) automatically
-        // narrows to mice and DManip-less systems when this attaches.
-        dmanipAttached =
-            dev.nucleusframework.window.tao.NativeTaoDManipBridge.isLoaded &&
-            dev.nucleusframework.window.tao.NativeTaoDManipBridge
-                .nativeAttach(hwnd)
-        dev.nucleusframework.window.tao.TaoScrollDiagnostics
-            .directManipulationAttached = dmanipAttached
 
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()
@@ -788,9 +759,9 @@ internal class TaoComposeSceneHostWindows(
 
     fun setContent(content: @Composable () -> Unit) {
         scene?.setContent {
-            // Chromium-style fixed pixels-per-tick scrolling instead of Compose's
-            // viewport-relative WindowsWinUIConfig (see ChromeScrollConfig).
-            ProvideChromeScrollConfig {
+            // Stock Compose Desktop Windows wheel behavior; only the
+            // lines-per-notch factor is reapplied (see TaoWindowsScrollConfig).
+            ProvideTaoWindowsScrollConfig {
                 TaoTextToolbarHost(textToolbar, content)
             }
         }
@@ -876,7 +847,6 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onFocusChanged(focused: Boolean) {
-        if (!focused) wheelFling.cancel()
         windowInfo.isWindowFocused = focused
     }
 
@@ -894,10 +864,6 @@ internal class TaoComposeSceneHostWindows(
         val sc = scene ?: return
 
         if (widthPx <= 0 || heightPx <= 0) return
-        // Drain OS-computed manipulation deltas BEFORE the frame-clock tick so
-        // they act as this frame's input (the native timer keeps invalidating
-        // while a gesture or its inertia is active).
-        drainDirectManipulation()
         val now = System.nanoTime()
 
         // ── Frame clock ordering ──────────────────────────────────────────
@@ -1033,8 +999,6 @@ internal class TaoComposeSceneHostWindows(
         buttonCode: Int,
         pressed: Boolean,
     ) {
-        // A click anywhere stops an in-flight glide, as in Chrome.
-        if (pressed) wheelFling.cancel()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
@@ -1046,83 +1010,24 @@ internal class TaoComposeSceneHostWindows(
         )
     }
 
-    // ── DirectManipulation drain ────────────────────────────────────────
-    private var dmanipAttached = false
-    private var dmanipSessionActive = false
-    private val dmanipDeltas = FloatArray(4)
-
-    @OptIn(ExperimentalComposeUiApi::class)
-    private fun drainDirectManipulation() {
-        if (!dmanipAttached || hwnd == 0L) return
-        val status =
-            dev.nucleusframework.window.tao.NativeTaoDManipBridge
-                .nativeFetch(hwnd, dmanipDeltas)
-        val active =
-            status == dev.nucleusframework.window.tao.NativeTaoDManipBridge.STATUS_RUNNING ||
-                status == dev.nucleusframework.window.tao.NativeTaoDManipBridge.STATUS_INERTIA
-        if (active && !dmanipSessionActive) {
-            // The OS owns this gesture's inertia; a wheel-path glide would
-            // double it (only reachable if a driver mixes both streams).
-            wheelFling.cancel()
-        }
-        dmanipSessionActive = active
-        dev.nucleusframework.window.tao.TaoScrollDiagnostics.directManipulationSession = active
-        dev.nucleusframework.window.tao.TaoScrollDiagnostics.directManipulationContacts =
-            dmanipDeltas[3].toInt()
-        // While the OS runs a manipulation, keep frames coming at vsync so
-        // the fetch pumps DManip at render cadence — Chromium pumps from its
-        // BeginFrame the same way. The native 8ms timer (~15.6ms real
-        // granularity) remains as a backstop when nothing else invalidates.
-        if (active) window.requestRedraw()
-
-        val scaleDelta = dmanipDeltas[2]
-        if (kotlin.math.abs(scaleDelta - 1f) > DMANIP_SCALE_EPSILON) {
-            applyDManipPinch(scaleDelta)
-        }
-        val panX = dmanipDeltas[0]
-        val panY = dmanipDeltas[1]
-        if (kotlin.math.abs(panX) > DMANIP_PAN_EPSILON_PX ||
-            kotlin.math.abs(panY) > DMANIP_PAN_EPSILON_PX
-        ) {
-            // DManip models content dragged by the fingers: swiping up drags
-            // the content up (negative pan_y) and must grow the scroll offset
-            // (positive dyAwt) — hence the sign flip. Ticks = px / 100 keeps
-            // ChromeScrollConfig's fixed mapping an exact round-trip, and the
-            // fractional values ride the precise (direct) wheel path.
-            sendScrollToScene(
-                TaoPointerScrollEvent(
-                    dxAwt = -panX / ChromeScrollConfig.WINDOWS_PIXELS_PER_TICK,
-                    dyAwt = -panY / ChromeScrollConfig.WINDOWS_PIXELS_PER_TICK,
-                    scrollAmount = 1,
-                ),
-            )
-        }
-    }
-
-    /** DManip pinch: multiplicative scale straight into the synthetic
-     *  two-finger gesture (no wheel-notch curve — the ratio IS the zoom). */
-    @OptIn(ExperimentalComposeUiApi::class)
-    private fun applyDManipPinch(scaleDelta: Float) {
-        if (scene == null) return
-        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
-        windowInfo.keyboardModifiers = currentKeyboardModifiers
-        if (!pinchActive) {
-            pinchActive = true
-            pinchScale = 1f
-            pinchCenterX = lastPointerX
-            pinchCenterY = lastPointerY
-            sendPinchPointers(PointerEventType.Press)
-        }
-        pinchScale *= scaleDelta
-        sendPinchPointers(PointerEventType.Move)
-        schedulePinchEnd()
-    }
-
     fun onPointerScroll(event: TaoPointerScrollEvent) {
-        // Real input always preempts a synthetic glide (as in Chrome) and
-        // feeds the release-velocity tracker.
-        wheelFling.onUserScroll(event.dxAwt, event.dyAwt, System.nanoTime() / 1_000_000)
+        // Stock Compose Desktop wheel path: the event goes straight into the
+        // scene and MouseWheelScrollingLogic animates it (smooth-scroll
+        // tween) — the same pipeline as upstream Compose on Windows and
+        // compose-desktop-native. No input-layer animation on top.
         sendScrollToScene(event)
+
+        // WM_PAINT-starvation mitigation. The frame clock only ticks in
+        // [onRedrawRequested], fired from WM_PAINT — the lowest-priority
+        // Win32 message, synthesized only when the queue is otherwise empty.
+        // A wheel flood keeps the queue occupied, starving WM_PAINT: the
+        // smooth-scroll tween freezes mid-gesture then lurches (judder).
+        // Pump a frame inline instead: we run on the GL thread (onResized
+        // renders synchronously the same way) and ANGLE's DXGI Present
+        // blocks once its swap-chain queue fills, so the pump self-paces at
+        // the display refresh — the input flood coalesces per frame. After
+        // the flood the regular WM_PAINT path resumes and animates the tail.
+        onRedrawRequested()
     }
 
     private fun sendScrollToScene(event: TaoPointerScrollEvent) {
@@ -1438,11 +1343,6 @@ internal class TaoComposeSceneHostWindows(
             attachmentHandle = 0L
         }
         if (hwnd != 0L) {
-            if (dmanipAttached) {
-                dev.nucleusframework.window.tao.NativeTaoDManipBridge
-                    .nativeDetach(hwnd)
-                dmanipAttached = false
-            }
             if (dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.isLoaded) {
                 dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge
                     .nativeRevoke(hwnd)
@@ -1480,10 +1380,6 @@ internal class TaoComposeSceneHostWindows(
         // tech still sees periodic refreshes during sustained scrolling.
         private const val A11Y_SYNC_DEBOUNCE_MS: Long = 120L
         private const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
-
-        /** Sub-visible DirectManipulation deltas skipped by the drain. */
-        private const val DMANIP_PAN_EPSILON_PX = 0.01f
-        private const val DMANIP_SCALE_EPSILON = 0.001f
 
         /**
          * Live attached-host count across the JVM. When > 1, every host
