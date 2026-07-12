@@ -99,6 +99,7 @@ internal class TaoWheelFling(
     private fun cancelFling() {
         flingJob?.cancel()
         flingJob = null
+        dev.nucleusframework.window.tao.TaoScrollDiagnostics.softwareFlingActive = false
     }
 
     private fun resetGesture() {
@@ -148,22 +149,31 @@ internal class TaoWheelFling(
         if (max(abs(vx), abs(vy)) < MIN_FLING_VELOCITY_PX_PER_S) return
         val curve = ChromiumFlingCurve(vx, vy)
         if (!curve.isValid) return
+        dev.nucleusframework.window.tao.TaoScrollDiagnostics.softwareFlingActive = true
         flingJob =
             scope.launch {
-                var emittedX = 0f
-                var emittedY = 0f
-                val startNanos = withFrameNanos { it }
-                while (true) {
-                    val elapsed = (withFrameNanos { it } - startNanos) / NANOS_PER_SECOND
-                    val target = curve.offsetAt(elapsed)
-                    val dx = target.x - emittedX
-                    val dy = target.y - emittedY
-                    if (abs(dx) > MIN_EMIT_PX || abs(dy) > MIN_EMIT_PX) {
-                        emittedX += dx
-                        emittedY += dy
-                        emitTicks(dx / pixelsPerTick, dy / pixelsPerTick)
+                try {
+                    var emittedX = 0f
+                    var emittedY = 0f
+                    // Baseline on the launch instant, not the first frame tick —
+                    // the host frame clock runs on the same System.nanoTime base,
+                    // and burning a frame just to read the clock would add ~16ms
+                    // to the lift-to-glide gap (visible on a hard flick).
+                    val startNanos = System.nanoTime()
+                    while (true) {
+                        val elapsed = (withFrameNanos { it } - startNanos) / NANOS_PER_SECOND
+                        val target = curve.offsetAt(elapsed)
+                        val dx = target.x - emittedX
+                        val dy = target.y - emittedY
+                        if (abs(dx) > MIN_EMIT_PX || abs(dy) > MIN_EMIT_PX) {
+                            emittedX += dx
+                            emittedY += dy
+                            emitTicks(dx / pixelsPerTick, dy / pixelsPerTick)
+                        }
+                        if (curve.isFinishedAt(elapsed)) break
                     }
-                    if (curve.isFinishedAt(elapsed)) break
+                } finally {
+                    dev.nucleusframework.window.tao.TaoScrollDiagnostics.softwareFlingActive = false
                 }
             }
     }
@@ -171,8 +181,15 @@ internal class TaoWheelFling(
     private fun isFractional(ticks: Float): Boolean = abs(ticks - round(ticks)) > FRACTIONAL_TICK_EPSILON
 
     internal companion object {
-        /** Quiet gap that ends a gesture — matches Compose's `ScrollProgressTimeout`. */
-        const val GESTURE_END_MS = 50L
+        /**
+         * Quiet gap that ends a gesture. Precision-touchpad wheel synthesis
+         * arrives at 60–125 Hz (gaps ≤ ~16 ms), so 35 ms is still safely
+         * above one inter-event gap while shaving the lift-to-glide freeze —
+         * at 6 000 px/s a 50 ms gap read as a visible hitch on hard flicks.
+         * A premature fire mid-gesture self-heals: the next real event
+         * cancels the glide and the windowed velocity barely differs.
+         */
+        const val GESTURE_END_MS = 35L
 
         /** Below this release velocity a glide wouldn't be perceptible. */
         const val MIN_FLING_VELOCITY_PX_PER_S = 100f
