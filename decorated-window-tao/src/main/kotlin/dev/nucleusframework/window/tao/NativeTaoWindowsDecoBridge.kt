@@ -152,4 +152,21 @@ internal object NativeTaoWindowsDecoBridge {
         startScreenX: Int,
         startScreenY: Int,
     ): LongArray?
+
+    /**
+     * Windows analogue of the macOS "hidden from Dock" activation policy.
+     *
+     * `hidden = true` adds `WS_EX_TOOLWINDOW` and clears `WS_EX_APPWINDOW`, so
+     * the window drops off the taskbar and the Alt+Tab switcher while staying
+     * visible and focusable; `false` restores the standard taskbar button.
+     *
+     * Per-HWND (unlike macOS, where the policy is app-wide). Applied at
+     * `attach()` while the window is still hidden, so the taskbar samples the
+     * updated ex-style on the first show.
+     */
+    @JvmStatic
+    external fun nativeSetHiddenFromDock(
+        hwnd: Long,
+        hidden: Boolean,
+    )
 }

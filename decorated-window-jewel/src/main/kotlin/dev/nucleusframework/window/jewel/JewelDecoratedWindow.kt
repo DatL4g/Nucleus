@@ -92,8 +92,8 @@ fun NucleusApplicationScope.JewelDecoratedWindow(
     // of the parent, the only client-positionable window kind under xdg-shell
     // (parent-relative coordinates). For drag ghosts. Ignored elsewhere.
     popupFor: NucleusWindow? = null,
-    // macOS only: hide this app's icon from the Dock (Tao backend). No-op on
-    // AWT and on Windows/Linux.
+    // Hide this window from the OS taskbar/Dock while it stays visible and
+    // focusable (Tao backend; macOS + Windows). No-op on AWT and Linux.
     hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },

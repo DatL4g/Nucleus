@@ -72,6 +72,9 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
 internal class TaoComposeSceneHostWindows(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
+    // Windows analogue of macOS "hidden from Dock": drop this window's taskbar
+    // button (and Alt+Tab entry) via WS_EX_TOOLWINDOW. Applied in attach().
+    private val hiddenFromDock: Boolean = false,
 ) {
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
@@ -203,6 +206,14 @@ internal class TaoComposeSceneHostWindows(
         scale = NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f
         val initialTitleBarPx = (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
         NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
+
+        // Hide this window's taskbar button when requested — the Windows
+        // analogue of the macOS "hidden from Dock" activation policy. Applied
+        // now, while the window is still hidden (shown after first paint), so
+        // the taskbar samples the updated ex-style on the first show.
+        if (hiddenFromDock) {
+            NativeTaoWindowsDecoBridge.nativeSetHiddenFromDock(hwnd, true)
+        }
 
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()

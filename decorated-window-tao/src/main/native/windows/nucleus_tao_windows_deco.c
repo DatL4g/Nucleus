@@ -832,3 +832,41 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetWindowO
     SetWindowPos(hwnd, NULL, (int)xPx, (int)yPx, 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
+
+/* Hides or restores the window's taskbar button — the Windows analogue of the
+ * macOS "hidden from Dock" activation policy.
+ *
+ *   hidden == TRUE  → add WS_EX_TOOLWINDOW, remove WS_EX_APPWINDOW: the window
+ *                     drops off the taskbar and the Alt+Tab switcher while
+ *                     staying visible and focusable (like macOS Accessory).
+ *   hidden == FALSE → the reverse (standard taskbar button + Alt+Tab entry).
+ *
+ * The taskbar samples the ex-style when a top-level window transitions to
+ * visible, so a live change is only honoured after a hide/show cycle. When the
+ * window is already visible we cycle it; when it is still hidden (the normal
+ * case — this is applied at attach(), before the first paint shows the window)
+ * the style is simply staged for the upcoming show. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetHiddenFromDock(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean hidden)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return;
+
+    LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    LONG_PTR updated = exStyle;
+    if (hidden) {
+        updated |= WS_EX_TOOLWINDOW;
+        updated &= ~(LONG_PTR)WS_EX_APPWINDOW;
+    } else {
+        updated &= ~(LONG_PTR)WS_EX_TOOLWINDOW;
+        updated |= WS_EX_APPWINDOW;
+    }
+    if (updated == exStyle) return;
+
+    BOOL wasVisible = IsWindowVisible(hwnd);
+    if (wasVisible) ShowWindow(hwnd, SW_HIDE);
+    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, updated);
+    if (wasVisible) ShowWindow(hwnd, SW_SHOW);
+}

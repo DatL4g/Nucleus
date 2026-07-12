@@ -44,9 +44,10 @@ fun NucleusApplicationScope.DecoratedWindow(
     // window's render target. Honoured by the Tao backend on all three
     // platforms; ignored by AWT.
     nativePopupLayers: Boolean = false,
-    // macOS only: hide this app's icon from the Dock (NSApplication accessory
-    // activation policy — no Dock icon, no menu bar, window stays visible).
-    // Honoured by the Tao backend on macOS; ignored by AWT and on Windows/Linux.
+    // Hide this window from the OS taskbar/Dock while it stays visible and
+    // focusable (macOS: NSApplication accessory policy, app-wide; Windows:
+    // WS_EX_TOOLWINDOW, per-window). Honoured by the Tao backend on macOS and
+    // Windows; ignored by AWT and on Linux.
     hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },

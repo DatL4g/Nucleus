@@ -78,10 +78,17 @@ fun ApplicationScope.DecoratedWindow(
     nativePopupLayers: Boolean = false,
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
     /**
-     * macOS only: hide this app's icon from the Dock (switches the shared
-     * `NSApplication` to accessory activation policy — no Dock icon, no menu
-     * bar, but the window stays visible and focusable). App-wide and applied at
-     * window creation. No-op on Windows and Linux.
+     * Hide this window from the OS taskbar/Dock while keeping it visible and
+     * focusable.
+     *
+     * - macOS: switches the shared `NSApplication` to accessory activation
+     *   policy (no Dock icon, no menu bar). App-wide — the last window to apply
+     *   it wins.
+     * - Windows: drops this window's taskbar button and Alt+Tab entry
+     *   (`WS_EX_TOOLWINDOW`). Per-window.
+     * - Linux: no-op.
+     *
+     * Applied at window creation.
      */
     hiddenFromDock: Boolean = false,
     // Parent composition locals bridged into this window's own ComposeScene from

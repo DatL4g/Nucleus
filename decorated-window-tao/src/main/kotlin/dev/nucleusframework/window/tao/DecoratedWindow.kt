@@ -117,8 +117,8 @@ internal fun ApplicationScope.openDecoratedWindow(
     // drawing them inline in this window's render target.
     nativePopupLayers: Boolean = false,
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
-    // macOS only: hide this app's Dock icon (NSApplication activation policy).
-    // No-op on Windows/Linux.
+    // Hide this window from the taskbar/Dock (macOS: NSApplication accessory
+    // policy, app-wide; Windows: WS_EX_TOOLWINDOW, per-window). No-op on Linux.
     hiddenFromDock: Boolean = false,
     // Parent composition locals to bridge into this window's own ComposeScene
     // (applied above the scene's LocalComposeSceneContext so popups still route
@@ -167,6 +167,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             onKeyEvent,
             initialCompositionLocalContext,
             nativePopupLayers,
+            hiddenFromDock,
             content,
         )
     }
@@ -736,9 +737,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     onKeyEvent: (KeyEvent) -> Boolean,
     initialCompositionLocalContext: CompositionLocalContext?,
     nativePopupLayers: Boolean,
+    hiddenFromDock: Boolean,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
-    val host = TaoComposeSceneHostWindows(window)
+    val host = TaoComposeSceneHostWindows(window, hiddenFromDock = hiddenFromDock)
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
