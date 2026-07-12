@@ -18,8 +18,10 @@ object TaoScreenGeometry {
      * platform bridge is unavailable.
      *
      * On Linux the query is GDK-backed and needs a realized window: pass any
-     * open [TaoWindow] (e.g. the popup being positioned). Ignored on
-     * Windows/macOS.
+     * open [TaoWindow] (e.g. the popup being positioned). Without one
+     * (panel-only tray apps) it falls back to the standalone-popup helper's
+     * X11-side query (XRandR primary ∩ `_NET_WORKAREA`) — the same coordinate
+     * space the standalone panel is positioned in. Ignored on Windows/macOS.
      */
     fun primaryMonitorWorkAreaPx(window: TaoWindow? = null): LongArray? =
         when (Platform.Current) {
@@ -38,6 +40,8 @@ object TaoScreenGeometry {
             Platform.Linux ->
                 if (NativeTaoBridge.isLoaded && window != null) {
                     NativeTaoBridge.nativeLinuxPrimaryMonitorWorkArea(window.handle)
+                } else if (PopupNativeBridgeLinux.isLoaded) {
+                    PopupNativeBridgeLinux.nativePrimaryWorkArea()
                 } else {
                     null
                 }
@@ -68,6 +72,10 @@ object TaoScreenGeometry {
                 Platform.Linux ->
                     if (NativeTaoBridge.isLoaded && window != null) {
                         NativeTaoBridge.nativeLinuxPrimaryMonitorScaleMilli(window.handle)
+                    } else if (PopupNativeBridgeLinux.isLoaded) {
+                        // Xft.dpi-based: the X11 coordinate space the panel
+                        // (and this work-area fallback) lives in.
+                        (PopupNativeBridgeLinux.nativeScale() * 1000).toInt()
                     } else {
                         1000
                     }

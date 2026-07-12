@@ -75,9 +75,11 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #include <X11/XKBlib.h>
 #include <X11/cursorfont.h>
 #include <X11/extensions/XInput2.h>
+#include <X11/extensions/Xrandr.h>
 
 #define NUCLEUS_TAO_POPUP_DEBUG 0
 #if NUCLEUS_TAO_POPUP_DEBUG
@@ -160,9 +162,18 @@ static struct {
     Bool (*XQueryPointer)(Display *, Window, Window *, Window *, int *, int *,
                           int *, int *, unsigned *);
 
+    Atom (*XInternAtom)(Display *, const char *, Bool);
+    int (*XGetWindowProperty)(Display *, Window, Atom, long, long, Bool, Atom,
+                              Atom *, int *, unsigned long *, unsigned long *,
+                              unsigned char **);
+
     /* libXi */
     int (*XISelectEvents)(Display *, Window, XIEventMask *, int);
     int (*XIQueryVersion)(Display *, int *, int *);
+
+    /* libXrandr (optional — full-screen fallback without it) */
+    XRRMonitorInfo *(*XRRGetMonitors)(Display *, Window, Bool, int *);
+    void (*XRRFreeMonitors)(XRRMonitorInfo *);
 
     /* libxkbcommon (optional — Latin-1 fallback without it) */
     uint32_t (*xkb_keysym_to_utf32)(uint32_t keysym);
@@ -187,16 +198,18 @@ static void *load_first(const char *const *names) {
 static int ensure_libs_loaded(void) {
     if (fn.initialized) return 1;
 
-    const char *x11_libs[] = { "libX11.so.6", "libX11.so", NULL };
-    const char *xi_libs[]  = { "libXi.so.6", "libXi.so", NULL };
-    const char *xkb_libs[] = { "libxkbcommon.so.0", "libxkbcommon.so", NULL };
-    const char *egl_libs[] = { "libEGL.so.1", "libEGL.so", NULL };
+    const char *x11_libs[]    = { "libX11.so.6", "libX11.so", NULL };
+    const char *xi_libs[]     = { "libXi.so.6", "libXi.so", NULL };
+    const char *xkb_libs[]    = { "libxkbcommon.so.0", "libxkbcommon.so", NULL };
+    const char *egl_libs[]    = { "libEGL.so.1", "libEGL.so", NULL };
+    const char *xrandr_libs[] = { "libXrandr.so.2", "libXrandr.so", NULL };
 
     void *libx11 = load_first(x11_libs);
     if (libx11 == NULL) { DBG("libX11 not found\n"); return 0; }
     void *libxi  = load_first(xi_libs);   /* optional: outside-click only */
     void *libxkb = load_first(xkb_libs);  /* optional: non-Latin-1 layouts */
     void *libegl = load_first(egl_libs);  /* optional: falls back to XGetVisualInfo */
+    void *libxrandr = load_first(xrandr_libs); /* optional: full-screen fallback */
 
 #define X11_SYM(name) fn.name = (__typeof__(fn.name)) dlsym(libx11, #name)
     X11_SYM(XOpenDisplay);       X11_SYM(XCloseDisplay);
@@ -214,6 +227,7 @@ static int ensure_libs_loaded(void) {
     X11_SYM(XLookupString);      X11_SYM(XkbKeycodeToKeysym);
     X11_SYM(XQueryExtension);    X11_SYM(XGetEventData);
     X11_SYM(XFreeEventData);     X11_SYM(XQueryPointer);
+    X11_SYM(XInternAtom);        X11_SYM(XGetWindowProperty);
 #undef X11_SYM
 
     if (libxi != NULL) {
@@ -223,6 +237,10 @@ static int ensure_libs_loaded(void) {
     if (libxkb != NULL) {
         fn.xkb_keysym_to_utf32 =
             (__typeof__(fn.xkb_keysym_to_utf32)) dlsym(libxkb, "xkb_keysym_to_utf32");
+    }
+    if (libxrandr != NULL) {
+        fn.XRRGetMonitors  = (__typeof__(fn.XRRGetMonitors))  dlsym(libxrandr, "XRRGetMonitors");
+        fn.XRRFreeMonitors = (__typeof__(fn.XRRFreeMonitors)) dlsym(libxrandr, "XRRFreeMonitors");
     }
     if (libegl != NULL) {
         fn.eglGetPlatformDisplay =
@@ -242,7 +260,8 @@ static int ensure_libs_loaded(void) {
         !fn.XCreateColormap || !fn.XFreeColormap || !fn.XGetVisualInfo ||
         !fn.XFree || !fn.XSetInputFocus || !fn.XCreateFontCursor ||
         !fn.XDefineCursor || !fn.XFreeCursor || !fn.XLookupString ||
-        !fn.XkbKeycodeToKeysym || !fn.XQueryPointer) {
+        !fn.XkbKeycodeToKeysym || !fn.XQueryPointer ||
+        !fn.XInternAtom || !fn.XGetWindowProperty) {
         DBG("missing libX11 symbols\n");
         return 0;
     }
@@ -616,21 +635,132 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeDisplayPtr(
 
 /* Xft.dpi from the root resource database. X clients live in the X
  * coordinate space (logical under XWayland), so GDK's Wayland scale must
- * NOT be used for this panel — see TaoStandalonePopupHostLinux. */
+ * NOT be used for this panel — see TaoStandalonePopupHostLinux.
+ *
+ * Opens its own short-lived connection: TaoScreenGeometry routes here from
+ * arbitrary threads (tray callbacks, Tao main) and the command connection
+ * is single-thread-owned. */
 EXPORT jfloat JNICALL
 Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeScale(
     JNIEnv *env, jclass clazz)
 {
     (void) env; (void) clazz;
-    Display *dpy = ensure_cmd_display();
-    if (dpy == NULL || fn.XResourceManagerString == NULL) return 1.0f;
+    if (!ensure_libs_loaded() || fn.XResourceManagerString == NULL) return 1.0f;
+    Display *dpy = fn.XOpenDisplay(NULL);
+    if (dpy == NULL) return 1.0f;
+    float scale = 1.0f;
     const char *rm = fn.XResourceManagerString(dpy);
-    if (rm == NULL) return 1.0f;
-    const char *entry = strstr(rm, "Xft.dpi:");
-    if (entry == NULL) return 1.0f;
-    double dpi = atof(entry + strlen("Xft.dpi:"));
-    if (dpi < 48.0 || dpi > 480.0) return 1.0f;
-    return (float) (dpi / 96.0);
+    if (rm != NULL) {
+        const char *entry = strstr(rm, "Xft.dpi:");
+        if (entry != NULL) {
+            double dpi = atof(entry + strlen("Xft.dpi:"));
+            if (dpi >= 48.0 && dpi <= 480.0) scale = (float) (dpi / 96.0);
+        }
+    }
+    fn.XCloseDisplay(dpy);
+    return scale;
+}
+
+/* Reads one CARDINAL[] root property; returns the item count (0 on failure).
+ * The returned pointer must be XFree'd by the caller. */
+static unsigned long read_root_cardinals(Display *dpy, Window root,
+                                         const char *name, long max_items,
+                                         unsigned long **out_items) {
+    *out_items = NULL;
+    Atom atom = fn.XInternAtom(dpy, name, True);
+    if (atom == None) return 0;
+    Atom actual_type = None;
+    int actual_format = 0;
+    unsigned long nitems = 0, bytes_after = 0;
+    unsigned char *prop = NULL;
+    if (fn.XGetWindowProperty(dpy, root, atom, 0, max_items, False, XA_CARDINAL,
+                              &actual_type, &actual_format, &nitems, &bytes_after,
+                              &prop) != Success ||
+        prop == NULL || actual_format != 32 || nitems == 0) {
+        if (prop != NULL) fn.XFree(prop);
+        return 0;
+    }
+    *out_items = (unsigned long *) prop;
+    return nitems;
+}
+
+/*
+ * Primary-monitor work area in X11 pixels, `[x, y, width, height]`:
+ * the XRandR primary monitor (full screen without XRandR) intersected with
+ * EWMH's `_NET_WORKAREA` for the current desktop (screen minus panels/docks
+ * — Mutter maintains it on XWayland too). Backs
+ * `TaoScreenGeometry.primaryMonitorWorkAreaPx` when no realized Tao window
+ * exists (panel-only tray apps); the GDK path needs a window, this one
+ * doesn't. Own short-lived connection — callable from any thread.
+ */
+EXPORT jlongArray JNICALL
+Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativePrimaryWorkArea(
+    JNIEnv *env, jclass clazz)
+{
+    (void) clazz;
+    if (!ensure_libs_loaded()) return NULL;
+    Display *dpy = fn.XOpenDisplay(NULL);
+    if (dpy == NULL) return NULL;
+    Window root = DefaultRootWindow(dpy);
+
+    long mon_x = 0, mon_y = 0;
+    long mon_w = DisplayWidth(dpy, DefaultScreen(dpy));
+    long mon_h = DisplayHeight(dpy, DefaultScreen(dpy));
+    if (fn.XRRGetMonitors != NULL && fn.XRRFreeMonitors != NULL) {
+        int nmon = 0;
+        XRRMonitorInfo *mons = fn.XRRGetMonitors(dpy, root, True, &nmon);
+        if (mons != NULL) {
+            for (int i = 0; i < nmon; i++) {
+                if (mons[i].primary || i == 0) {
+                    mon_x = mons[i].x;
+                    mon_y = mons[i].y;
+                    mon_w = mons[i].width;
+                    mon_h = mons[i].height;
+                }
+                if (mons[i].primary) break;
+            }
+            fn.XRRFreeMonitors(mons);
+        }
+    }
+
+    /* _NET_WORKAREA holds 4 CARDINALs per desktop; pick the current one. */
+    unsigned long desktop = 0;
+    unsigned long *items = NULL;
+    if (read_root_cardinals(dpy, root, "_NET_CURRENT_DESKTOP", 1, &items) >= 1) {
+        desktop = items[0];
+    }
+    if (items != NULL) { fn.XFree(items); items = NULL; }
+
+    long out_x = mon_x, out_y = mon_y, out_w = mon_w, out_h = mon_h;
+    unsigned long nitems =
+        read_root_cardinals(dpy, root, "_NET_WORKAREA", 4L * 64, &items);
+    if (items != NULL) {
+        if (nitems < (desktop + 1) * 4) desktop = 0;
+        if (nitems >= (desktop + 1) * 4) {
+            long wa_x = (long) items[desktop * 4];
+            long wa_y = (long) items[desktop * 4 + 1];
+            long wa_w = (long) items[desktop * 4 + 2];
+            long wa_h = (long) items[desktop * 4 + 3];
+            long left   = mon_x > wa_x ? mon_x : wa_x;
+            long top    = mon_y > wa_y ? mon_y : wa_y;
+            long right  = (mon_x + mon_w) < (wa_x + wa_w) ? (mon_x + mon_w) : (wa_x + wa_w);
+            long bottom = (mon_y + mon_h) < (wa_y + wa_h) ? (mon_y + mon_h) : (wa_y + wa_h);
+            if (right > left && bottom > top) {
+                out_x = left;
+                out_y = top;
+                out_w = right - left;
+                out_h = bottom - top;
+            }
+        }
+        fn.XFree(items);
+    }
+    fn.XCloseDisplay(dpy);
+
+    jlongArray result = (*env)->NewLongArray(env, 4);
+    if (result == NULL) return NULL;
+    jlong values[4] = { out_x, out_y, out_w, out_h };
+    (*env)->SetLongArrayRegion(env, result, 0, 4, values);
+    return result;
 }
 
 /* Picks the X visual for the panel from EGL's alpha-capable desktop-GL

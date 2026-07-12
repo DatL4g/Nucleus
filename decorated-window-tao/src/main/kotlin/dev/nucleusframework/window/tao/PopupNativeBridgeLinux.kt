@@ -55,10 +55,21 @@ internal object PopupNativeBridgeLinux {
     /**
      * `Xft.dpi / 96` from the X resource database, 1.0 when unset. X clients
      * live in the X coordinate space (logical under XWayland), so GDK's
-     * Wayland monitor scale must NOT be used for panel geometry.
+     * Wayland monitor scale must NOT be used for panel geometry. Uses its own
+     * short-lived connection — callable from any thread.
      */
     @JvmStatic
     external fun nativeScale(): Float
+
+    /**
+     * Primary-monitor work area `[x, y, width, height]` in X11 pixels (XRandR
+     * primary intersected with EWMH `_NET_WORKAREA`), or `null` when no X
+     * server is reachable. Backs `TaoScreenGeometry.primaryMonitorWorkAreaPx`
+     * when no realized Tao window exists (panel-only tray apps). Uses its own
+     * short-lived connection — callable from any thread.
+     */
+    @JvmStatic
+    external fun nativePrimaryWorkArea(): LongArray?
 
     /**
      * Creates the hidden override-redirect ARGB32 panel window and starts

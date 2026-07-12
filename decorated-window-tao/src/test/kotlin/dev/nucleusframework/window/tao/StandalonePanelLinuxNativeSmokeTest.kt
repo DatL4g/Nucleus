@@ -5,6 +5,7 @@ import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.makeGLWithInterface
 import kotlin.test.Test
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -59,6 +60,13 @@ class StandalonePanelLinuxNativeSmokeTest {
             val ctx = DirectContext.makeGLWithInterface(intf)
             ctx.close()
             assertTrue(PopupNativeBridgeLinux.nativeScale() > 0f, "panel scale must be positive")
+            val workArea = PopupNativeBridgeLinux.nativePrimaryWorkArea()
+            assertNotNull(workArea, "primary work area query failed")
+            assertTrue(
+                workArea.size == 4 && workArea[2] > 0 && workArea[3] > 0,
+                "invalid work area: ${workArea.toList()}",
+            )
+            println("work area: ${workArea.toList()}, scale: ${PopupNativeBridgeLinux.nativeScale()}")
         } finally {
             if (attachment != 0L) NativeTaoEglBridge.nativeDetach(attachment)
             PopupNativeBridgeLinux.nativeRelease(panel)
