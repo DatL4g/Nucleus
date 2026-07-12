@@ -164,6 +164,10 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.NativeTaoDManipBridge",
+            "jniAccessible": true
+        },
+        {
             "type": "dev.nucleusframework.window.tao.NativeTaoGlBridge",
             "jniAccessible": true
         },

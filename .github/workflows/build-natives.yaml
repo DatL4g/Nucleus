@@ -376,6 +376,17 @@ jobs:
             echo "OK: $f ($(wc -c < "$f") bytes)"
           done
 
+      # Exercise the freshly built DLLs against real HWNDs on the Windows
+      # runner: standalone-panel GL pipeline + DirectManipulation viewport
+      # smoke (COM attach, idle fetch, detach). These tests self-skip on
+      # non-Windows, so this is the only place they actually execute in CI.
+      - name: Run decorated-window-tao Windows native smoke tests
+        shell: bash
+        run: |
+          ./gradlew :decorated-window-tao:test --no-daemon \
+            --tests "dev.nucleusframework.window.tao.StandalonePanelNativeSmokeTest" \
+            --tests "dev.nucleusframework.window.tao.DManipNativeSmokeTest"
+
       - name: Upload decorated-window-tao Windows DLLs
         uses: actions/upload-artifact@v4
         with:

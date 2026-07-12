@@ -221,6 +221,16 @@ internal class TaoComposeSceneHostWindows(
         val initialTitleBarPx = (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
         NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
 
+        // DirectManipulation viewport — the OS-computed precision-touchpad
+        // pipeline (pan/pinch/inertia), Chrome's architecture on Windows.
+        // Contacts owned by the viewport stop synthesizing WM_MOUSEWHEEL, so
+        // the wheel path (ChromeScrollConfig + TaoWheelFling) automatically
+        // narrows to mice and DManip-less systems when this attaches.
+        dmanipAttached =
+            dev.nucleusframework.window.tao.NativeTaoDManipBridge.isLoaded &&
+            dev.nucleusframework.window.tao.NativeTaoDManipBridge
+                .nativeAttach(hwnd)
+
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()
         // resolves entry points via WGL/opengl32 and fails under ANGLE.
@@ -882,6 +892,10 @@ internal class TaoComposeSceneHostWindows(
         val sc = scene ?: return
 
         if (widthPx <= 0 || heightPx <= 0) return
+        // Drain OS-computed manipulation deltas BEFORE the frame-clock tick so
+        // they act as this frame's input (the native timer keeps invalidating
+        // while a gesture or its inertia is active).
+        drainDirectManipulation()
         val now = System.nanoTime()
 
         // ── Frame clock ordering ──────────────────────────────────────────
@@ -1028,6 +1042,70 @@ internal class TaoComposeSceneHostWindows(
             keyboardModifiers = currentKeyboardModifiers,
             button = mapButton(buttonCode),
         )
+    }
+
+    // ── DirectManipulation drain ────────────────────────────────────────
+    private var dmanipAttached = false
+    private var dmanipSessionActive = false
+    private val dmanipDeltas = FloatArray(3)
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    private fun drainDirectManipulation() {
+        if (!dmanipAttached || hwnd == 0L) return
+        val status =
+            dev.nucleusframework.window.tao.NativeTaoDManipBridge
+                .nativeFetch(hwnd, dmanipDeltas)
+        val active =
+            status == dev.nucleusframework.window.tao.NativeTaoDManipBridge.STATUS_RUNNING ||
+                status == dev.nucleusframework.window.tao.NativeTaoDManipBridge.STATUS_INERTIA
+        if (active && !dmanipSessionActive) {
+            // The OS owns this gesture's inertia; a wheel-path glide would
+            // double it (only reachable if a driver mixes both streams).
+            wheelFling.cancel()
+        }
+        dmanipSessionActive = active
+
+        val scaleDelta = dmanipDeltas[2]
+        if (kotlin.math.abs(scaleDelta - 1f) > DMANIP_SCALE_EPSILON) {
+            applyDManipPinch(scaleDelta)
+        }
+        val panX = dmanipDeltas[0]
+        val panY = dmanipDeltas[1]
+        if (kotlin.math.abs(panX) > DMANIP_PAN_EPSILON_PX ||
+            kotlin.math.abs(panY) > DMANIP_PAN_EPSILON_PX
+        ) {
+            // DManip models content dragged by the fingers: swiping up drags
+            // the content up (negative pan_y) and must grow the scroll offset
+            // (positive dyAwt) — hence the sign flip. Ticks = px / 100 keeps
+            // ChromeScrollConfig's fixed mapping an exact round-trip, and the
+            // fractional values ride the precise (direct) wheel path.
+            sendScrollToScene(
+                TaoPointerScrollEvent(
+                    dxAwt = -panX / ChromeScrollConfig.WINDOWS_PIXELS_PER_TICK,
+                    dyAwt = -panY / ChromeScrollConfig.WINDOWS_PIXELS_PER_TICK,
+                    scrollAmount = 1,
+                ),
+            )
+        }
+    }
+
+    /** DManip pinch: multiplicative scale straight into the synthetic
+     *  two-finger gesture (no wheel-notch curve — the ratio IS the zoom). */
+    @OptIn(ExperimentalComposeUiApi::class)
+    private fun applyDManipPinch(scaleDelta: Float) {
+        if (scene == null) return
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
+        if (!pinchActive) {
+            pinchActive = true
+            pinchScale = 1f
+            pinchCenterX = lastPointerX
+            pinchCenterY = lastPointerY
+            sendPinchPointers(PointerEventType.Press)
+        }
+        pinchScale *= scaleDelta
+        sendPinchPointers(PointerEventType.Move)
+        schedulePinchEnd()
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
@@ -1350,6 +1428,11 @@ internal class TaoComposeSceneHostWindows(
             attachmentHandle = 0L
         }
         if (hwnd != 0L) {
+            if (dmanipAttached) {
+                dev.nucleusframework.window.tao.NativeTaoDManipBridge
+                    .nativeDetach(hwnd)
+                dmanipAttached = false
+            }
             if (dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.isLoaded) {
                 dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge
                     .nativeRevoke(hwnd)
@@ -1387,6 +1470,10 @@ internal class TaoComposeSceneHostWindows(
         // tech still sees periodic refreshes during sustained scrolling.
         private const val A11Y_SYNC_DEBOUNCE_MS: Long = 120L
         private const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
+
+        /** Sub-visible DirectManipulation deltas skipped by the drain. */
+        private const val DMANIP_PAN_EPSILON_PX = 0.01f
+        private const val DMANIP_SCALE_EPSILON = 0.001f
 
         /**
          * Live attached-host count across the JVM. When > 1, every host
