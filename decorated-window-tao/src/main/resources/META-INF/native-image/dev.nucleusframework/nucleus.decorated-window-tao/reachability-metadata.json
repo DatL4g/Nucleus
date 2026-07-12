@@ -271,6 +271,26 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.PopupNativeBridgeLinux",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.render.TaoStandalonePopupHostLinux$PanelEventCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
+                { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.render.TaoStandalonePopupHostLinux$PanelOutsideClickListener",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.render.TaoPopupSceneLayer$PopupEventCallback",
             "jniAccessible": true,
             "methods": [
