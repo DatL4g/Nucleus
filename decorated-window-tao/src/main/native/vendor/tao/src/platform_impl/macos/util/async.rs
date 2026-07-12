@@ -184,8 +184,40 @@ pub unsafe fn set_maximized_async(
       } else if curr_mask.contains(NSWindowStyleMask::Resizable)
         && curr_mask.contains(NSWindowStyleMask::Titled)
       {
-        // Just use the native zoom if resizable
-        ns_window.zoom(None);
+        // PATCH(nucleus): upstream calls `ns_window.zoom(None)` here. AppKit's
+        // `zoom:` runs its resize animation SYNCHRONOUSLY on the main thread
+        // (~350 ms) in a private run-loop mode that services neither the main
+        // dispatch queue nor observers registered on `kCFRunLoopCommonModes`.
+        // Tao's run-loop observer therefore never drains the queued
+        // `WindowEvent::Resized` (windowDidResize: fires per animation step)
+        // until the animation completes — the embedder sees a single Resized
+        // at the end, so the content is stretched for the whole animation and
+        // snaps into place at the end.
+        //
+        // Instead, compute the zoom target frame ourselves (the same frames
+        // `zoom:` uses: screen visibleFrame ⇄ saved standard frame) and
+        // animate via the NSWindow animator proxy, which is non-blocking: the
+        // run loop keeps turning in common modes, windowDidResize: fires per
+        // step, and the embedder receives live Resized events throughout.
+        // `is_zoomed()` is frame-based (see window.rs) so bypassing `zoom:`
+        // keeps the maximized-state tracking consistent.
+        let mtm = MainThreadMarker::new_unchecked();
+        let screen = ns_window.screen().or_else(|| NSScreen::mainScreen(mtm));
+        let target = if maximized {
+          match screen {
+            Some(screen) => NSScreen::visibleFrame(&screen),
+            None => return,
+          }
+        } else {
+          shared_state_lock.saved_standard_frame()
+        };
+        let duration: f64 = msg_send![&*ns_window, animationResizeTime: target];
+        let _: () = msg_send![class!(NSAnimationContext), beginGrouping];
+        let ctx: id = msg_send![class!(NSAnimationContext), currentContext];
+        let _: () = msg_send![ctx, setDuration: duration];
+        let animator: id = msg_send![&*ns_window, animator];
+        let _: () = msg_send![animator, setFrame: target, display: YES];
+        let _: () = msg_send![class!(NSAnimationContext), endGrouping];
       } else {
         // if it's not resizable, we set the frame directly
         let new_rect = if maximized {
