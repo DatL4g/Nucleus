@@ -16,19 +16,39 @@ import androidx.compose.ui.window.WindowPosition
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.render.StandalonePopupHost
 import dev.nucleusframework.window.tao.render.TaoStandalonePopupHost
+import dev.nucleusframework.window.tao.render.TaoStandalonePopupHostLinux
 import dev.nucleusframework.window.tao.render.TaoStandalonePopupHostMac
 
 /**
- * Standalone transparent popup (Windows + macOS): a top-level, ownerless,
- * non-activating native panel with per-pixel transparency, hosting [content]
- * in its own Compose scene. There is no backing "window" anywhere — nothing
- * appears in the taskbar/Dock or the app switcher — and rendering is driven on
+ * Whether [TaoStandalonePopup] can actually show a panel on this system.
+ *
+ * Always true on Windows and macOS (modulo native library loading). On
+ * Linux the panel is a raw X11 window and needs a reachable X server —
+ * native X11 sessions or XWayland (present on effectively all Wayland
+ * desktops). Returns false on the rare Wayland-only setups; callers should
+ * then fall back to a regular window.
+ */
+fun isTaoStandalonePopupAvailable(): Boolean =
+    when (Platform.Current) {
+        Platform.Windows, Platform.MacOS -> true
+        Platform.Linux ->
+            PopupNativeBridgeLinux.isLoaded && PopupNativeBridgeLinux.nativeIsAvailable()
+        else -> false
+    }
+
+/**
+ * Standalone transparent popup: a top-level, ownerless, non-activating
+ * native panel with per-pixel transparency, hosting [content] in its own
+ * Compose scene. There is no backing "window" anywhere — nothing appears
+ * in the taskbar/Dock or the app switcher — and rendering is driven on
  * demand (no owner window render loop). Built for system-tray popups.
  *
- * Windows uses an ownerless `WS_POPUP` + DComp surface; macOS uses an ownerless
- * non-activating `NSPanel` + `CAMetalLayer`. Linux has no equivalent that works
- * across WMs, so on Linux (or when the native pipeline is unavailable) the
- * composable is a no-op.
+ * Windows uses an ownerless `WS_POPUP` + DComp surface; macOS an ownerless
+ * non-activating `NSPanel` + `CAMetalLayer`; Linux an override-redirect
+ * ARGB32 X11 window (through XWayland on Wayland sessions — see
+ * [isTaoStandalonePopupAvailable] for the fallback signal when no X server
+ * is reachable). When the native pipeline is unavailable the composable is
+ * a no-op.
  *
  * Must be called inside `taoApplication { }` (directly or through
  * `nucleusApplication` on the Tao backend).
@@ -39,8 +59,8 @@ import dev.nucleusframework.window.tao.render.TaoStandalonePopupHostMac
  * @param size panel size in dp.
  * @param focusable whether the panel can take keyboard focus on click.
  * @param onOutsideClick invoked when the user clicks anywhere outside the
- *   panel while it is visible (native mouse-hook / NSEvent monitor, fires on
- *   mouse-down).
+ *   panel while it is visible (native mouse-hook / NSEvent monitor / XI2 raw
+ *   button monitor, fires on mouse-down).
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
@@ -54,8 +74,12 @@ fun TaoStandalonePopup(
     onKeyEvent: ((KeyEvent) -> Boolean)? = null,
     content: @Composable () -> Unit,
 ) {
-    // Linux has no cross-WM transparency equivalent — no-op there.
-    if (Platform.Current != Platform.Windows && Platform.Current != Platform.MacOS) return
+    if (Platform.Current != Platform.Windows &&
+        Platform.Current != Platform.MacOS &&
+        Platform.Current != Platform.Linux
+    ) {
+        return
+    }
 
     // Native resources are allocated inside remember{}: if the composition
     // is abandoned before DisposableEffect registers, the panel leaks.
@@ -64,6 +88,7 @@ fun TaoStandalonePopup(
         remember {
             when (Platform.Current) {
                 Platform.MacOS -> TaoStandalonePopupHostMac()
+                Platform.Linux -> TaoStandalonePopupHostLinux()
                 else -> TaoStandalonePopupHost()
             }
         }

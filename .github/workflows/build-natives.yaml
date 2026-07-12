@@ -1035,7 +1035,8 @@ jobs:
           for f in \
             decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao.so \
             decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao_egl.so \
-            decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao_linux_widget.so; do
+            decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao_linux_widget.so \
+            decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao_linux_popup.so; do
             if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
             echo "OK: $f ($(wc -c < "$f") bytes)"
           done

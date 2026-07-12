@@ -137,7 +137,8 @@ private fun awtModifierMask(
  *
  * [vkCode] is the platform's native virtual-key code: Windows `VK_*` values
  * match the AWT codes Compose's `Key` constants use, but macOS `NSEvent.keyCode`
- * (`kVK_*`) values do not and are translated via [macNativeKeyToAwt].
+ * (`kVK_*`) values and Linux X11 keysyms do not and are translated via
+ * [macNativeKeyToAwt] / [linuxNativeKeyToAwt].
  */
 @OptIn(InternalComposeUiApi::class)
 internal fun ComposeScene.dispatchNativeKeyEvent(
@@ -153,10 +154,10 @@ internal fun ComposeScene.dispatchNativeKeyEvent(
     val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
     val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
     val (awtVkCode, keyLocation) =
-        if (Platform.Current == Platform.MacOS) {
-            macNativeKeyToAwt(vkCode, codePoint)
-        } else {
-            vkCode to java.awt.event.KeyEvent.KEY_LOCATION_STANDARD
+        when (Platform.Current) {
+            Platform.MacOS -> macNativeKeyToAwt(vkCode, codePoint)
+            Platform.Linux -> linuxNativeKeyToAwt(vkCode, codePoint)
+            else -> vkCode to java.awt.event.KeyEvent.KEY_LOCATION_STANDARD
         }
     val ev =
         taoKeyEvent(
