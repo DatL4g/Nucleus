@@ -16,6 +16,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <Metal/Metal.h>
 #import <CoreVideo/CoreVideo.h>
+#import <Carbon/Carbon.h>
 #import <mach/mach_time.h>
 #import <objc/runtime.h>
 #import <stdatomic.h>
@@ -83,6 +84,26 @@ static const float kMinHeightForFullSize = 28.0f;
 static const float kDefaultButtonOffset  = 23.0f;
 static const float kToolbarExtraInset    = 6.0f;
 static const float kMaxButtonLeftMargin  = 40.0f / 2.0f;
+// Pre-Tahoe native traffic-lights: 20 pt between button centers, and the
+// standard buttons keep their natural 14x16 pt frame (12 pt visible circle).
+static const float kLegacyButtonOffset   = 20.0f;
+
+// macOS 26 (Tahoe) introduced larger, wider-spaced traffic-lights, the large
+// corner radius and the Safari-style fullscreen title bar. Everything gated
+// on this check falls back to the classic pre-Tahoe chrome (issue #310).
+static BOOL isTahoeOrLater(void) {
+    static BOOL result = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSOperatingSystemVersion v = (NSOperatingSystemVersion){26, 0, 0};
+        result = [[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:v];
+    });
+    return result;
+}
+
+static float defaultButtonOffset(void) {
+    return isTahoeOrLater() ? kDefaultButtonOffset : kLegacyButtonOffset;
+}
 
 // Forward declarations — definitions live further down the file but the FS
 // observer @implementation needs to call into them.
@@ -287,6 +308,7 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
 
 @interface NucleusTaoButtonsView : NSView {
     BOOL _dispatching;
+    BOOL _mouseInside;
 }
 @end
 
@@ -308,6 +330,7 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
 - (void)mouseEntered:(NSEvent *)event {
     if (_dispatching) return;
     _dispatching = YES;
+    _mouseInside = YES;
     [super mouseEntered:event];
     for (NSView *btn in self.subviews) [btn mouseEntered:event];
     _dispatching = NO;
@@ -315,9 +338,18 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
 - (void)mouseExited:(NSEvent *)event {
     if (_dispatching) return;
     _dispatching = YES;
+    _mouseInside = NO;
     [super mouseExited:event];
     for (NSView *btn in self.subviews) [btn mouseExited:event];
     _dispatching = NO;
+}
+// Private AppKit hook: standard window buttons ask their superview whether
+// the traffic-light group is hovered before drawing the glyphs. Without it,
+// pre-Tahoe systems never show the symbols on hover (mirrors JBR's
+// AWTButtonsView).
+- (BOOL)_mouseInGroup:(NSButton *)button {
+    (void)button;
+    return _mouseInside;
 }
 @end
 
@@ -326,8 +358,14 @@ static void computeButtonMetrics(float titleBarHeight,
                                  float *outOffset) {
     float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
     *outBtnWidth  = fminf(titleBarHeight * 0.5f, kMinHeightForFullSize * 0.5f);
-    *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
-    *outOffset    = shrinkFactor * kDefaultButtonOffset;
+    if (isTahoeOrLater()) {
+        *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
+    } else {
+        // Keep the pre-Tahoe native 14x16 pt aspect so the glyphs aren't
+        // squashed on older macOS.
+        *outBtnHeight = (*outBtnWidth) * (16.0f / 14.0f);
+    }
+    *outOffset    = shrinkFactor * defaultButtonOffset();
 }
 
 static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
@@ -444,115 +482,141 @@ static void updateFullScreenButtonsPosition(NSWindow *window) {
     }
 }
 
-// ── Menu bar event monitor ──────────────────────────────────────────────
+// ── Menu bar reveal tracking (Carbon) ───────────────────────────────────
 //
 // In macOS fullscreen on non-notch screens the system menu bar auto-hides;
-// it slides back in when the cursor reaches the top of the screen, or when
-// the user presses Control+F2 to keyboard-focus it. We need to react to
-// both so the Compose title bar can animate down with the menu bar.
+// it slides back in when the cursor reaches the top of the screen, or on
+// Control+F2. Tracking this with NSEvent monitors is too late: AppKit
+// reveals/hides the bar after an internal delay even while the cursor is
+// stationary, so an event-driven check only notices on the NEXT mouse move.
 //
-// (1) An NSEvent local monitor catches mouse-driven show/hide via the
-//     mouse-move/down/up/drag/enter/exit masks.
-// (2) NSMenuDidBeginTracking / DidEndTracking notifications catch
-//     keyboard-driven show/hide (independent of mouse).
-//
-// All handlers run on the AppKit main thread, so AppKit reads are safe.
-// Each transition is debounced against `kTaoMenuBarLastRawOffsetKey` so we
-// only fire `notifyMenuBarOffsetChanged` on actual changes.
-//
-// Mirrors `decorated-window-jni`'s `installMenuBarMonitor` /
-// `removeMenuBarMonitor`.
+// Chromium's FullscreenMenubarTracker listens to Carbon application events
+// on kEventClassMenu instead:
+//   - the undocumented kind 2004 streams the live reveal fraction (param
+//     'rvlf', CGFloat 0..1) on every tick of the system animation,
+//   - kEventMenuBarShown / kEventMenuBarHidden give the terminal states
+//     (2004's own 0.0/1.0 are unreliable with multiple fullscreen spaces).
+// This drives the Compose title bar in lockstep with the menu bar — no
+// polling, no added latency.
+
+static const UInt32 kTaoMenuBarRevealEventKind = 2004;
+
+static EventHandlerRef sTaoMenuBarEventHandler = NULL;
+
+// Applies a menu bar reveal fraction to every monitored fullscreen window:
+// stores the raw offset, moves the native traffic-light container, and
+// notifies the Kotlin side. Runs on the main thread (Carbon dispatch).
+static void applyMenuBarFraction(CGFloat fraction) {
+    if (atomic_load(&sMetalShutdownInProgress)) return;
+
+    NSMenu *mainMenu = NSApp.mainMenu;
+    float menuBarHeight = mainMenu != nil ? (float)mainMenu.menuBarHeight : 0.0f;
+    if (menuBarHeight <= 0.0f) return;
+
+    BOOL anyChanged = NO;
+    for (NSWindow *w in NSApp.windows) {
+        if (objc_getAssociatedObject(w, &kTaoMenuBarMonitorKey) == nil) continue;
+        if (!(w.styleMask & NSWindowStyleMaskFullScreen)) continue;
+        if (!w.isOnActiveSpace) continue;
+
+        NSScreen *screen = w.screen;
+        BOOL hasNotch = NO;
+        if (@available(macOS 12.0, *)) {
+            hasNotch = screen != nil && screen.safeAreaInsets.top > 0;
+        }
+        // Notch screens keep the menu bar in the notch area permanently —
+        // the title bar never needs to move.
+        float offset = hasNotch ? 0.0f : (float)(fraction * menuBarHeight);
+
+        NSNumber *lastRaw = objc_getAssociatedObject(w, &kTaoMenuBarLastRawOffsetKey);
+        float lastOffset = lastRaw != nil ? lastRaw.floatValue : -1.0f;
+        // Chromium's guard: never *reveal* on a screen the cursor isn't on
+        // (another space's menu bar can leak its events here).
+        if (lastRaw != nil && offset > lastOffset && screen != nil &&
+            !NSMouseInRect(NSEvent.mouseLocation, screen.frame, NO)) {
+            continue;
+        }
+        if (offset == lastOffset) continue;
+
+        objc_setAssociatedObject(w, &kTaoMenuBarLastRawOffsetKey, @(offset),
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        // Move the traffic-light replacements right away — no JVM round-trip
+        // — so they track the menu bar pixel-for-pixel.
+        objc_setAssociatedObject(w, &kTaoMenuBarOffsetKey, @(offset),
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        updateFullScreenButtonsPosition(w);
+        anyChanged = YES;
+
+        NSNumber *boxed = objc_getAssociatedObject(w, &kTaoNsViewPtrKey);
+        if (boxed != nil) {
+            notifyMenuBarOffsetChanged(boxed.longLongValue, offset);
+        }
+    }
+    // AppKit drives the menu bar animation from a nested run loop; flush so
+    // the repositioned buttons repaint during the animation (mirrors
+    // Chromium's FullscreenMenubarTracker).
+    if (anyChanged) [CATransaction flush];
+}
+
+static OSStatus taoMenuBarRevealHandler(EventHandlerCallRef handler,
+                                        EventRef event, void *userData) {
+    (void)userData;
+    UInt32 kind = GetEventKind(event);
+    if (kind == kTaoMenuBarRevealEventKind) {
+        CGFloat fraction = 0;
+        GetEventParameter(event, FOUR_CHAR_CODE('rvlf'), typeCGFloat, NULL,
+                          sizeof(CGFloat), NULL, &fraction);
+        // With several fullscreen spaces the 2004 event can report another
+        // space's settled menu bar; trust only intermediate fractions and
+        // let Shown/Hidden set the terminal values (mirrors Chromium).
+        if (fraction > 0.0 && fraction < 1.0) applyMenuBarFraction(fraction);
+    } else if (kind == kEventMenuBarShown) {
+        applyMenuBarFraction(1.0);
+    } else if (kind == kEventMenuBarHidden) {
+        applyMenuBarFraction(0.0);
+    }
+    return CallNextEventHandler(handler, event);
+}
+
+// Installs the app-wide Carbon handler once; per-window opt-in happens via
+// the kTaoMenuBarMonitorKey marker consumed by applyMenuBarFraction.
+static void ensureTaoMenuBarEventHandler(void) {
+    if (sTaoMenuBarEventHandler != NULL) return;
+    EventTypeSpec specs[3] = {
+        { kEventClassMenu, kTaoMenuBarRevealEventKind },
+        { kEventClassMenu, kEventMenuBarShown },
+        { kEventClassMenu, kEventMenuBarHidden },
+    };
+    InstallApplicationEventHandler(NewEventHandlerUPP(&taoMenuBarRevealHandler),
+                                   3, specs, NULL, &sTaoMenuBarEventHandler);
+}
+
 static void installMenuBarMonitor(NSView *view) {
+    // Safari-style fullscreen title bar (slide down with the menu bar) is a
+    // Tahoe-era behaviour; on older macOS it produces a phantom padding and
+    // a seam line in the title-bar area (issue #310 B4/C).
+    if (!isTahoeOrLater()) return;
     NSWindow *window = view.window;
     if (window == nil) return;
-    removeMenuBarMonitor(window);
 
     // Cache the NSView pointer on the window so the JNI callback can route
     // by the same opaque key Kotlin used to subscribe to the StateFlow.
     jlong nsViewPtr = (jlong)(uintptr_t)(__bridge void *)view;
     objc_setAssociatedObject(window, &kTaoNsViewPtrKey, @(nsViewPtr),
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    __weak NSWindow *weakWindow = window;
-
-    void (^checkMenuBar)(void) = ^{
-        if (atomic_load(&sMetalShutdownInProgress)) return;
-        NSWindow *w = weakWindow;
-        if (w == nil) return;
-        if (!(w.styleMask & NSWindowStyleMaskFullScreen)) return;
-
-        float offset = 0.0f;
-        NSScreen *screen = w.screen;
-        BOOL hasNotch = NO;
-        if (@available(macOS 12.0, *)) {
-            hasNotch = screen != nil && screen.safeAreaInsets.top > 0;
-        }
-        if (!hasNotch && [NSMenu menuBarVisible]) {
-            NSMenu *mainMenu = NSApp.mainMenu;
-            if (mainMenu != nil) offset = (float)mainMenu.menuBarHeight;
-        }
-
-        NSNumber *lastRaw = objc_getAssociatedObject(w, &kTaoMenuBarLastRawOffsetKey);
-        float lastOffset = lastRaw != nil ? lastRaw.floatValue : -1.0f;
-        if (offset != lastOffset) {
-            objc_setAssociatedObject(w, &kTaoMenuBarLastRawOffsetKey, @(offset),
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            NSNumber *boxed = objc_getAssociatedObject(w, &kTaoNsViewPtrKey);
-            if (boxed != nil) {
-                notifyMenuBarOffsetChanged(boxed.longLongValue, offset);
-            }
-        }
-    };
-
-    // (1) Mouse event monitor.
-    id eventMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:
-        (NSEventMaskMouseMoved | NSEventMaskLeftMouseDown |
-         NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged |
-         NSEventMaskMouseEntered | NSEventMaskMouseExited)
-        handler:^NSEvent *(NSEvent *event) {
-            checkMenuBar();
-            return event;
-        }];
-
-    // (2) + (3) Keyboard-driven menu tracking.
-    NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
-    id beginObserver = [nc addObserverForName:NSMenuDidBeginTrackingNotification
-                                       object:nil
-                                        queue:NSOperationQueue.mainQueue
-                                   usingBlock:^(NSNotification *note) {
-        checkMenuBar();
-    }];
-    id endObserver = [nc addObserverForName:NSMenuDidEndTrackingNotification
-                                     object:nil
-                                      queue:NSOperationQueue.mainQueue
-                                 usingBlock:^(NSNotification *note) {
-        checkMenuBar();
-    }];
-
-    NSDictionary *monitors = @{
-        @"event": eventMonitor,
-        @"beginTracking": beginObserver,
-        @"endTracking": endObserver,
-    };
-    objc_setAssociatedObject(window, &kTaoMenuBarMonitorKey, monitors,
+    // Opt this window into applyMenuBarFraction.
+    objc_setAssociatedObject(window, &kTaoMenuBarMonitorKey, @YES,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    // Fire one initial check so the offset is published immediately —
-    // important on notch screens where it stays 0 forever otherwise.
-    checkMenuBar();
+    ensureTaoMenuBarEventHandler();
+
+    // Seed the current state — Carbon only reports transitions.
+    applyMenuBarFraction([NSMenu menuBarVisible] ? 1.0 : 0.0);
 }
 
 static void removeMenuBarMonitor(NSWindow *window) {
-    NSDictionary *monitors = objc_getAssociatedObject(window, &kTaoMenuBarMonitorKey);
-    if (monitors != nil) {
-        id eventMonitor = monitors[@"event"];
-        if (eventMonitor != nil) [NSEvent removeMonitor:eventMonitor];
-        NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
-        id begin = monitors[@"beginTracking"];
-        if (begin != nil) [nc removeObserver:begin];
-        id end = monitors[@"endTracking"];
-        if (end != nil) [nc removeObserver:end];
-    }
+    // The app-wide Carbon handler stays installed (inert without monitored
+    // windows); only the per-window state is dropped.
     objc_setAssociatedObject(window, &kTaoMenuBarMonitorKey, nil,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(window, &kTaoMenuBarLastRawOffsetKey, nil,
@@ -636,8 +700,12 @@ static void removeMenuBarMonitor(NSWindow *window) {
     removeMenuBarMonitor(w);
     removeButtonConstraints(w);
     // Restore the standard chrome so AppKit's fullscreen animation can run.
-    w.titlebarAppearsTransparent = NO;
-    w.titleVisibility = NSWindowTitleVisible;
+    // Tahoe-only: on older macOS this briefly reveals the opaque native
+    // title bar sliding to the top during the transition (issue #310).
+    if (isTahoeOrLater()) {
+        w.titlebarAppearsTransparent = NO;
+        w.titleVisibility = NSWindowTitleVisible;
+    }
     w.movableByWindowBackground = NO;
     // Drop the invisible toolbar to avoid AppKit's white-band glitch.
     if (w.toolbar != nil) {
@@ -1098,12 +1166,16 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
     }
 
     float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
-    float offset       = shrinkFactor * kDefaultButtonOffset;
+    float offset       = shrinkFactor * defaultButtonOffset();
     float extraInset   = window.toolbar ? kToolbarExtraInset : 0.0f;
     float margin       = fminf(titleBarHeight / 2.0f, kMaxButtonLeftMargin) + extraInset;
 
     NSNumber *rtlNum = objc_getAssociatedObject(window, &kTaoButtonsRtlKey);
     BOOL rtl = rtlNum != nil && rtlNum.boolValue;
+
+    // Pre-Tahoe keeps the native 14x16 pt button aspect (no -2 pt trim).
+    CGFloat sizeRatio    = isTahoeOrLater() ? (14.0 / 12.0) : (16.0 / 14.0);
+    CGFloat sizeConstant = isTahoeOrLater() ? -2.0 : 0.0;
 
     NSArray *buttons = @[closeBtn, miniBtn, zoomBtn];
     [buttons enumerateObjectsUsingBlock:^(NSView *btn, NSUInteger idx, BOOL *stop) {
@@ -1113,8 +1185,8 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
             [btn.widthAnchor   constraintLessThanOrEqualToAnchor:titlebarContainer.heightAnchor
                                                       multiplier:0.5],
             [btn.heightAnchor  constraintEqualToAnchor:btn.widthAnchor
-                                            multiplier:14.0 / 12.0
-                                              constant:-2.0],
+                                            multiplier:sizeRatio
+                                              constant:sizeConstant],
             [btn.centerYAnchor constraintEqualToAnchor:titlebarContainer.topAnchor
                                               constant:titleBarHeight / 2.0f],
         ]];
@@ -1250,8 +1322,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeApplyLargeCornerRad
         if (win == nil) return;
         // Pre-Tahoe systems do not draw the new corners even with a toolbar
         // attached; bail out so we don't pay the toolbar overhead for nothing.
-        NSOperatingSystemVersion v = (NSOperatingSystemVersion){26, 0, 0};
-        if (![[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:v]) return;
+        if (!isTahoeOrLater()) return;
 
         if (enabled == JNI_TRUE) {
             if (win.toolbar == nil) {
@@ -1598,7 +1669,8 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetNewFullscreenCon
     if (nsViewPtr == 0) return;
     ensureMetalJVMCached(env);
     void *rawPtr = (void *)(uintptr_t)nsViewPtr;
-    BOOL flag = (enabled == JNI_TRUE);
+    // Force-disable on pre-Tahoe systems — see installMenuBarMonitor.
+    BOOL flag = (enabled == JNI_TRUE) && isTahoeOrLater();
     dispatch_block_t apply = ^{
         if (atomic_load(&sMetalShutdownInProgress)) return;
         NSView *view = (__bridge NSView *)rawPtr;
@@ -1695,6 +1767,10 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeShutdown(
     atomic_store(&sMetalShutdownInProgress, true);
     atomic_store(&sMetalCallbacksEnabled, false);
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (sTaoMenuBarEventHandler != NULL) {
+            RemoveEventHandler(sTaoMenuBarEventHandler);
+            sTaoMenuBarEventHandler = NULL;
+        }
         for (NSWindow *w in NSApp.windows) {
             if (objc_getAssociatedObject(w, &kTaoMenuBarMonitorKey) != nil) {
                 removeMenuBarMonitor(w);

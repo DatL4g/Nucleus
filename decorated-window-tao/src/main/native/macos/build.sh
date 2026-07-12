@@ -64,6 +64,9 @@ COMMON_FLAGS=(
     -framework QuartzCore
     -framework Metal
     -framework CoreVideo
+    # Carbon: menu bar reveal tracking (kEventClassMenu) for the fullscreen
+    # Safari-style title bar — see applyMenuBarFraction in NucleusTaoMetal.m.
+    -framework Carbon
     -mmacosx-version-min=10.15
     -fobjc-arc
     -Oz
