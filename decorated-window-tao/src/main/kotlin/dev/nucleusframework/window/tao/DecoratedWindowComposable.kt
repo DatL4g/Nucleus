@@ -77,6 +77,13 @@ fun ApplicationScope.DecoratedWindow(
      */
     nativePopupLayers: Boolean = false,
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
+    /**
+     * macOS only: hide this app's icon from the Dock (switches the shared
+     * `NSApplication` to accessory activation policy — no Dock icon, no menu
+     * bar, but the window stays visible and focusable). App-wide and applied at
+     * window creation. No-op on Windows and Linux.
+     */
+    hiddenFromDock: Boolean = false,
     // Parent composition locals bridged into this window's own ComposeScene from
     // the first composition (see [openDecoratedWindow]). Defaults to null for
     // top-level windows; [DecoratedDialog] forwards its parent's locals here.
@@ -148,6 +155,7 @@ fun ApplicationScope.DecoratedWindow(
                     onKeyEvent = { latestKey(it) },
                     nativePopupLayers = nativePopupLayers,
                     macOSStyle = macOSStyle,
+                    hiddenFromDock = hiddenFromDock,
                     initialCompositionLocalContext = compositionLocalContext,
                     content = {
                         val taoWindow = window

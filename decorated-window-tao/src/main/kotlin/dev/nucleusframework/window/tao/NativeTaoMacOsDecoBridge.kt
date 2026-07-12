@@ -90,4 +90,19 @@ internal object NativeTaoMacOsDecoBridge {
         widthPts: Double,
         heightPts: Double,
     )
+
+    /**
+     * Hides (or restores) the application's Dock icon by switching the shared
+     * `NSApplication`'s activation policy.
+     *
+     * `hidden = true` → `NSApplicationActivationPolicyAccessory`: no Dock icon
+     * and no menu bar, but the app can still show windows and take focus.
+     * `false` → `NSApplicationActivationPolicyRegular` (standard icon + menu
+     * bar).
+     *
+     * App-wide: the activation policy belongs to `NSApplication`, not to a
+     * single window — the last window to apply this wins.
+     */
+    @JvmStatic
+    external fun nativeSetHiddenFromDock(hidden: Boolean)
 }

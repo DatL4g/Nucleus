@@ -27,6 +27,7 @@ import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
 import dev.nucleusframework.window.tao.NativeMetalBridge
 import dev.nucleusframework.window.tao.NativeTaoBridge
+import dev.nucleusframework.window.tao.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.TaoEventCode
@@ -85,6 +86,8 @@ internal class TaoComposeSceneHost(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
     private val macOSStyle: MacOSStyle = MacOSStyle.Auto,
+    // macOS-only: hide this app's Dock icon (app-wide activation policy).
+    private val hiddenFromDock: Boolean = false,
 ) {
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
@@ -244,6 +247,15 @@ internal class TaoComposeSceneHost(
             nsView,
             macOSStyle.shouldApplyLargeCornerRadius(),
         )
+
+        // Hide the app's Dock icon when requested. Activation policy is
+        // app-wide, so only act on the opt-in value — a default (false) window
+        // must not force a sibling that intentionally hid the app back into the
+        // Dock. Runs on the main thread (attach() contract), as the bridge
+        // requires.
+        if (hiddenFromDock && NativeTaoMacOsDecoBridge.isLoaded) {
+            NativeTaoMacOsDecoBridge.nativeSetHiddenFromDock(true)
+        }
 
         val handle = NativeMetalBridge.nativeAttach(nsView)
         require(handle != 0L) { "Failed to attach CAMetalLayer to NSView" }

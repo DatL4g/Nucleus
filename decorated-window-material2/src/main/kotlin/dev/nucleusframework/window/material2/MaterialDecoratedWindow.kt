@@ -81,6 +81,9 @@ fun NucleusApplicationScope.MaterialDecoratedWindow(
     // (NSPanel / WS_POPUP HWND / Tao popup window on Linux) so menus can
     // extend past the window bounds. Honoured by the Tao backend; ignored by AWT.
     nativePopupLayers: Boolean = false,
+    // macOS only: hide this app's icon from the Dock (Tao backend). No-op on
+    // AWT and on Windows/Linux.
+    hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -110,6 +113,7 @@ fun NucleusApplicationScope.MaterialDecoratedWindow(
             focusable = focusable,
             alwaysOnTop = alwaysOnTop,
             nativePopupLayers = nativePopupLayers,
+            hiddenFromDock = hiddenFromDock,
             minimumSize = minimumSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
