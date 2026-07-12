@@ -65,6 +65,15 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
     }
 
     /**
+     * Sandboxed (store) distribution settings. See [SandboxingSettings].
+     */
+    val sandboxing: SandboxingSettings = objects.newInstance(SandboxingSettings::class.java)
+
+    fun sandboxing(fn: Action<SandboxingSettings>) {
+        fn.execute(sandboxing)
+    }
+
+    /**
      * Unified code-signing entry point across macOS, Windows and Linux.
      * Delegates to the same `macOS.signing` / `windows.signing` / `linux.signing` instances.
      */

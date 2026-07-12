@@ -328,6 +328,10 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 taskNameObject = "nativeLibsFromJars",
             ) {
                 outputDir.set(appTmpDir.dir("sandboxing-stripped-jars"))
+                manifestOutputDir.set(appTmpDir.dir("sandboxing-manifest"))
+                keepNativeLibsInJar.set(
+                    provider { app.nativeDistributions.sandboxing.keepNativeLibsInJars },
+                )
                 if (runProguard != null) {
                     dependsOn(runProguard)
                     inputJars.from(project.fileTree(runProguard.flatMap { it.destinationDir }))
@@ -342,6 +346,26 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         } else {
             null
         }
+
+    // Place the sandbox manifest (sha256(marker) -> bundled lib filename) next to the extracted
+    // native libs in the app resources, so the runtime shim can resolve it. The shim JAR is already
+    // in the strip task's output dir → already on the app classpath via `packageTask.files`.
+    // Place the sandbox manifest (sha256(marker) -> bundled lib filename) next to the extracted
+    // native libs in the app resources, so the runtime shim can resolve it. The shim JAR is already
+    // in the strip task's output dir → already on the app classpath via `packageTask.files`.
+    //
+    // `configureJvmApplication` invokes this once for the default build type and once for the
+    // release build type, but both share the same `commonTasks.prepareSandboxedAppResources` Sync.
+    // Wire the manifest in only for the default build type so the shared Sync gets a single
+    // manifest copy (the release sandboxed path reuses the same Sync + extracted libs; when
+    // proguard is off the runtime jars — and thus the marker shas — are identical, so the default
+    // manifest matches the release strip output too).
+    if (stripNativeLibsFromJars != null && buildType === app.buildTypes.default) {
+        commonTasks.prepareSandboxedAppResources?.configure { sync ->
+            sync.dependsOn(stripNativeLibsFromJars)
+            sync.from(stripNativeLibsFromJars.flatMap { it.manifestOutputDir })
+        }
+    }
 
     // === Non-sandboxed pipeline (direct distribution formats: DMG, ZIP, NSIS, etc.) ===
 

@@ -15,6 +15,11 @@ dependencies {
     implementation(project(":examples:shared"))
     implementation(project(":core-runtime"))
     implementation(compose.desktop.currentOs)
+    // Extract-and-load native lib (issue #317): zstd-kmp ships libzstd-kmp.{dylib,so,dll} inside
+    // its JAR and loads a temp-extracted copy via System.load(temp). Adding it here + the Pkg
+    // store format below activates the sandboxed pipeline so the marker/shim rewrite is exercised
+    // end-to-end on macOS.
+    implementation(libs.zstd.kmp.jvm)
 }
 
 java {
@@ -64,7 +69,7 @@ nucleus.application {
     }
 
     nativeDistributions {
-        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis)
+        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Pkg)
         compressionLevel = CompressionLevel.Maximum
         appName = "Sample Tao"
         packageName = "SampleTao"

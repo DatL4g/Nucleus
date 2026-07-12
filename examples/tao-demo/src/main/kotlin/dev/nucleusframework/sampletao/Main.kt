@@ -70,6 +70,12 @@ import dev.nucleusframework.window.styling.TitleBarStyle
 import java.awt.datatransfer.StringSelection
 
 fun main() {
+    // Issue #317 e2e: exercise an extract-and-load native lib (zstd-kmp) so the sandboxed packaging
+    // pipeline's marker -> System.load rewrite -> NucleusSandboxLoader -> signed bundled copy path
+    // is validated end-to-end. Result is printed to stdout (visible in the app-image console).
+    // The probe is Java because Zstd.loadNativeLibrary() is Kotlin-internal (public at the JVM
+    // level) and thus unreachable from Kotlin in another module.
+    println("zstd-sandbox-roundtrip: ${ZstdSandboxProbe.roundtrip()}")
     runApp()
 }
 
