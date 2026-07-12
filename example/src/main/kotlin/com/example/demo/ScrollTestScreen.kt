@@ -133,7 +133,11 @@ fun ScrollTestScreen() {
                     else -> "inactive"
                 }
             backendLabel =
-                if (TaoScrollDiagnostics.directManipulationAttached) "DManip" else "molette"
+                if (TaoScrollDiagnostics.directManipulationAttached) {
+                    "DManip (contacts=${TaoScrollDiagnostics.directManipulationContacts})"
+                } else {
+                    "molette"
+                }
             val now = System.nanoTime() / 1_000_000
             if (meter.inGesture && now - meter.lastTimeMs >= IDLE_MS) {
                 val px = scrollState.value - meter.startValuePx

@@ -55,6 +55,9 @@ internal class TaoWheelFling(
     )
 
     private val samples = ArrayDeque<Sample>()
+
+    /** Wall-clock (frame-clock timebase) instant of the last real event. */
+    private var lastEventWallNanos = 0L
     private var armJob: Job? = null
 
     // Volatile only for cross-thread visibility in tests; production access
@@ -80,6 +83,7 @@ internal class TaoWheelFling(
         if (isFractional(dxTicks) || isFractional(dyTicks)) sawFractionalTick = true
         samples.addLast(Sample(timeMillis, dxTicks * pixelsPerTick, dyTicks * pixelsPerTick))
         while (samples.size > MAX_SAMPLES) samples.removeFirst()
+        lastEventWallNanos = System.nanoTime()
         armJob?.cancel()
         armJob =
             scope.launch {
@@ -155,11 +159,13 @@ internal class TaoWheelFling(
                 try {
                     var emittedX = 0f
                     var emittedY = 0f
-                    // Baseline on the launch instant, not the first frame tick —
-                    // the host frame clock runs on the same System.nanoTime base,
-                    // and burning a frame just to read the clock would add ~16ms
-                    // to the lift-to-glide gap (visible on a hard flick).
-                    val startNanos = System.nanoTime()
+                    // Baseline on the LAST REAL EVENT (same System.nanoTime base
+                    // as the host frame clock), not on fling launch: the first
+                    // emitted frame then covers the whole gesture-end detection
+                    // window in one catch-up step, so the content lands where it
+                    // would have been had the glide started at finger lift —
+                    // the eye reads continuous motion instead of a ~35ms freeze.
+                    val startNanos = lastEventWallNanos
                     while (true) {
                         val elapsed = (withFrameNanos { it } - startNanos) / NANOS_PER_SECOND
                         val target = curve.offsetAt(elapsed)
@@ -191,8 +197,14 @@ internal class TaoWheelFling(
          */
         const val GESTURE_END_MS = 35L
 
-        /** Below this release velocity a glide wouldn't be perceptible. */
-        const val MIN_FLING_VELOCITY_PX_PER_S = 100f
+        /**
+         * Below this release velocity, no glide: a slow deliberate scroll
+         * must stop EXACTLY where the fingers stop (drift after a precise
+         * positioning is jarring). Real flicks release well above 1500px/s;
+         * OS inertia (macOS, DManip) has the same behavior — momentum only
+         * for genuine flicks.
+         */
+        const val MIN_FLING_VELOCITY_PX_PER_S = 500f
 
         /**
          * Release-velocity ceiling. Chrome's DirectManipulation inertia never
@@ -202,8 +214,14 @@ internal class TaoWheelFling(
          */
         const val MAX_FLING_VELOCITY_PX_PER_S = 6_000f
 
-        /** Sliding window for the distance-over-time velocity estimate. */
-        const val VELOCITY_WINDOW_MS = 120L
+        /**
+         * Sliding window for the distance-over-time velocity estimate.
+         * Short on purpose: it must capture the RELEASE velocity, including
+         * the deceleration before a lift. A 120ms window averaged over the
+         * slowdown and made precise slow scrolls drift past their stop
+         * point; 64ms still holds 4-5 samples of a dense flick burst.
+         */
+        const val VELOCITY_WINDOW_MS = 64L
 
         /** A single coalesced quantum has no measurable duration — no glide. */
         const val MIN_SAMPLES = 3

@@ -29,4 +29,14 @@ public object TaoScrollDiagnostics {
     @Volatile
     public var softwareFlingActive: Boolean = false
         internal set
+
+    /**
+     * Cumulative touchpad hit-tests handed to the DirectManipulation
+     * viewport. Stuck at 0 while scrolling = the touchpad driver is legacy
+     * (mouse emulation, no pointer stack) and DManip can never engage on
+     * that machine.
+     */
+    @Volatile
+    public var directManipulationContacts: Int = 0
+        internal set
 }

@@ -146,6 +146,7 @@ struct DManipState {
   float pendingScale; /* multiplicative, 1.0 = no zoom */
   int status;         /* DMANIP_STATUS_* as of the last callback */
   BOOL timerActive;
+  LONG contactCount; /* PT_TOUCHPAD hit-tests handed to the viewport (diagnostic) */
 };
 
 static DManipState* GetState(HWND hwnd) {
@@ -278,6 +279,7 @@ static LRESULT CALLBACK DManipSubclassProc(HWND hwnd,
       if (s->getPointerType && s->getPointerType(pointerId, &type) &&
           type == PT_TOUCHPAD) {
         s->viewport->SetContact(pointerId);
+        s->contactCount++;
         if (!s->timerActive) {
           SetTimer(hwnd, DMANIP_TIMER_ID, DMANIP_TIMER_MS, nullptr);
           s->timerActive = TRUE;
@@ -448,10 +450,13 @@ Java_dev_nucleusframework_window_tao_NativeTaoDManipBridge_nativeDetach(
 }
 
 /*
- * Drains accumulated manipulation deltas into out[0..2]:
+ * Drains accumulated manipulation deltas into out[0..3]:
  *   out[0] = pan delta X (physical px since last fetch)
  *   out[1] = pan delta Y (physical px since last fetch)
  *   out[2] = multiplicative scale delta since last fetch (1.0 = none)
+ *   out[3] = cumulative PT_TOUCHPAD hit-test count (diagnostic; 0 forever
+ *            means the pad never routes through the pointer stack — legacy
+ *            driver — and DManip can't engage on that machine)
  * Returns the viewport status (DMANIP_STATUS_*), or -1 when not attached.
  * Also pumps the update manager so callbacks fire even between timer ticks.
  */
@@ -461,18 +466,19 @@ Java_dev_nucleusframework_window_tao_NativeTaoDManipBridge_nativeFetch(
   (void)clazz;
   HWND hwnd = (HWND)(UINT_PTR)hwndHandle;
   DManipState* s = GetState(hwnd);
-  if (!s || !out || env->GetArrayLength(out) < 3) return -1;
+  if (!s || !out || env->GetArrayLength(out) < 4) return -1;
 
   if (s->updateManager) s->updateManager->Update(nullptr);
 
-  jfloat values[3];
+  jfloat values[4];
   values[0] = s->pendingPanX;
   values[1] = s->pendingPanY;
   values[2] = s->pendingScale;
+  values[3] = (jfloat)s->contactCount;
   s->pendingPanX = 0.0f;
   s->pendingPanY = 0.0f;
   s->pendingScale = 1.0f;
-  env->SetFloatArrayRegion(out, 0, 3, values);
+  env->SetFloatArrayRegion(out, 0, 4, values);
   return (jint)s->status;
 }
 

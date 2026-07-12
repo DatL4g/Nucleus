@@ -37,12 +37,13 @@ class DManipNativeSmokeTest {
                 "DirectManipulation viewport attach failed (COM/manager/viewport)",
             )
 
-            val out = FloatArray(3)
+            val out = FloatArray(4)
             val status = NativeTaoDManipBridge.nativeFetch(hwnd, out)
             assertEquals(NativeTaoDManipBridge.STATUS_IDLE, status, "fresh viewport must be idle")
             assertEquals(0f, out[0], "no pan X expected while idle")
             assertEquals(0f, out[1], "no pan Y expected while idle")
             assertEquals(1f, out[2], "no scale delta expected while idle")
+            assertEquals(0f, out[3], "no touchpad contacts expected on a fresh viewport")
 
             NativeTaoDManipBridge.nativeDetach(hwnd)
             assertEquals(
