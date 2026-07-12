@@ -1,7 +1,6 @@
 package dev.nucleusframework.window.tao.render
 
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.input.pointer.util.VelocityTracker1D
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -39,8 +38,23 @@ internal class TaoWheelFling(
     private val pixelsPerTick: Float,
     private val emitTicks: (dxTicks: Float, dyTicks: Float) -> Unit,
 ) {
-    private val xVelocity = VelocityTracker1D(isDataDifferential = true)
-    private val yVelocity = VelocityTracker1D(isDataDifferential = true)
+    /**
+     * Gesture samples (timeMillis, dxPx, dyPx) for the release-velocity
+     * estimate. A windowed distance-over-time mean is used instead of an
+     * impulse/LSQ velocity tracker: Windows synthesizes coalesced wheel
+     * quanta (a single 2-tick event = 200px at one instant ≈ a 25 000 px/s
+     * point-wise spike), which tracker strategies built for touch positions
+     * wildly overestimate — measured glides hit the curve's 20 946 px/s cap
+     * on ordinary flicks. Total distance ÷ elapsed time over the last
+     * [VELOCITY_WINDOW_MS] is immune to the burst shape.
+     */
+    private class Sample(
+        val timeMillis: Long,
+        val dxPx: Float,
+        val dyPx: Float,
+    )
+
+    private val samples = ArrayDeque<Sample>()
     private var armJob: Job? = null
 
     // Volatile only for cross-thread visibility in tests; production access
@@ -64,8 +78,8 @@ internal class TaoWheelFling(
     ) {
         cancelFling()
         if (isFractional(dxTicks) || isFractional(dyTicks)) sawFractionalTick = true
-        xVelocity.addDataPoint(timeMillis, dxTicks * pixelsPerTick)
-        yVelocity.addDataPoint(timeMillis, dyTicks * pixelsPerTick)
+        samples.addLast(Sample(timeMillis, dxTicks * pixelsPerTick, dyTicks * pixelsPerTick))
+        while (samples.size > MAX_SAMPLES) samples.removeFirst()
         armJob?.cancel()
         armJob =
             scope.launch {
@@ -88,17 +102,49 @@ internal class TaoWheelFling(
     }
 
     private fun resetGesture() {
-        xVelocity.resetTracking()
-        yVelocity.resetTracking()
+        samples.clear()
         sawFractionalTick = false
     }
 
+    /**
+     * Windowed release velocity: distance ÷ time over the samples inside the
+     * last [VELOCITY_WINDOW_MS] before the final event. Requires
+     * [MIN_SAMPLES] events (a lone coalesced quantum has no measurable
+     * duration) and caps the result at [MAX_FLING_VELOCITY_PX_PER_S] — the
+     * curve tops out at 20 946 px/s, far beyond any deliberate gesture.
+     */
+    private fun releaseVelocityPxPerS(): Pair<Float, Float>? {
+        val last = samples.lastOrNull() ?: return null
+        val windowed = samples.filter { last.timeMillis - it.timeMillis <= VELOCITY_WINDOW_MS }
+        if (windowed.size < MIN_SAMPLES) return null
+        // The first sample's delta accumulated BEFORE the window starts;
+        // count only the time span and distance between first and last.
+        val spanMs = (last.timeMillis - windowed.first().timeMillis).coerceAtLeast(1L)
+        var dx = 0f
+        var dy = 0f
+        for (i in 1 until windowed.size) {
+            dx += windowed[i].dxPx
+            dy += windowed[i].dyPx
+        }
+        val vx = dx * MS_PER_SECOND / spanMs
+        val vy = dy * MS_PER_SECOND / spanMs
+        val magnitude = max(abs(vx), abs(vy))
+        if (magnitude <= 0f) return null
+        val scale =
+            if (magnitude > MAX_FLING_VELOCITY_PX_PER_S) {
+                MAX_FLING_VELOCITY_PX_PER_S / magnitude
+            } else {
+                1f
+            }
+        return (vx * scale) to (vy * scale)
+    }
+
     private fun maybeStartFling() {
-        val vx = xVelocity.calculateVelocity()
-        val vy = yVelocity.calculateVelocity()
+        val velocity = releaseVelocityPxPerS()
         val touchpadGesture = sawFractionalTick
         resetGesture()
-        if (!touchpadGesture) return
+        if (!touchpadGesture || velocity == null) return
+        val (vx, vy) = velocity
         if (max(abs(vx), abs(vy)) < MIN_FLING_VELOCITY_PX_PER_S) return
         val curve = ChromiumFlingCurve(vx, vy)
         if (!curve.isValid) return
@@ -130,6 +176,25 @@ internal class TaoWheelFling(
 
         /** Below this release velocity a glide wouldn't be perceptible. */
         const val MIN_FLING_VELOCITY_PX_PER_S = 100f
+
+        /**
+         * Release-velocity ceiling. Chrome's DirectManipulation inertia never
+         * launches anywhere near the curve's 20 946 px/s top; 6 000 px/s
+         * (≈ Avalonia's 8 000 cap, Chromium gesture configs are lower still)
+         * bounds the glide at ~1 450 px for the hardest flick.
+         */
+        const val MAX_FLING_VELOCITY_PX_PER_S = 6_000f
+
+        /** Sliding window for the distance-over-time velocity estimate. */
+        const val VELOCITY_WINDOW_MS = 120L
+
+        /** A single coalesced quantum has no measurable duration — no glide. */
+        const val MIN_SAMPLES = 3
+
+        /** Ring-buffer bound; ~2× any realistic 120 ms event burst. */
+        const val MAX_SAMPLES = 32
+
+        const val MS_PER_SECOND = 1_000f
 
         /** Skip emissions Compose would discard as sub-visible anyway. */
         const val MIN_EMIT_PX = 0.01f
