@@ -112,12 +112,30 @@ internal class TaoComposeSceneHostWindows(
     private val flushingDispatcher = FlushingMainDispatcher()
 
     /**
-     * Scope for host-owned timers (currently only the trackpad-pinch idle-end
-     * debounce). Runs on [flushingDispatcher] so resumed continuations land on
-     * the event-loop thread; `delay` itself ticks on the shared coroutines
-     * scheduler. Cancelled in [detach].
+     * Scope for host-owned gesture work (trackpad-pinch idle-end debounce,
+     * synthetic wheel fling). Runs on [flushingDispatcher] so resumed
+     * continuations land on the event-loop thread; `delay` itself ticks on
+     * the shared coroutines scheduler, and [frameClock] paces the fling's
+     * `withFrameNanos` loop at the render cadence. Cancelled in [detach].
      */
-    private val gestureScope = CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob())
+    private val gestureScope =
+        CoroutineScope(coroutineContext + flushingDispatcher + frameClock + SupervisorJob())
+
+    /**
+     * Chrome-like scroll inertia for touchpad flicks — Windows delivers no
+     * momentum events on the wheel path, so the glide is synthesized here
+     * and re-enters the scene as regular (precise) wheel ticks.
+     */
+    private val wheelFling =
+        TaoWheelFling(
+            scope = gestureScope,
+            pixelsPerTick = ChromeScrollConfig.WINDOWS_PIXELS_PER_TICK,
+            emitTicks = { dxTicks, dyTicks ->
+                sendScrollToScene(
+                    TaoPointerScrollEvent(dxAwt = dxTicks, dyAwt = dyTicks, scrollAmount = 1),
+                )
+            },
+        )
 
     /** Floating text-selection bar shown on touch selection. */
     private val textToolbar = TaoTextToolbar()
@@ -880,6 +898,7 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onFocusChanged(focused: Boolean) {
+        if (!focused) wheelFling.cancel()
         windowInfo.isWindowFocused = focused
     }
 
@@ -1032,6 +1051,8 @@ internal class TaoComposeSceneHostWindows(
         buttonCode: Int,
         pressed: Boolean,
     ) {
+        // A click anywhere stops an in-flight glide, as in Chrome.
+        if (pressed) wheelFling.cancel()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
@@ -1044,6 +1065,13 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
+        // Real input always preempts a synthetic glide (as in Chrome) and
+        // feeds the release-velocity tracker.
+        wheelFling.onUserScroll(event.dxAwt, event.dyAwt, System.nanoTime() / 1_000_000)
+        sendScrollToScene(event)
+    }
+
+    private fun sendScrollToScene(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
