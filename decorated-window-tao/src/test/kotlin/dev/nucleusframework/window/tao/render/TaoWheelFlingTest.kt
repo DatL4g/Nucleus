@@ -82,10 +82,10 @@ class TaoWheelFlingTest {
             val deltas = h.emitted.toList()
             assertTrue(deltas.size > 10, "glide should span many frames, got ${deltas.size}")
             assertTrue(deltas.all { it.second > 0f }, "glide must keep the flick direction")
-            // ~19125 px/s on the Chromium curve ≈ 4950 px ≈ 49.5 ticks; leave
-            // headroom for the velocity-tracker estimate.
+            // Windowed estimate: 7×153px over 56ms ≈ 19 125 px/s, capped at
+            // 6 000 px/s → Chromium-curve glide ≈ 1 455 px ≈ 14.6 ticks.
             val totalTicks = deltas.map { it.second }.sum()
-            assertTrue(totalTicks in 30f..70f, "expected ~49 ticks of glide, got $totalTicks")
+            assertTrue(totalTicks in 12f..18f, "expected ~14.6 ticks of glide, got $totalTicks")
         }
     }
 
@@ -112,6 +112,18 @@ class TaoWheelFlingTest {
             }
             assertFalse(h.awaitGlideStart(timeoutMs = 300))
             assertTrue(h.emitted.isEmpty(), "sub-threshold release velocity must not glide")
+        }
+    }
+
+    @Test
+    fun tooFewEventsDoNotGlide() {
+        Harness().use { h ->
+            // A lone coalesced quantum (or two) has no measurable duration —
+            // the windowed estimate needs MIN_SAMPLES events.
+            h.fling.onUserScroll(0f, 1.53f, 0L)
+            h.fling.onUserScroll(0f, 1.53f, 8L)
+            assertFalse(h.awaitGlideStart(timeoutMs = 300))
+            assertTrue(h.emitted.isEmpty(), "sub-MIN_SAMPLES gestures must not glide")
         }
     }
 
