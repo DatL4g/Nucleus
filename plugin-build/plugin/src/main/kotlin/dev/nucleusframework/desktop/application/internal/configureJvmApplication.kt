@@ -361,10 +361,9 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     // proguard is off the runtime jars — and thus the marker shas — are identical, so the default
     // manifest matches the release strip output too).
     if (stripNativeLibsFromJars != null && buildType === app.buildTypes.default) {
-        val stripTask = stripNativeLibsFromJars!!
         commonTasks.prepareSandboxedAppResources?.configure { sync ->
-            sync.dependsOn(stripTask)
-            sync.from(stripTask.flatMap { it.manifestOutputDir })
+            sync.dependsOn(stripNativeLibsFromJars)
+            sync.from(stripNativeLibsFromJars.flatMap { it.manifestOutputDir })
         }
     }
 
