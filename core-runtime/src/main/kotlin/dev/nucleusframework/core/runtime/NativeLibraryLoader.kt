@@ -1,7 +1,7 @@
 package dev.nucleusframework.core.runtime
 
-import java.io.IOException
 import java.net.JarURLConnection
+import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -15,8 +15,12 @@ import java.util.logging.Logger
  * (`~/.cache/nucleus/native/` on macOS/Linux, `%LOCALAPPDATA%/nucleus/native/` on Windows)
  * so that subsequent launches skip the extraction I/O entirely.
  *
- * The cache is invalidated per-library using a fingerprint derived from the
- * JAR entry CRC-32 and size (read from ZIP headers — zero I/O cost).
+ * The cache is content-addressed: a fingerprint derived from the JAR entry
+ * CRC-32 and size (read from ZIP headers — zero I/O cost) is part of the
+ * extraction path (`<cacheDir>/<platform>/<fingerprint>/<library>`). Different
+ * library versions therefore never share a file, so a concurrently running
+ * application using another version can never swap the library between
+ * validation and load (issue #304).
  */
 object NativeLibraryLoader {
     private val logger = Logger.getLogger(NativeLibraryLoader::class.java.simpleName)
@@ -80,49 +84,28 @@ object NativeLibraryLoader {
                     return false
                 }
 
-            // Read fingerprint from JAR entry metadata (CRC-32 + size from ZIP header, no I/O)
-            val fingerprint = resolveFingerprint(resourceUrl)
-
-            val cacheDir = resolveCacheDir().resolve(platform.resourceDir)
-            Files.createDirectories(cacheDir)
-            val target = cacheDir.resolve(fileName)
-            val fingerprintFile = cacheDir.resolve("$fileName.fingerprint")
-
-            // Extract sidecars regardless of cache state — they share the
-            // canonical cache directory so the dynamic linker can find
-            // them next to the main library (Windows: SetDllDirectory or
-            // implicit search; Linux: rpath/$ORIGIN; macOS: @loader_path).
-            extractSidecars(callerClass, resourcePrefix, platform, cacheDir, sidecarFiles)
-
-            if (Files.exists(target) && isCacheValid(fingerprintFile, fingerprint)) {
-                System.load(target.toAbsolutePath().toString())
-                loadedLibraries += libraryName
-                return true
-            }
-
-            // Cache miss — extract from JAR into a temp file
-            val tmp = Files.createTempFile(cacheDir, libraryName, ".tmp")
-            resourceUrl.openStream().use { input ->
-                Files.copy(input, tmp, StandardCopyOption.REPLACE_EXISTING)
-            }
-
-            // Try to move into the canonical cache location.
-            // On Windows the target may be locked by another process that loaded
-            // the previous version — in that case, load directly from the temp file.
-            val loadPath =
-                try {
-                    try {
-                        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                    } catch (_: Exception) {
-                        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
-                    }
-                    writeFingerprint(fingerprintFile, fingerprint)
-                    target
-                } catch (_: Exception) {
-                    // Target locked — load from temp, clean up on next launch
-                    logger.fine("Cache file locked, loading from temp: $tmp")
-                    tmp
+            // Sidecars must sit next to the main library so the dynamic linker
+            // can find them (Windows: SetDllDirectory or implicit search;
+            // Linux: rpath/$ORIGIN; macOS: @loader_path). They therefore share
+            // the content-addressed directory, whose key covers the main
+            // library and all sidecars.
+            val sidecarUrls =
+                sidecarFiles.mapNotNull { sidecar ->
+                    callerClass
+                        .getResource("$resourcePrefix/${platform.resourceDir}/$sidecar")
+                        ?.let { sidecar to it }
                 }
+
+            val fingerprint =
+                (listOf(resourceUrl) + sidecarUrls.map { it.second })
+                    .joinToString("_") { resolveFingerprint(it) }
+            val cacheDir = resolveCacheDir().resolve(platform.resourceDir).resolve(fingerprint)
+            Files.createDirectories(cacheDir)
+
+            for ((sidecar, url) in sidecarUrls) {
+                extractIfAbsent(url, cacheDir.resolve(sidecar))
+            }
+            val loadPath = extractIfAbsent(resourceUrl, cacheDir.resolve(fileName))
 
             System.load(loadPath.toAbsolutePath().toString())
             loadedLibraries += libraryName
@@ -134,93 +117,60 @@ object NativeLibraryLoader {
     }
 
     /**
-     * Extracts auxiliary files from the JAR into [cacheDir]. Each entry in
-     * [sidecarFiles] is a bare filename (e.g. `WebView2Loader.dll`) located
-     * under the same per-platform resource subdirectory as the main library.
-     * Files are only re-extracted when their JAR fingerprint changes, so
-     * subsequent launches skip the I/O.
+     * Ensures [target] holds the resource content and returns the path to load.
+     * The parent directory is content-addressed, so an existing file already
+     * has the right content and extraction is skipped. A concurrent extraction
+     * by another process writes the same bytes: if the atomic move loses that
+     * race, the existing target (or, failing that, our temp copy) is used.
      */
-    private fun extractSidecars(
-        callerClass: Class<*>,
-        resourcePrefix: String,
-        platform: NativePlatform,
-        cacheDir: Path,
-        sidecarFiles: List<String>,
-    ) {
-        for (sidecar in sidecarFiles) {
-            extractSingleSidecar(callerClass, resourcePrefix, platform, cacheDir, sidecar)
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
+    internal fun extractIfAbsent(
+        resourceUrl: URL,
+        target: Path,
+    ): Path {
+        if (Files.exists(target)) return target
+
+        val tmp = Files.createTempFile(target.parent, target.fileName.toString(), ".tmp")
+        resourceUrl.openStream().use { input ->
+            Files.copy(input, tmp, StandardCopyOption.REPLACE_EXISTING)
         }
-    }
-
-    private fun extractSingleSidecar(
-        callerClass: Class<*>,
-        resourcePrefix: String,
-        platform: NativePlatform,
-        cacheDir: Path,
-        sidecar: String,
-    ) {
-        try {
-            val resourcePath = "$resourcePrefix/${platform.resourceDir}/$sidecar"
-            val resourceUrl = callerClass.getResource(resourcePath) ?: return
-            val fingerprint = resolveFingerprint(resourceUrl)
-            val target = cacheDir.resolve(sidecar)
-            val fingerprintFile = cacheDir.resolve("$sidecar.fingerprint")
-            if (Files.exists(target) && isCacheValid(fingerprintFile, fingerprint)) return
-
-            val tmp = Files.createTempFile(cacheDir, sidecar, ".tmp")
-            resourceUrl.openStream().use { input ->
-                Files.copy(input, tmp, StandardCopyOption.REPLACE_EXISTING)
-            }
+        return try {
             try {
-                try {
-                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                } catch (_: Exception) {
-                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
-                }
-                writeFingerprint(fingerprintFile, fingerprint)
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE)
             } catch (_: Exception) {
-                logger.fine("Sidecar $sidecar move failed, existing copy retained")
+                Files.move(tmp, target)
             }
-        } catch (e: IOException) {
-            logger.log(Level.WARNING, "Failed to extract sidecar $sidecar", e)
+            target
+        } catch (_: Exception) {
+            if (Files.exists(target)) {
+                // Another process extracted the same content first
+                try {
+                    Files.deleteIfExists(tmp)
+                } catch (_: Exception) {
+                    // Best effort — stale .tmp files are harmless
+                }
+                target
+            } else {
+                logger.fine("Cache move failed, loading from temp: $tmp")
+                tmp
+            }
         }
     }
 
     /**
-     * Builds a fingerprint string from JAR entry metadata.
+     * Builds a fingerprint string from JAR entry metadata, safe for use as a
+     * directory name on all platforms.
      * For `jar:` URLs the CRC-32 and size come straight from the ZIP central directory.
      * For `file:` URLs (IDE dev mode) we use file size and last-modified timestamp.
      */
-    private fun resolveFingerprint(resourceUrl: java.net.URL): String {
+    internal fun resolveFingerprint(resourceUrl: URL): String {
         val connection = resourceUrl.openConnection()
         if (connection is JarURLConnection) {
             val entry = connection.jarEntry
-            return "${entry.crc}:${entry.size}"
+            return "${entry.crc}-${entry.size}"
         }
         // file: URL fallback (running from IDE classes dir)
-        return "${connection.contentLengthLong}:${connection.lastModified}"
-    }
-
-    private fun isCacheValid(
-        fingerprintFile: Path,
-        currentFingerprint: String,
-    ): Boolean =
-        try {
-            Files.exists(fingerprintFile) &&
-                Files.readString(fingerprintFile).trim() == currentFingerprint
-        } catch (_: Exception) {
-            false
-        }
-
-    private fun writeFingerprint(
-        fingerprintFile: Path,
-        fingerprint: String,
-    ) {
-        try {
-            Files.writeString(fingerprintFile, fingerprint)
-        } catch (_: Exception) {
-            // Non-critical — worst case we re-extract next time
-        }
+        return "${connection.contentLengthLong}-${connection.lastModified}"
     }
 
     private fun resolveCacheDir(): Path {
