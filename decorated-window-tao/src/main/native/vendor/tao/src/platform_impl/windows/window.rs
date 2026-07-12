@@ -1015,6 +1015,13 @@ impl Window {
   #[inline]
   pub(crate) fn set_skip_taskbar(&self, skip: bool) -> Result<(), ExternalError> {
     self.window_state.lock().skip_taskbar = skip;
+    // PATCH(nucleus): mirror into WindowFlags so the WS_EX_TOOLWINDOW /
+    // WS_EX_APPWINDOW choice survives every apply_diff style rewrite; the
+    // ITaskbarList call alone is forgotten by the shell on re-activation.
+    WindowState::set_window_flags(self.window_state.lock(), self.hwnd(), |f| {
+      f.set(WindowFlags::SKIP_TASKBAR, skip);
+      f.set(WindowFlags::ON_TASKBAR, !skip);
+    });
     unsafe { set_skip_taskbar(self.hwnd(), skip) }
   }
 
@@ -1169,7 +1176,11 @@ unsafe fn init<T: 'static>(
       Some(parent)
     }
     Parent::None => {
-      window_flags.set(WindowFlags::ON_TASKBAR, true);
+      // PATCH(nucleus): honour skip_taskbar structurally (see WindowFlags::
+      // SKIP_TASKBAR) instead of relying on the one-shot ITaskbarList::
+      // DeleteTab below, which the shell forgets after the next activation.
+      window_flags.set(WindowFlags::ON_TASKBAR, !pl_attribs.skip_taskbar);
+      window_flags.set(WindowFlags::SKIP_TASKBAR, pl_attribs.skip_taskbar);
       None
     }
   };

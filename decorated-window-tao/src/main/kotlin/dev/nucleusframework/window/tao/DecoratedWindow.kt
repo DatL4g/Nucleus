@@ -148,6 +148,11 @@ internal fun ApplicationScope.openDecoratedWindow(
             // requested logical size before snapping to maximized.
             maximized = maximized,
             popupOf = popupFor,
+            // Windows: taskbar/Alt+Tab exclusion is a creation-time tao
+            // attribute (a post-creation style change is clobbered by tao's
+            // own style rewrites). macOS handles hiddenFromDock via the
+            // activation policy in TaoComposeSceneHost.attach() instead.
+            skipTaskbar = hiddenFromDock,
         )
 
     if (Platform.Current == Platform.Windows) {
@@ -167,7 +172,6 @@ internal fun ApplicationScope.openDecoratedWindow(
             onKeyEvent,
             initialCompositionLocalContext,
             nativePopupLayers,
-            hiddenFromDock,
             content,
         )
     }
@@ -737,10 +741,9 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     onKeyEvent: (KeyEvent) -> Boolean,
     initialCompositionLocalContext: CompositionLocalContext?,
     nativePopupLayers: Boolean,
-    hiddenFromDock: Boolean,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
-    val host = TaoComposeSceneHostWindows(window, hiddenFromDock = hiddenFromDock)
+    val host = TaoComposeSceneHostWindows(window)
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent

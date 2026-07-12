@@ -255,6 +255,14 @@ pub(crate) enum UserEvent {
         // window kind a client can freely position under xdg-shell. Used for
         // cursor-following overlays (drag ghosts). Ignored on other platforms.
         popup_of: u64,
+        // Windows only: keep the window off the taskbar and the Alt+Tab
+        // switcher (`WindowBuilderExtWindows::with_skip_taskbar` — sets
+        // WS_EX_TOOLWINDOW via tao's WindowFlags so it survives every style
+        // rewrite). Must be a builder-time attribute: a post-creation style
+        // poke is clobbered by tao's apply_diff on the next state change.
+        // Ignored on macOS (Dock hiding goes through the activation policy)
+        // and Linux.
+        skip_taskbar: bool,
     },
     SetVisible {
         handle: u64,

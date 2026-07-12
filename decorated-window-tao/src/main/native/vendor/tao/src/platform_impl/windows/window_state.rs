@@ -119,6 +119,14 @@ bitflags! {
 
         const FOCUSABLE = 1 << 23;
 
+        /// PATCH(nucleus): keep the window off the taskbar and the Alt+Tab
+        /// switcher (WS_EX_TOOLWINDOW, no WS_EX_APPWINDOW). A WindowFlag —
+        /// rather than a one-shot SetWindowLong — because `apply_diff`
+        /// recomputes and rewrites GWL_EXSTYLE from these flags on every state
+        /// change (focus, minimize, visibility), which would otherwise restore
+        /// the taskbar button after the first Alt+Tab.
+        const SKIP_TASKBAR = 1 << 24;
+
         const EXCLUSIVE_FULLSCREEN_OR_MASK = WindowFlags::ALWAYS_ON_TOP.bits();
     }
 }
@@ -255,7 +263,11 @@ impl WindowFlags {
     if self.contains(WindowFlags::VISIBLE) {
       style |= WS_VISIBLE;
     }
-    if self.contains(WindowFlags::ON_TASKBAR) {
+    // PATCH(nucleus): SKIP_TASKBAR wins over ON_TASKBAR — WS_EX_TOOLWINDOW
+    // keeps the window off the taskbar and Alt+Tab across every style rewrite.
+    if self.contains(WindowFlags::SKIP_TASKBAR) {
+      style_ex |= WS_EX_TOOLWINDOW;
+    } else if self.contains(WindowFlags::ON_TASKBAR) {
       style_ex |= WS_EX_APPWINDOW;
     }
     if self.contains(WindowFlags::ALWAYS_ON_TOP) {

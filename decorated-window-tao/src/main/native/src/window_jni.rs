@@ -68,6 +68,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
     visible: jboolean,
     maximized: jboolean,
     popup_of: jlong,
+    skip_taskbar: jboolean,
 ) {
     let title: String = match env.get_string(&title) {
         Ok(s) => s.into(),
@@ -83,6 +84,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
         visible: visible != JNI_FALSE,
         maximized: maximized != JNI_FALSE,
         popup_of: popup_of as u64,
+        skip_taskbar: skip_taskbar != JNI_FALSE,
     });
 }
 

@@ -190,6 +190,7 @@ pub(crate) fn run_event_loop_blocking() {
                     visible,
                     maximized,
                     popup_of,
+                    skip_taskbar,
                 } => {
                     #[allow(unused_mut)]
                     let mut builder = WindowBuilder::new()
@@ -199,6 +200,17 @@ pub(crate) fn run_event_loop_blocking() {
                         .with_resizable(resizable)
                         .with_visible(visible)
                         .with_maximized(maximized);
+                    // Windows: taskbar/Alt+Tab exclusion must be a builder
+                    // attribute — tao re-derives GWL_EXSTYLE from its
+                    // WindowFlags on every state change, so a post-creation
+                    // style poke is clobbered on the next activation.
+                    #[cfg(target_os = "windows")]
+                    {
+                        use tao::platform::windows::WindowBuilderExtWindows;
+                        builder = builder.with_skip_taskbar(skip_taskbar);
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    let _ = skip_taskbar;
                     // Linux: build cursor-following overlays as GTK_WINDOW_POPUP
                     // transient children — on Wayland GDK maps them as
                     // `wl_subsurface`s, the only client-positionable window
