@@ -78,8 +78,8 @@ fun NucleusApplicationScope.MaterialDecoratedWindow(
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
     // Materialise Compose Popup layers as native transparent windows
-    // (NSPanel / WS_POPUP HWND) so menus can extend past the window bounds.
-    // Honoured by the Tao backend on Windows/macOS; ignored elsewhere.
+    // (NSPanel / WS_POPUP HWND / Tao popup window on Linux) so menus can
+    // extend past the window bounds. Honoured by the Tao backend; ignored by AWT.
     nativePopupLayers: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },

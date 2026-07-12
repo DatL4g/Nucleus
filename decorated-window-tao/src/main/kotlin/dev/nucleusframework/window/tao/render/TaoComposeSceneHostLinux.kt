@@ -18,8 +18,10 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
+import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
@@ -105,6 +107,42 @@ internal class TaoComposeSceneHostLinux(
      * BaseComposeScene picks it up. Set once before [attach].
      */
     var semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null
+
+    /**
+     * When true, Compose Popup / DropdownMenu / Tooltip layers materialise as
+     * real Tao popup windows ([TaoPopupSceneLayerLinux] — override-redirect on
+     * X11, `wl_subsurface` on Wayland) instead of drawing inside this window's
+     * EGL render target. Opt-in — see the Windows/macOS counterparts. Set
+     * before [attach].
+     */
+    var nativePopupLayers: Boolean = false
+
+    /**
+     * Renderers registered by popup layers. Drained AFTER the main scene's
+     * render in [onRedrawRequested] — each popup binds its own private EGL
+     * context (one context per attachment on Linux), paints, presents with
+     * swap interval 0 and releases, so no state leaks into the host context.
+     */
+    private val popupRenderers: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Key handlers consulted before the main scene's key dispatch. Popup
+     * windows never own keyboard focus on Linux (override-redirect /
+     * subsurface), so the parent forwards — mirrors the macOS chain.
+     */
+    private val popupKeyHandlers: MutableMap<Any, (KeyEvent) -> Boolean> = LinkedHashMap()
+
+    /** Callbacks invoked when the owner window's screen position changes (X11). */
+    private val ownerMoveListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Callbacks invoked when a press reaches the parent scene while popup
+     * layers are alive — the popup windows own their input region, so a
+     * parent press is by definition outside every popup. See
+     * [TaoPopupHostLinux.registerOutsidePressListener].
+     */
+    private val outsidePressListeners: MutableMap<Any, (androidx.compose.ui.input.pointer.PointerButton?) -> Unit> =
+        LinkedHashMap()
 
     private val windowInfo = LinuxTaoWindowInfo()
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
@@ -257,40 +295,71 @@ internal class TaoComposeSceneHostLinux(
                 getRootNode = { scene!!.rootDragAndDropNode },
                 outboundLauncher = ::launchLinuxOutboundDrag,
             )
+        val platformContext =
+            LinuxTaoPlatformContext(
+                windowHandle = window.handle,
+                // The custom CSD title bar is drawn inside the same Compose
+                // scene as the rest of the content, so it shares the (0, 0)
+                // origin with everything else. We must NOT report it as a
+                // `PlatformInsets.top`: Compose's `RootMeasurePolicy` (cf.
+                // `RootMeasurePolicy.skiko.kt::positionWithInsets`) applies
+                // platform insets as an *additive offset* on the popup
+                // position (designed for iOS notches / Android status
+                // bars, where the safe area is outside the Compose surface).
+                // Reporting `top = titleBarHeight` here shifts every Popup,
+                // DropdownMenu, ContextMenu, and Tooltip down by that
+                // amount — visible as a consistent "title-bar-height
+                // downward drift" of every popup the user opens. Popups
+                // are free to overlap the title bar zone; the title bar
+                // composable's own z-order keeps it visually on top of
+                // the page content but popups (rendered in a higher
+                // ComposeSceneLayer) naturally float above both.
+                topInsetPx = { 0 },
+                windowInfo = windowInfo,
+                semanticsOwnerListener = semanticsOwnerListener,
+                dragAndDropManager = dndManager,
+                textToolbar = textToolbar,
+            )
         scene =
-            CanvasLayersComposeScene(
-                density = Density(scale),
-                layoutDirection = GlobalLayoutDirection,
-                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                platformContext =
-                    LinuxTaoPlatformContext(
-                        windowHandle = window.handle,
-                        // The custom CSD title bar is drawn inside the same Compose
-                        // scene as the rest of the content, so it shares the (0, 0)
-                        // origin with everything else. We must NOT report it as a
-                        // `PlatformInsets.top`: Compose's `RootMeasurePolicy` (cf.
-                        // `RootMeasurePolicy.skiko.kt::positionWithInsets`) applies
-                        // platform insets as an *additive offset* on the popup
-                        // position (designed for iOS notches / Android status
-                        // bars, where the safe area is outside the Compose surface).
-                        // Reporting `top = titleBarHeight` here shifts every Popup,
-                        // DropdownMenu, ContextMenu, and Tooltip down by that
-                        // amount — visible as a consistent "title-bar-height
-                        // downward drift" of every popup the user opens. Popups
-                        // are free to overlap the title bar zone; the title bar
-                        // composable's own z-order keeps it visually on top of
-                        // the page content but popups (rendered in a higher
-                        // ComposeSceneLayer) naturally float above both.
-                        topInsetPx = { 0 },
-                        windowInfo = windowInfo,
-                        semanticsOwnerListener = semanticsOwnerListener,
-                        dragAndDropManager = dndManager,
-                        textToolbar = textToolbar,
-                    ),
-                invalidate = {
-                    requestRedrawCoalesced()
-                },
-            ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            if (nativePopupLayers) {
+                // Opt-in path: every Popup becomes a Tao popup window owned by
+                // this window (override-redirect on X11, wl_subsurface on
+                // Wayland), so popup content can extend beyond — and float
+                // independently of — the window bounds.
+                PlatformLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = GlobalLayoutDirection,
+                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                    composeSceneContext =
+                        TaoComposeSceneContextLinux(
+                            platformContext = platformContext,
+                            popupHost = popupHost(),
+                        ),
+                    invalidate = {
+                        requestRedrawCoalesced()
+                    },
+                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            } else {
+                // Default: Compose Popup / DropdownMenu / Tooltip content stays
+                // in the same EGL render target as the rest of the UI.
+                CanvasLayersComposeScene(
+                    density = Density(scale),
+                    layoutDirection = GlobalLayoutDirection,
+                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                    platformContext = platformContext,
+                    invalidate = {
+                        requestRedrawCoalesced()
+                    },
+                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+            }
+
+        // Notify popup layers when the host window moves on screen — X11
+        // popups are positioned in root coordinates and don't auto-track.
+        window.onMoved { _, _ ->
+            if (ownerMoveListeners.isNotEmpty()) {
+                for (cb in ownerMoveListeners.values.toList()) cb()
+            }
+        }
 
         registerInboundDnD()
         registerTouch()
@@ -1168,6 +1237,17 @@ internal class TaoComposeSceneHostLinux(
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
+
+        // Drain popup-layer renderers after the host context was released.
+        // Each layer binds its own private EGL context on this thread (the
+        // swap thread holds the *host* context on its own thread — EGL allows
+        // one current context per thread), paints, presents with swap
+        // interval 0 (non-blocking) and releases. Snapshot: rendering one
+        // layer can recompose and close a sibling.
+        if (popupRenderers.isNotEmpty()) {
+            val snapshot = popupRenderers.values.toList()
+            for (render in snapshot) render()
+        }
     }
 
     /**
@@ -1296,6 +1376,15 @@ internal class TaoComposeSceneHostLinux(
             if (resizeDecoration.onLeftPress(direction)) return
         }
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
+
+        // A press reaching the parent scene is outside every popup layer (the
+        // popup windows own their input region) — forward so Compose's
+        // dismiss-on-click-outside fires. The Linux stand-in for macOS's
+        // NSEvent monitor / Windows' WH_MOUSE_LL hook.
+        if (pressed && outsidePressListeners.isNotEmpty()) {
+            val button = mapButton(buttonCode)
+            for (cb in outsidePressListeners.values.toList()) cb(button)
+        }
 
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
@@ -1432,8 +1521,99 @@ internal class TaoComposeSceneHostLinux(
                 else -> return false
             }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
+        // Popup layers get a chance to consume the event before the main
+        // scene — popup windows never own keyboard focus on Linux, so the
+        // parent forwards. Mirrors the macOS popupKeyHandlers chain.
+        if (popupKeyHandlers.isNotEmpty()) {
+            for (handler in popupKeyHandlers.values.toList()) {
+                if (handler(composeEvent)) return true
+            }
+        }
         if (sc.sendKeyEvent(composeEvent)) return true
         return keyHandler?.invoke(composeEvent) == true
+    }
+
+    /**
+     * Plumbing handed to [TaoPopupSceneLayerLinux] instances when
+     * [nativePopupLayers] is enabled. Mirrors the Windows
+     * [TaoComposeSceneHostWindows.popupHost] contract, adapted to the Linux
+     * backend: layers are Tao popup windows keyed on [parentWindow], and each
+     * owns a private EGL context so there is no shared DirectContext.
+     */
+    private fun popupHost(): TaoPopupHostLinux {
+        val outer = this
+        return object : TaoPopupHostLinux {
+            override val parentWindow: TaoWindow get() = outer.window
+            override val scale: Float get() = outer.scale
+            override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val workAreaSize: IntSize get() =
+                NativeTaoBridge
+                    .nativeLinuxPrimaryMonitorWorkArea(outer.window.handle)
+                    ?.takeIf { it.size >= 4 && it[2] > 0 && it[3] > 0 }
+                    ?.let { IntSize(it[2].toInt(), it[3].toInt()) }
+                    ?: parentWindowSize
+
+            // Wayland popups are subsurfaces positioned relative to the
+            // parent surface — no global origin exists (or is needed).
+            override val parentScreenOriginPx: IntOffset get() =
+                if (outer.attachedKind != 1) {
+                    IntOffset.Zero
+                } else {
+                    NativeTaoBridge
+                        .nativeLinuxGetWindowRect(outer.window.handle)
+                        ?.takeIf { it.size >= 2 }
+                        ?.let { IntOffset(it[0].toInt(), it[1].toInt()) }
+                        ?: IntOffset.Zero
+                }
+            override val sceneCoroutineContext: CoroutineContext
+                get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+
+            override fun requestRedraw() = outer.requestRedrawCoalesced()
+
+            override fun registerRenderer(
+                token: Any,
+                render: () -> Unit,
+            ) {
+                outer.popupRenderers[token] = render
+            }
+
+            override fun unregisterRenderer(token: Any) {
+                outer.popupRenderers.remove(token)
+            }
+
+            override fun registerKeyHandler(
+                token: Any,
+                handler: (KeyEvent) -> Boolean,
+            ) {
+                outer.popupKeyHandlers[token] = handler
+            }
+
+            override fun unregisterKeyHandler(token: Any) {
+                outer.popupKeyHandlers.remove(token)
+            }
+
+            override fun registerOwnerMoveListener(
+                token: Any,
+                onMoved: () -> Unit,
+            ) {
+                outer.ownerMoveListeners[token] = onMoved
+            }
+
+            override fun unregisterOwnerMoveListener(token: Any) {
+                outer.ownerMoveListeners.remove(token)
+            }
+
+            override fun registerOutsidePressListener(
+                token: Any,
+                onPress: (androidx.compose.ui.input.pointer.PointerButton?) -> Unit,
+            ) {
+                outer.outsidePressListeners[token] = onPress
+            }
+
+            override fun unregisterOutsidePressListener(token: Any) {
+                outer.outsidePressListeners.remove(token)
+            }
+        }
     }
 
     /**
@@ -1610,6 +1790,15 @@ internal class TaoComposeSceneHostLinux(
         swapThread?.shutdownAndJoin()
         swapThread = null
 
+        // Close the scene BEFORE re-binding the host EGL context: with
+        // nativePopupLayers, closing a PlatformLayersComposeScene tears down
+        // its live popup layers, and each layer binds *its own* EGL context
+        // to free its Skia resources — leaving that context current. The
+        // host re-bind below must come after so the host's GPU releases land
+        // on the right context.
+        scene?.close()
+        scene = null
+
         // Re-bind THIS window's EGL context before tearing down Skia. The
         // GPU-resource releases that follow (glDeleteFramebuffers /
         // glDeleteTextures inside Surface.close + DirectContext.close) reach
@@ -1627,8 +1816,6 @@ internal class TaoComposeSceneHostLinux(
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
-        scene?.close()
-        scene = null
         directContext?.close()
         directContext = null
         // Clear any input region we may have set while the window was

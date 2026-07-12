@@ -41,8 +41,8 @@ fun NucleusApplicationScope.DecoratedWindow(
     popupFor: NucleusWindow? = null,
     // Materialise Compose Popup layers as native transparent windows
     // (NSPanel / WS_POPUP HWND) instead of drawing them inline in this
-    // window's render target. Honoured by the Tao backend on Windows/macOS;
-    // ignored by AWT and on Linux.
+    // window's render target. Honoured by the Tao backend on all three
+    // platforms; ignored by AWT.
     nativePopupLayers: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },

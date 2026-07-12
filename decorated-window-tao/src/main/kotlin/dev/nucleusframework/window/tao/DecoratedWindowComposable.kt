@@ -71,8 +71,9 @@ fun ApplicationScope.DecoratedWindow(
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     /**
      * Materialise Compose Popup layers as native transparent windows
-     * (NSPanel / WS_POPUP HWND) instead of drawing them inline in this
-     * window's render target. Windows/macOS only; ignored on Linux.
+     * (NSPanel / WS_POPUP HWND / Tao popup window on Linux — override-
+     * redirect on X11, `wl_subsurface` on Wayland) instead of drawing them
+     * inline in this window's render target.
      */
     nativePopupLayers: Boolean = false,
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
