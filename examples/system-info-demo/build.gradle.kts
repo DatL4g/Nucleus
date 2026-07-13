@@ -90,7 +90,7 @@ nucleus.application {
         windows {
             signing {
                 enabled = true
-                certificateFile.set(rootProject.file("example/packaging/KDroidFilter.pfx"))
+                certificateFile.set(rootProject.file("examples/nucleus-demo/packaging/KDroidFilter.pfx"))
                 certificatePassword = "ChangeMe-Temp123!"
                 algorithm = SigningAlgorithm.Sha256
                 timestampServer = "http://timestamp.digicert.com"
