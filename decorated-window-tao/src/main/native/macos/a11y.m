@@ -1951,53 +1951,158 @@ static void build_default_rotors(NucleusA11yProjection *proj) {
     proj.cachedRotors = @[headings, forms];
 }
 
-// Installs a standard macOS **Edit** menu (Undo/Redo/Cut/Copy/Paste/Select All)
-// into NSApp.mainMenu once. This is what selection tools like PopClip inspect
-// to decide whether Cut / Copy / Paste are offered (PopClip's own log shows it
-// probing for a "copy menu action": no Edit menu → it only offers Copy). Tao —
-// like Compose's AWT backend — ships no Edit menu, which is exactly why PopClip
-// Cut/Paste don't appear in Compose desktop apps.
+// SF Symbol → NSImage for menu-item icons. Returns nil on macOS < 11 or for an
+// unknown symbol name (AppKit itself returns nil, no crash), so the item simply
+// shows no icon. Uses respondsToSelector rather than @available on purpose:
+// a11y.m is compiled by the Rust `cc` build, which doesn't link the clang
+// runtime symbol (__isPlatformVersionAtLeast) that @available lowers to.
+static NSImage *nucleusMenuSymbol(NSString *name) {
+    if (![NSImage respondsToSelector:@selector(imageWithSystemSymbolName:accessibilityDescription:)]) {
+        return nil;
+    }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+    return [NSImage imageWithSystemSymbolName:name accessibilityDescription:nil];
+#pragma clang diagnostic pop
+}
+
+// Localizes a standard menu command using AppKit's own string tables, keyed by
+// the English label (e.g. "Cut" → "Couper" on a French system). AppKit ships
+// these in several .loctable files; we probe the ones that carry command
+// labels and fall back to the English key if none has it. This is how we get
+// the Edit-menu labels in the system language without bundling translations.
+static NSString *nucleusLocalizedMenuString(NSString *key) {
+    static NSBundle *appKit = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ appKit = [NSBundle bundleForClass:[NSApplication class]]; });
+    if (appKit == nil) return key;
+    static NSString *const tables[] = {
+        @"MenuCommands", @"FunctionKeyNames", @"InputManager", @"Common",
+        @"Document", @"TextSystem", @"FindPanel", @"Services", @"Menus"
+    };
+    NSString *sentinel = @"￿"; // localizedStringForKey returns `value` if the key is absent
+    for (size_t i = 0; i < sizeof(tables) / sizeof(tables[0]); i++) {
+        NSString *v = [appKit localizedStringForKey:key value:sentinel table:tables[i]];
+        if (![v isEqualToString:sentinel]) return v;
+    }
+    return key;
+}
+
+// Target for the Edit-menu items. Compose owns text editing and reacts to the
+// keyboard shortcuts, not to AppKit's cut:/copy:/paste: responder messages, so
+// each menu action re-injects its ⌘-shortcut as a synthetic key event into the
+// key window. Posted through the app event queue (no Accessibility permission,
+// unlike CGEventPost), so it reaches the Tao view exactly like a real keypress.
+@interface NucleusEditMenuBridge : NSObject
+@end
+
+@implementation NucleusEditMenuBridge
++ (instancetype)shared {
+    static NucleusEditMenuBridge *shared = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ shared = [[NucleusEditMenuBridge alloc] init]; });
+    return shared;
+}
+- (void)injectKeyCode:(unsigned short)keyCode chars:(NSString *)chars shift:(BOOL)shift {
+    NSWindow *win = NSApp.keyWindow;
+    if (win == nil) return;
+    NSEventModifierFlags mods = NSEventModifierFlagCommand;
+    if (shift) mods |= NSEventModifierFlagShift;
+    NSTimeInterval ts = NSProcessInfo.processInfo.systemUptime;
+    NSInteger wn = win.windowNumber;
+    NSEvent *down = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
+                               modifierFlags:mods timestamp:ts windowNumber:wn context:nil
+                                  characters:chars charactersIgnoringModifiers:chars
+                                   isARepeat:NO keyCode:keyCode];
+    NSEvent *up = [NSEvent keyEventWithType:NSEventTypeKeyUp location:NSZeroPoint
+                             modifierFlags:mods timestamp:ts windowNumber:wn context:nil
+                                characters:chars charactersIgnoringModifiers:chars
+                                 isARepeat:NO keyCode:keyCode];
+    if (down) [NSApp postEvent:down atStart:NO];
+    if (up)   [NSApp postEvent:up atStart:NO];
+}
+- (void)nucleusUndo:(id)sender      { [self injectKeyCode:6 chars:@"z" shift:NO];  }
+- (void)nucleusRedo:(id)sender      { [self injectKeyCode:6 chars:@"z" shift:YES]; }
+- (void)nucleusCut:(id)sender       { [self injectKeyCode:7 chars:@"x" shift:NO];  }
+- (void)nucleusCopy:(id)sender      { [self injectKeyCode:8 chars:@"c" shift:NO];  }
+- (void)nucleusPaste:(id)sender     { [self injectKeyCode:9 chars:@"v" shift:NO];  }
+- (void)nucleusSelectAll:(id)sender { [self injectKeyCode:0 chars:@"a" shift:NO];  }
+@end
+
+// Installs the default macOS menu bar once: an Application menu + an Edit menu,
+// built by hand and set as NSApp.mainMenu.
 //
-// We attach the standard selectors (cut:/copy:/paste:/…) with their ⌘ key
-// equivalents but DON'T wire a responder. AppKit then auto-disables the items
-// (nothing in the responder chain answers copy:), and — crucially — a disabled
-// menu item does NOT consume its key equivalent, so Compose keeps receiving
-// ⌘C/⌘X/⌘V as ordinary key events and its in-field editing is unaffected.
-// PopClip still sees the items exist and executes its actions via synthesized
-// keystrokes, which Compose handles.
-static void nucleus_tao_install_edit_menu_once(void) {
+// Why build it ourselves and set it UNCONDITIONALLY (rather than gate on an
+// empty NSApp.mainMenu, or load Apple's DefaultApp.nib like JBR): in a packaged
+// .app the JVM/AppKit init leaves a partial, broken menu bar whose application
+// slot doesn't render (issue #310 B2), so gating on "empty" skipped our menu in
+// the distributable, and loading the nib dropped the App menu there entirely.
+// Setting a freshly built menu is deterministic in both `run` and the packaged
+// app. Nothing else legitimately owns the menu bar in a Compose/Tao app.
+//
+// Labels are localized through AppKit's own string tables (system language), so
+// only commands present there are shown — About / Hide Others / Zoom are dropped
+// because Apple keys them by unstable Interface Builder IDs, not by name. The
+// Edit menu (Undo/Redo/Cut/Copy/Paste/Select All) lets PopClip offer
+// Cut/Copy/Paste and lets users invoke them. Compose owns text editing via
+// keyboard shortcuts (not the AppKit responder chain), so each Edit item is
+// wired to NucleusEditMenuBridge, which re-injects the matching ⌘-shortcut into
+// the key window. Edit items carry no key equivalent (else ⌘C would re-enter the
+// bridge — infinite loop — and it lets Compose keep receiving the real ⌘C).
+// Icons are SF Symbols.
+static void nucleus_tao_install_default_menu_bar_once(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        NSMenu *mainMenu = NSApp.mainMenu;
-        if (!mainMenu) {
-            mainMenu = [[NSMenu alloc] init];
-            NSApp.mainMenu = mainMenu;
-        }
-        for (NSMenuItem *existing in mainMenu.itemArray) {
-            NSString *t = existing.submenu.title;
-            if ([t isEqualToString:@"Edit"] || [t isEqualToString:@"Édition"]) return;
-        }
-        NSMenuItem *editItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:NULL keyEquivalent:@""];
-        NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
-        editMenu.autoenablesItems = YES;
-        [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
-        NSMenuItem *redo = [editMenu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"z"];
-        redo.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+        NSString *appName = [NSRunningApplication currentApplication].localizedName;
+        if (appName.length == 0) appName = [NSProcessInfo processInfo].processName;
+
+        NSMenu *mainMenu = [[NSMenu alloc] init];
+
+        // ── Application menu (index 0) — only table-localizable commands ──
+        NSMenuItem *appItem = [[NSMenuItem alloc] init];
+        NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@""];
+        NSMenuItem *services = [appMenu addItemWithTitle:nucleusLocalizedMenuString(@"Services")
+                                                  action:NULL keyEquivalent:@""];
+        NSMenu *servicesMenu = [[NSMenu alloc] initWithTitle:@""];
+        services.submenu = servicesMenu;
+        NSApp.servicesMenu = servicesMenu;
+        [appMenu addItem:[NSMenuItem separatorItem]];
+        [appMenu addItemWithTitle:[NSString stringWithFormat:@"%@ %@", nucleusLocalizedMenuString(@"Hide"), appName]
+                           action:@selector(hide:) keyEquivalent:@"h"];
+        [appMenu addItemWithTitle:nucleusLocalizedMenuString(@"Show All")
+                           action:@selector(unhideAllApplications:) keyEquivalent:@""];
+        [appMenu addItem:[NSMenuItem separatorItem]];
+        [appMenu addItemWithTitle:[NSString stringWithFormat:@"%@ %@", nucleusLocalizedMenuString(@"Quit"), appName]
+                           action:@selector(terminate:) keyEquivalent:@"q"];
+        appItem.submenu = appMenu;
+        [mainMenu addItem:appItem];
+
+        // ── Edit menu (localized, routed to Compose via the bridge, icons) ──
+        NucleusEditMenuBridge *bridge = [NucleusEditMenuBridge shared];
+        NSString *editTitle = nucleusLocalizedMenuString(@"Edit");
+        NSMenuItem *editItem = [[NSMenuItem alloc] initWithTitle:editTitle action:NULL keyEquivalent:@""];
+        NSMenu *editMenu = [[NSMenu alloc] initWithTitle:editTitle];
+        editMenu.autoenablesItems = NO; // always enabled; the bridge re-injects the shortcut
+        NSMenuItem *it;
+        it = [editMenu addItemWithTitle:nucleusLocalizedMenuString(@"Undo") action:@selector(nucleusUndo:) keyEquivalent:@""];             it.target = bridge; it.image = nucleusMenuSymbol(@"arrow.uturn.backward");
+        it = [editMenu addItemWithTitle:nucleusLocalizedMenuString(@"Redo") action:@selector(nucleusRedo:) keyEquivalent:@""];             it.target = bridge; it.image = nucleusMenuSymbol(@"arrow.uturn.forward");
         [editMenu addItem:[NSMenuItem separatorItem]];
-        [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
-        [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
-        [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+        it = [editMenu addItemWithTitle:nucleusLocalizedMenuString(@"Cut") action:@selector(nucleusCut:) keyEquivalent:@""];               it.target = bridge; it.image = nucleusMenuSymbol(@"scissors");
+        it = [editMenu addItemWithTitle:nucleusLocalizedMenuString(@"Copy") action:@selector(nucleusCopy:) keyEquivalent:@""];             it.target = bridge; it.image = nucleusMenuSymbol(@"doc.on.doc");
+        it = [editMenu addItemWithTitle:nucleusLocalizedMenuString(@"Paste") action:@selector(nucleusPaste:) keyEquivalent:@""];           it.target = bridge; it.image = nucleusMenuSymbol(@"doc.on.clipboard");
         [editMenu addItem:[NSMenuItem separatorItem]];
-        [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+        it = [editMenu addItemWithTitle:nucleusLocalizedMenuString(@"Select All") action:@selector(nucleusSelectAll:) keyEquivalent:@""]; it.target = bridge; it.image = nucleusMenuSymbol(@"square.dashed");
         editItem.submenu = editMenu;
         [mainMenu addItem:editItem];
+
+        NSApp.mainMenu = mainMenu;
     });
 }
 
 void nucleus_tao_a11y_attach(int64_t ns_view_handle) {
     NSView *view = (__bridge NSView *)(void *)(intptr_t)ns_view_handle;
     if (!view) return;
-    nucleus_tao_install_edit_menu_once();
+    nucleus_tao_install_default_menu_bar_once();
     nucleus_tao_swizzle_taoview_a11y_once();
     NucleusA11yProjection *proj = ensure_projection_for_view(view);
     build_default_rotors(proj);

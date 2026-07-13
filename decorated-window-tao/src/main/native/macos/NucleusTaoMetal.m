@@ -24,7 +24,26 @@
 #include <stdint.h>
 #import <jni.h>
 
-#define NTLOG(fmt, ...) do { (void)0; } while (0)
+// Diagnostic logging for the title-bar / fullscreen / menu-bar paths. Off by
+// default (no-op) so production apps stay silent; opt in by launching with
+// NUCLEUS_TAO_LOG=1 (any non-empty, non-"0" value). Routed through NSLog so the
+// output lands in the unified log — visible in Console.app or `log stream`
+// even when the app runs from a .app bundle with no attached terminal (which
+// is why plain stdout/println "logs never arrive" for testers on release
+// builds). All call sites are infrequent (FS transitions, attach, layout), so
+// NSLog cost is irrelevant.
+static BOOL nucleusTaoLogEnabled(void) {
+    static BOOL enabled = NO;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        const char *v = getenv("NUCLEUS_TAO_LOG");
+        enabled = v != NULL && v[0] != '\0' && !(v[0] == '0' && v[1] == '\0');
+    });
+    return enabled;
+}
+#define NTLOG(fmt, ...) do { \
+    if (nucleusTaoLogEnabled()) NSLog(@"[nucleus-tao] " fmt, ##__VA_ARGS__); \
+} while (0)
 
 // Associated-object key used to hang the constraints array on each NSWindow
 // so we can deactivate the previous set before applying a new one.
@@ -320,6 +339,8 @@ static void neutralizeToolbarFullScreenWindows(void) {
     if (cls == nil) return;
     for (NSWindow *win in NSApp.windows) {
         if (![win isKindOfClass:cls]) continue;
+        NTLOG("neutralize NSToolbarFullScreenWindow=%p shadow=%d",
+              win, (int)win.hasShadow);
         if (!win.ignoresMouseEvents) win.ignoresMouseEvents = YES;
         if (!win.contentView.hidden) win.contentView.hidden = YES;
         if (win.hasShadow) win.hasShadow = NO;
@@ -383,11 +404,17 @@ static void computeButtonMetrics(float titleBarHeight,
                                  float *outBtnWidth, float *outBtnHeight,
                                  float *outOffset) {
     float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
-    *outBtnWidth  = fminf(titleBarHeight * 0.5f, kMinHeightForFullSize * 0.5f);
-    // JBR's correction, valid on every macOS version: AppKit adds a constant
-    // 2 pt to the resulting frame height, so width * 14/12 - 2 keeps the
-    // circles perfectly round. The former pre-Tahoe 16/14 "native aspect"
-    // stretched them vertically (issue #310 follow-up).
+    // Traffic-lights are a fixed native size on macOS — they never scale with
+    // the title-bar height. Pinning the width to the native 14 pt (instead of
+    // titleBarHeight * 0.5) keeps them identical to windowed mode. Scaling the
+    // width down for a shorter fullscreen title bar combined with the -2 pt
+    // constant below flipped the aspect and stretched the pills horizontally
+    // (issue #310 follow-up: windowed was round via Auto Layout's intrinsic
+    // width, fullscreen forced a too-small frame).
+    *outBtnWidth  = kMinHeightForFullSize * 0.5f;
+    // JBR's correction: AppKit adds a constant 2 pt to the resulting frame
+    // height, so width * 14/12 - 2 keeps the circle perfectly round. Only
+    // valid at the native width, which is why the width is pinned above.
     *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
     *outOffset    = shrinkFactor * defaultButtonOffset();
 }
@@ -535,6 +562,7 @@ static void applyMenuBarFraction(CGFloat fraction) {
 
     NSMenu *mainMenu = NSApp.mainMenu;
     float menuBarHeight = mainMenu != nil ? (float)mainMenu.menuBarHeight : 0.0f;
+    NTLOG("menuBar fraction=%.3f menuBarHeight=%.1f", (double)fraction, menuBarHeight);
     if (menuBarHeight <= 0.0f) return;
 
     BOOL anyChanged = NO;
