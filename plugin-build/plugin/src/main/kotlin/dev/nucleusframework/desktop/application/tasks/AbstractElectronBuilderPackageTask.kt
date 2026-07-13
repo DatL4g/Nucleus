@@ -413,7 +413,7 @@ abstract class AbstractElectronBuilderPackageTask
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
-                    executableName = executableName.orNull,
+                    executableName = resolveExecutableName(),
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
                     nsisProtocolInclude = nsisProtocolInclude,
@@ -1101,10 +1101,11 @@ abstract class AbstractElectronBuilderPackageTask
 
             return when (targetFormat) {
                 TargetFormat.Snap -> {
-                    if (!isCommandAvailable("snapcraft")) {
-                        logger.lifecycle("Skipping Snap packaging: 'snapcraft' is not available on this runner.")
-                        true
-                    } else if (currentArch == Arch.Arm64) {
+                    // electron-builder builds snaps with its bundled `app-builder` tool (downloading
+                    // its own snap template), and never invokes the `snapcraft` binary — so snapcraft
+                    // is not a prerequisite. arm64 stays unsupported because that template
+                    // (gnome-3-28-1804 build-snaps) is unavailable for the arch.
+                    if (currentArch == Arch.Arm64) {
                         logger.lifecycle(
                             "Skipping Snap packaging on arm64: electron-builder uses " +
                                 "build-snaps (gnome-3-28-1804) unavailable for arm64.",
@@ -1302,6 +1303,13 @@ abstract class AbstractElectronBuilderPackageTask
                 .imageType(BufferedImage.TYPE_INT_ARGB)
                 .asBufferedImage()
 
+        private fun resolveExecutableName(): String? =
+            resolveLinuxExecutableName(
+                targetFormat = targetFormat,
+                snapName = distributions?.linux?.snap?.name,
+                executableName = executableName.orNull,
+            )
+
         private fun ensureLinuxExecutableAlias(appDir: File) {
             if (currentOS != OS.Linux) return
 
@@ -1331,7 +1339,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             val relativePath = launcher.relativeTo(appDir).path
 
-            val aliasName = executableName.orNull ?: launcherName.toNpmPackageName()
+            val aliasName = resolveExecutableName() ?: launcherName.toNpmPackageName()
             val aliasFile = appDir.resolve(aliasName)
             if (aliasFile.exists()) return
 
@@ -1509,6 +1517,20 @@ abstract class AbstractElectronBuilderPackageTask
             return listOf(platformFlag, targetFormat.electronBuilderTarget)
         }
     }
+
+/**
+ * Resolves the Linux `executableName` handed to electron-builder.
+ *
+ * For the Snap target, a non-blank [snapName] takes precedence: electron-builder 26.x derives the
+ * snap name (`meta/snap.yaml` `name:` and the Snap Store namespace) from the executable name, so it
+ * is the only lever that renames the snap independently of `packageName`. See issue #244.
+ */
+internal fun resolveLinuxExecutableName(
+    targetFormat: TargetFormat,
+    snapName: String?,
+    executableName: String?,
+): String? =
+    if (targetFormat == TargetFormat.Snap && !snapName.isNullOrBlank()) snapName else executableName
 
 /**
  * Creates a task-private copy of the app image directory so that parallel
