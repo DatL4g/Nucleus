@@ -19,7 +19,7 @@ Java evolved into Kotlin. JavaScript evolved into TypeScript. Desktop developmen
 going through the same shift: Electron was the pioneer — **Kotlin + Compose + Nucleus**
 is what comes next.
 
-Read [Why Nucleus](https://nucleusframework.dev/docs/why-nucleus) for how it compares to
+Read [Why Nucleus](https://nucleusframework.dev/en/docs/why-nucleus) for how it compares to
 Electron and Tauri.
 
 ## Installation
@@ -49,8 +49,8 @@ dependencies {
 ```
 
 For more installation options, see the
-[install guide](https://nucleusframework.dev/docs/start/install) and
-[project setup](https://nucleusframework.dev/docs/start/project-setup).
+[install guide](https://nucleusframework.dev/en/docs/start/install) and
+[project setup](https://nucleusframework.dev/en/docs/start/project-setup).
 
 ## Requirements
 
@@ -117,14 +117,14 @@ nucleus.application {
 ./gradlew packageDistributionForCurrentOS  # Build an installer for your OS
 ```
 
-The full [quickstart](https://nucleusframework.dev/docs/start/quickstart) walks through
+The full [quickstart](https://nucleusframework.dev/en/docs/start/quickstart) walks through
 each step.
 
 ## Resources for learning Nucleus
 
-* [nucleusframework.dev/docs](https://nucleusframework.dev/docs) — all of Nucleus's documentation
-* [Quickstart](https://nucleusframework.dev/docs/start/quickstart) — build and package your first app
-* [Architecture](https://nucleusframework.dev/docs/concepts/architecture) — the layered model behind the framework
+* [nucleusframework.dev/en/docs](https://nucleusframework.dev/en/docs) — all of Nucleus's documentation
+* [Quickstart](https://nucleusframework.dev/en/docs/start/quickstart) — build and package your first app
+* [Architecture](https://nucleusframework.dev/en/docs/concepts/architecture) — the layered model behind the framework
 * [examples/](examples/) — demo and sample applications, including the flagship `nucleus-demo`
 
 ## What Nucleus provides
