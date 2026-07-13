@@ -2,8 +2,6 @@
   <img src="art/header.png" alt="Nucleus" />
 </p>
 
-# Nucleus
-
 [![Gradle Plugin Portal](https://img.shields.io/gradle-plugin-portal/v/dev.nucleusframework?label=Gradle%20Plugin%20Portal)](https://plugins.gradle.org/plugin/dev.nucleusframework)
 [![Maven Central](https://img.shields.io/maven-central/v/dev.nucleusframework/nucleus.core-runtime?label=Maven%20Central)](https://central.sonatype.com/search?q=dev.nucleusframework)
 [![Pre Merge Checks](https://github.com/NucleusFramework/Nucleus/actions/workflows/pre-merge.yaml/badge.svg)](https://github.com/NucleusFramework/Nucleus/actions/workflows/pre-merge.yaml)
@@ -11,82 +9,140 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?logo=kotlin&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 
-**Nucleus is the Kotlin framework for native desktop apps.** Combined with Compose Multiplatform, it forms the most complete, most performant, and most deeply integrated desktop application stack ever built.
+The Nucleus framework lets you write cross-platform desktop applications using
+Kotlin. It is based on [Compose Multiplatform](https://www.jetbrains.com/compose-multiplatform/)
+and adds native window decorations, deep operating-system integration, code signing,
+and native installers — all configured through a single Gradle DSL. Your app runs
+either as a [GraalVM Native Image](https://www.graalvm.org/) or on the JVM.
 
-Java evolved into Kotlin. JavaScript evolved into TypeScript. Desktop development is going through the same shift: Electron was the pioneer. **Kotlin + Compose + Nucleus** is what comes next.
+Java evolved into Kotlin. JavaScript evolved into TypeScript. Desktop development is
+going through the same shift: Electron was the pioneer — **Kotlin + Compose + Nucleus**
+is what comes next.
 
----
+Read [Why Nucleus](https://nucleusframework.dev/docs/why-nucleus) for how it compares to
+Electron and Tauri.
 
-## Why Nucleus
+## Installation
 
-**Native on every OS** — Your app doesn't emulate native — it *is* native. Window decorations, notifications, taskbar badges, dock menus, system tray, dark mode, accent colors, global hotkeys — everything behaves exactly as users expect on their OS. And Nucleus makes it **simpler than the native APIs themselves** — Windows Toast, macOS UserNotifications, Linux D-Bus SNI, Win32 ITaskbarList3, Unity LauncherEntry — all behind clean, intuitive Kotlin APIs. Cross-platform that's **easier to use than native development itself** — without compromise.
+Nucleus ships as a Gradle plugin. Apply it alongside the Kotlin and Compose plugins in
+your module's `build.gradle.kts`:
 
-**Performance that rivals C++** — The HotSpot JVM is the most advanced JIT compiler ever built, delivering performance approaching C++ and Rust levels — with the simplicity of Kotlin. True parallelism with coroutines and virtual threads, not a single-threaded event loop.
-
-**Maximum lightness** — GraalVM native image compiles your entire app into a standalone binary. ~0.5s cold start, 100–150 MB RAM, tiny bundle. Compare that to 500 MB–1.5 GB for a typical Electron app.
-
-**The most advanced desktop UI** — Compose Multiplatform with Skia GPU rendering, reactive state, and shared code across platforms. No frontend/backend split — your UI calls your logic directly. On top sits [Jewel](https://github.com/JetBrains/intellij-community/tree/master/platform/jewel#readme), the desktop UI framework behind JetBrains IDEs.
-
----
-
-## What Nucleus provides
-
-### Ship everywhere
-
-- **16 packaging formats** — DMG, PKG, NSIS, MSI, AppX, Portable, DEB, RPM, AppImage, Snap, Flatpak, ZIP, TAR, 7Z
-- **Store-ready** — Mac App Store, Microsoft Store, Snapcraft, Flathub
-- **Code signing & notarization** — Windows and macOS, built into the pipeline
-- **Auto-update** — Check, download, verify, install — all built-in
-- **Deep links & file associations** — Protocol handlers and file type registration
-
-### Feel native
-
-- **Decorated windows** — Custom title bar with native window controls on every OS
-- **Notifications** — Native APIs on macOS, Windows, and Linux
-- **Launchers** — Badges, progress bars, jump lists, dock menus, quicklists
-- **Media controls** — OS media overlay integration (MPRIS, Now Playing, SMTC) with play/pause/seek events
-- **System integration** — Dark mode, accent colors, high contrast, energy management, global hotkeys, taskbar progress, system info
-
-### Perform
-
-- **AOT Cache** — Near-instant cold startup with a single Gradle flag
-- **GraalVM Native Image** — Standalone binary with automatic metadata resolution — zero manual config for most apps
-- **ProGuard** — Built-in release builds with optimization and obfuscation
-
-### Go deeper
-
-- **[Native Access](https://nucleusframework.dev/native-access/)** — Write Kotlin/Native, call it from the JVM. No C, no boilerplate.
-- **30+ runtime modules** — Intuitive Kotlin APIs for every OS integration
-- **CI/CD ready** — Reusable GitHub Actions, 6-runner matrix builds, universal macOS binaries, MSIX bundles
-
----
-
-## Quick Start
-
-```kotlin
+```kotlin title="build.gradle.kts"
 plugins {
-    id("dev.nucleusframework") version "<version>"
+    kotlin("jvm") version "2.4.0"
+    id("org.jetbrains.compose") version "1.11.1"
+    id("dev.nucleusframework") version "2.0.0"
 }
 
-nucleus.application {
-    mainClass = "com.example.MainKt"
+repositories {
+    mavenCentral()
+    google()
+}
 
-    nativeDistributions {
-        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb)
-        packageName = "MyApp"
-        packageVersion = "1.0.0"
+dependencies {
+    implementation(compose.desktop.currentOs)
+    // Entry point — provides nucleusApplication and DecoratedWindow
+    implementation("dev.nucleusframework:nucleus.nucleus-application:2.0.0")
+    // Tao backend — Rust-native windowing
+    implementation("dev.nucleusframework:nucleus.decorated-window-tao:2.0.0")
+}
+```
+
+For more installation options, see the
+[install guide](https://nucleusframework.dev/docs/start/install) and
+[project setup](https://nucleusframework.dev/docs/start/project-setup).
+
+## Requirements
+
+Nucleus builds on Compose Multiplatform and requires:
+
+| Requirement | Version | Note |
+|-------------|---------|------|
+| JDK | 17+ (25+ for AOT cache) | JBR 25 recommended |
+| Kotlin | 2.0+ | Compose Multiplatform requires Kotlin 2.x |
+| Gradle | 8.0+ | Bundled wrapper is sufficient |
+
+## Platform support
+
+Each build can compile, run, and package for macOS, Windows, and Linux from a single
+codebase.
+
+* **macOS** — Intel (`x64`) and Apple Silicon (`arm64`), shipped as a universal binary. Liquid Glass on macOS 26.
+* **Windows** — `x64` and `arm64`.
+* **Linux** — `x64` and `arm64`, with Wayland and X11 support.
+
+## Getting started
+
+Create `src/main/kotlin/com/example/Main.kt`:
+
+```kotlin
+package com.example
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.Text
+import androidx.compose.ui.Modifier
+import dev.nucleusframework.application.DecoratedWindow
+import dev.nucleusframework.application.NucleusBackend
+import dev.nucleusframework.application.nucleusApplication
+
+fun main() = nucleusApplication(backend = NucleusBackend.Tao) {
+    DecoratedWindow(
+        onCloseRequest = ::exitApplication,
+        title = "MyApp",
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Text("Hello from Nucleus")
+        }
     }
 }
 ```
 
-```bash
-./gradlew run                              # Run locally
-./gradlew packageDistributionForCurrentOS  # Build installer for your OS
+Then configure packaging in `build.gradle.kts`:
+
+```kotlin
+nucleus.application {
+    mainClass = "com.example.MainKt"
+
+    nativeDistributions {
+        packageName = "MyApp"
+        packageVersion = "1.0.0"
+        targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+    }
+}
 ```
 
----
+```shell
+./gradlew run                              # Run locally in a native Tao window
+./gradlew packageDistributionForCurrentOS  # Build an installer for your OS
+```
 
-## Runtime Modules
+The full [quickstart](https://nucleusframework.dev/docs/start/quickstart) walks through
+each step.
+
+## Resources for learning Nucleus
+
+* [nucleusframework.dev/docs](https://nucleusframework.dev/docs) — all of Nucleus's documentation
+* [Quickstart](https://nucleusframework.dev/docs/start/quickstart) — build and package your first app
+* [Architecture](https://nucleusframework.dev/docs/concepts/architecture) — the layered model behind the framework
+* [examples/](examples/) — demo and sample applications, including the flagship `nucleus-demo`
+
+## What Nucleus provides
+
+**Ship everywhere** — 18 packaging formats (DMG, PKG, NSIS, MSI, AppX/MSIX, Portable, DEB,
+RPM, AppImage, Snap, Flatpak, ZIP, TAR, 7Z), store publishing (Mac App Store, Microsoft
+Store, Snapcraft, Flathub), code signing and notarization, built-in auto-update, deep links,
+and file associations.
+
+**Feel native** — Decorated windows with native controls, notifications, taskbar/dock
+badges and menus, media controls (MPRIS, Now Playing, SMTC), dark mode, accent colors,
+global hotkeys, and system tray — all behind clean Kotlin APIs.
+
+**Perform** — GraalVM Native Image compiles your app to a standalone binary (~0.5s cold
+start, 100–150 MB RAM) with automatic reachability metadata; or run on the JVM with an AOT
+cache (JDK 25+) and ProGuard-optimized release builds.
+
+## Runtime modules
 
 Each module is published independently to Maven Central — use them together or standalone.
 
@@ -98,7 +154,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.darkmode-detector` | Reactive OS dark mode detection |
 | `nucleus.system-color` | Reactive accent color & high contrast detection |
 | `nucleus.system-info` | CPU, memory, GPU (NVIDIA/AMD/Intel), temperature, network, processes |
-| `nucleus.decorated-window` | Custom title bar with native controls |
+| `nucleus.decorated-window-tao` | Rust-native windowing backend (Tao) |
 | `nucleus.decorated-window-jewel` | Jewel (IntelliJ theme) integration |
 | `nucleus.decorated-window-material2` | Material 2 integration |
 | `nucleus.decorated-window-material3` | Material 3 integration |
@@ -114,42 +170,23 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.taskbar-progress` | Cross-platform taskbar progress bar & attention requests |
 | `nucleus.global-hotkey` | System-wide keyboard shortcuts |
 | `nucleus.energy-manager` | Energy efficiency & screen-awake APIs |
-| `nucleus.autolaunch` | Start the app at user login — MSIX `StartupTask`, Win32 `HKCU\...\Run`, `SMAppService`, systemd user units, Flatpak portal |
+| `nucleus.autolaunch` | Start the app at user login across all platforms |
 | `nucleus.native-ssl` | OS trust store integration |
 | `nucleus.native-http` | HTTP client with native SSL |
 | `nucleus.linux-hidpi` | Native HiDPI scale detection on Linux |
 | `nucleus.graalvm-runtime` | Native-image bootstrap, font fixes, automatic resource inclusion |
 
----
-
-## Roadmap
-
-Modules planned for upcoming releases. Contributions welcome.
-
-| Module | Description | macOS | Windows | Linux |
-|--------|-------------|-------|---------|-------|
-| `secure-storage` | Hardware-backed secret storage for tokens, passwords, keys | Keychain | Credential Manager / DPAPI | Secret Service (`libsecret`) |
-| `biometric-auth` | Prompt for fingerprint / face authentication | `LocalAuthentication` (Touch ID / Face ID) | Windows Hello | `fprintd` via D-Bus / polkit |
-| `share-sheet` | OS share sheet (URL, file, text) | `NSSharingService` | Windows `DataTransferManager` | xdg-desktop-portal `Share` |
-| `power-events` | Sleep / wake / lock / unlock / screen-off / battery state events | `NSWorkspace` notifications | `WM_POWERBROADCAST` / `WTSRegisterSessionNotification` | `org.freedesktop.login1` D-Bus signals |
-| `fs-watcher` | Native filesystem watcher (replaces slow `WatchService`) | `FSEvents` | `ReadDirectoryChangesW` | `inotify` |
-| `clipboard` | Rich clipboard — image, files, HTML, RTF — plus change watcher | `NSPasteboard` | `OleGetClipboard` / Clipboard History API | `wl-clipboard` / X11 selections |
-| `screen-capture` | Native screenshot / screen recording | `CGDisplayCreateImage` / ScreenCaptureKit | Windows Graphics Capture / DXGI | xdg-desktop-portal `Screenshot` |
-
----
-
-## Requirements
-
-| Requirement | Version | Note |
-|-------------|---------|------|
-| JDK | 17+ (25+ for AOT cache) | JBR 25 recommended |
-| Gradle | 8.0+ | |
-| Kotlin | 2.0+ | |
-
 ## Documentation
 
-Full documentation at **[nucleusframework.dev](https://nucleusframework.dev/)**.
+Full documentation is available at
+**[nucleusframework.dev](https://nucleusframework.dev/)** (English and French).
+
+## Community
+
+Ask questions, report bugs, and share what you're building on
+[GitHub Discussions](https://github.com/NucleusFramework/Nucleus/discussions) and the
+[issue tracker](https://github.com/NucleusFramework/Nucleus/issues).
 
 ## License
 
-MIT — See [LICENSE](LICENSE).
+[MIT](LICENSE)
