@@ -124,6 +124,14 @@ internal object NativeTaoBridge {
         // the only client-positionable window kind under xdg-shell). Ignored
         // on other platforms.
         popupOf: Long,
+        // Windows: keep the window off the taskbar and Alt+Tab
+        // (WS_EX_TOOLWINDOW via tao's WindowFlags). Builder-time attribute:
+        // tao rewrites GWL_EXSTYLE from its flags on every state change, so a
+        // post-creation style change does not survive activation.
+        // Linux: GTK skip-taskbar/skip-pager hints — effective on X11 and
+        // XWayland, ignored on native Wayland (no taskbar opt-out protocol).
+        // Ignored on macOS (Dock hiding uses the activation policy).
+        skipTaskbar: Boolean,
     )
 
     @JvmStatic

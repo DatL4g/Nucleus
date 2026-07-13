@@ -44,6 +44,11 @@ fun NucleusApplicationScope.DecoratedWindow(
     // window's render target. Honoured by the Tao backend on all three
     // platforms; ignored by AWT.
     nativePopupLayers: Boolean = false,
+    // Hide this window from the OS taskbar/Dock while it stays visible and
+    // focusable (macOS: NSApplication accessory policy, app-wide; Windows:
+    // WS_EX_TOOLWINDOW, per-window; Linux: GTK skip-taskbar hint, per-window,
+    // X11/XWayland only). Honoured by the Tao backend; ignored by AWT.
+    hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -98,6 +103,7 @@ fun NucleusApplicationScope.DecoratedWindow(
                 undecorated = undecorated,
                 popupFor = popupFor,
                 nativePopupLayers = nativePopupLayers,
+                hiddenFromDock = hiddenFromDock,
                 minimumSize = minimumSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,

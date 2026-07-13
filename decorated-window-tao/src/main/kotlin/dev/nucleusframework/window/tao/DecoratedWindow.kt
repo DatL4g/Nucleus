@@ -47,6 +47,9 @@ internal val LocalRequestedTitleBarHeight =
         error("LocalRequestedTitleBarHeight not provided — DecoratedWindow installs it.")
     }
 
+private val hiddenFromDockLogger: java.util.logging.Logger =
+    java.util.logging.Logger.getLogger("dev.nucleusframework.window.tao.hiddenFromDock")
+
 /**
  * Holds the ARGB clear color the Skia render loop applies to each frame,
  * pushed in by the themed window and by `TitleBar` from the resolved chrome
@@ -117,6 +120,10 @@ internal fun ApplicationScope.openDecoratedWindow(
     // drawing them inline in this window's render target.
     nativePopupLayers: Boolean = false,
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
+    // Hide this window from the taskbar/Dock (macOS: NSApplication accessory
+    // policy, app-wide; Windows: WS_EX_TOOLWINDOW, per-window; Linux: GTK
+    // skip-taskbar/skip-pager hints, per-window, X11/XWayland only).
+    hiddenFromDock: Boolean = false,
     // Parent composition locals to bridge into this window's own ComposeScene
     // (applied above the scene's LocalComposeSceneContext so popups still route
     // into THIS scene). Used by DecoratedDialog so a dialog's content sees the
@@ -125,6 +132,23 @@ internal fun ApplicationScope.openDecoratedWindow(
     initialCompositionLocalContext: CompositionLocalContext? = null,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
+    // hiddenFromDock rides on the GTK skip-taskbar/skip-pager hint, which
+    // native Wayland does not honour: there is no client-side skip-taskbar
+    // protocol on Wayland (xdg-shell, gtk_shell1 and the staging extensions all
+    // lack it, and Mutter rejects wlr-layer-shell). It is effective only under
+    // X11/XWayland. Warn so the no-op isn't silent — force XWayland with
+    // NUCLEUS_TAO_LINUX_RENDERER=x11 to actually hide the window.
+    if (hiddenFromDock &&
+        Platform.Current == Platform.Linux &&
+        Platform.isWayland &&
+        !System.getenv("GDK_BACKEND").orEmpty().equals("x11", ignoreCase = true) &&
+        !System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
+    ) {
+        hiddenFromDockLogger.warning(
+            "hiddenFromDock has no effect on native Wayland: Wayland has no client-side " +
+                "skip-taskbar protocol. Run with NUCLEUS_TAO_LINUX_RENDERER=x11 (XWayland) to hide the window.",
+        )
+    }
     val window =
         taoApplication.openWindow(
             title = title,
@@ -145,6 +169,12 @@ internal fun ApplicationScope.openDecoratedWindow(
             // requested logical size before snapping to maximized.
             maximized = maximized,
             popupOf = popupFor,
+            // Windows + Linux: taskbar/Alt+Tab exclusion is a creation-time
+            // tao attribute (on Windows a post-creation style change is
+            // clobbered by tao's own style rewrites). macOS handles
+            // hiddenFromDock via the activation policy in
+            // TaoComposeSceneHost.attach() instead.
+            skipTaskbar = hiddenFromDock,
         )
 
     if (Platform.Current == Platform.Windows) {
@@ -189,7 +219,7 @@ internal fun ApplicationScope.openDecoratedWindow(
         )
     }
 
-    val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle)
+    val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle, hiddenFromDock = hiddenFromDock)
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent

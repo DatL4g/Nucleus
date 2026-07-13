@@ -72,6 +72,10 @@ object TaoApplication {
         // client-positionable window kind under xdg-shell). For
         // cursor-following overlays such as drag ghosts. Ignored elsewhere.
         popupOf: TaoWindow? = null,
+        // Windows: keep the window off the taskbar and Alt+Tab. Linux: GTK
+        // skip-taskbar hint (X11/XWayland only). Must be set at creation
+        // (tao builder attribute); see NativeTaoBridge.
+        skipTaskbar: Boolean = false,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
         val window = TaoWindow(handle, isResizable = resizable, isPopup = popupOf != null)
@@ -86,6 +90,7 @@ object TaoApplication {
             visible,
             maximized,
             popupOf?.handle ?: 0L,
+            skipTaskbar,
         )
         return window
     }

@@ -832,3 +832,4 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetWindowO
     SetWindowPos(hwnd, NULL, (int)xPx, (int)yPx, 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
+

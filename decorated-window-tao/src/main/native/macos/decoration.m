@@ -19,6 +19,8 @@
 //     Windows `SystemParametersInfo(SPI_GETWORKAREA)` shape).
 //   - nativeGetPrimaryMonitorScaleMilli: backingScaleFactor of the primary
 //     screen as `(scale * 1000)`.
+//   - nativeSetHiddenFromDock: hides/shows the app's Dock icon by switching the
+//     shared NSApplication's activation policy (app-wide, macOS only).
 //
 // Shipped as a separate `libnucleus_tao_macos_deco.dylib` so its JNI exports
 // survive the Rust crate's release-mode `strip = "symbols"`. Loaded from
@@ -228,5 +230,34 @@ Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeApplyContent
         // this point (DecoratedWindow opens with `visible = false`), so we
         // don't need it. The frame is updated synchronously regardless.
         [window setFrame:currentFrame display:NO];
+    }
+}
+
+/* Hides or restores the application's Dock icon by switching the shared
+ * NSApplication's activation policy.
+ *
+ *   hidden == YES → NSApplicationActivationPolicyAccessory: no Dock icon and no
+ *                   menu bar, but the app can still show windows and take focus
+ *                   (unlike Prohibited, which forbids activation entirely).
+ *   hidden == NO  → NSApplicationActivationPolicyRegular: standard Dock icon +
+ *                   menu bar.
+ *
+ * App-wide: activation policy is a property of NSApplication, not of an
+ * individual window, so the last window to apply this wins. Switching to
+ * Accessory can drop the app out of the active state, so re-activate to keep
+ * the visible window key. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeSetHiddenFromDock(
+    JNIEnv *env, jclass clazz, jboolean hidden)
+{
+    (void)env; (void)clazz;
+    NSApplication *app = [NSApplication sharedApplication];
+    NSApplicationActivationPolicy policy =
+        hidden ? NSApplicationActivationPolicyAccessory
+               : NSApplicationActivationPolicyRegular;
+    if (app.activationPolicy == policy) return;
+    [app setActivationPolicy:policy];
+    if (hidden) {
+        [app activateIgnoringOtherApps:YES];
     }
 }

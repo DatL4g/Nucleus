@@ -77,6 +77,23 @@ fun ApplicationScope.DecoratedWindow(
      */
     nativePopupLayers: Boolean = false,
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
+    /**
+     * Hide this window from the OS taskbar/Dock while keeping it visible and
+     * focusable.
+     *
+     * - macOS: switches the shared `NSApplication` to accessory activation
+     *   policy (no Dock icon, no menu bar). App-wide — the last window to apply
+     *   it wins.
+     * - Windows: drops this window's taskbar button and Alt+Tab entry
+     *   (`WS_EX_TOOLWINDOW`). Per-window.
+     * - Linux: drops this window's taskbar and pager entries (GTK
+     *   skip-taskbar/skip-pager hints, `_NET_WM_STATE_SKIP_TASKBAR`).
+     *   Per-window; effective on X11 and XWayland, no-op on native Wayland,
+     *   which has no client-side taskbar opt-out.
+     *
+     * Applied at window creation.
+     */
+    hiddenFromDock: Boolean = false,
     // Parent composition locals bridged into this window's own ComposeScene from
     // the first composition (see [openDecoratedWindow]). Defaults to null for
     // top-level windows; [DecoratedDialog] forwards its parent's locals here.
@@ -148,6 +165,7 @@ fun ApplicationScope.DecoratedWindow(
                     onKeyEvent = { latestKey(it) },
                     nativePopupLayers = nativePopupLayers,
                     macOSStyle = macOSStyle,
+                    hiddenFromDock = hiddenFromDock,
                     initialCompositionLocalContext = compositionLocalContext,
                     content = {
                         val taoWindow = window
