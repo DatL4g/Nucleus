@@ -1,8 +1,10 @@
 package dev.nucleusframework.menu.macos
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
-import javax.swing.SwingUtilities
 
 private const val LIBRARY_NAME = "nucleus_menu_macos"
 
@@ -17,6 +19,15 @@ internal object NativeNsMenuBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeNsMenuBridge::class.java)
 
     val isLoaded: Boolean get() = loaded
+
+    // Menu actions/delegates fire from the AppKit main thread (JNI) and must be
+    // marshalled to the host's Compose UI thread. Dispatchers.Main resolves to
+    // the right thread per backend — the Swing EDT under the AWT backend, the
+    // Tao main thread under the Tao backend (TaoMainDispatcherFactory). Using
+    // SwingUtilities.invokeLater instead posted to the AWT EDT, which is NOT
+    // Compose's UI thread in the Tao backend, so the callbacks were silently
+    // dropped there — no menu action, no delegate event (issue #310).
+    private val uiScope = CoroutineScope(Dispatchers.Main)
 
     // ---- Action callbacks (handle → callback) ----
     private val actionCallbacks = ConcurrentHashMap<Long, () -> Unit>()
@@ -46,7 +57,7 @@ internal object NativeNsMenuBridge {
     @JvmStatic
     fun onMenuItemAction(handle: Long) {
         val callback = actionCallbacks[handle] ?: return
-        SwingUtilities.invokeLater { callback() }
+        uiScope.launch { callback() }
     }
 
     // ---- Delegate callbacks (menuHandle → delegate) ----
@@ -71,21 +82,21 @@ internal object NativeNsMenuBridge {
     fun onMenuWillOpen(menuHandle: Long) {
         val delegate = delegates[menuHandle] ?: return
         val menu = NsMenu.borrowed(menuHandle)
-        SwingUtilities.invokeLater { delegate.menuWillOpen(menu) }
+        uiScope.launch { delegate.menuWillOpen(menu) }
     }
 
     @JvmStatic
     fun onMenuDidClose(menuHandle: Long) {
         val delegate = delegates[menuHandle] ?: return
         val menu = NsMenu.borrowed(menuHandle)
-        SwingUtilities.invokeLater { delegate.menuDidClose(menu) }
+        uiScope.launch { delegate.menuDidClose(menu) }
     }
 
     @JvmStatic
     fun onMenuNeedsUpdate(menuHandle: Long) {
         val delegate = delegates[menuHandle] ?: return
         val menu = NsMenu.borrowed(menuHandle)
-        SwingUtilities.invokeLater { delegate.menuNeedsUpdate(menu) }
+        uiScope.launch { delegate.menuNeedsUpdate(menu) }
     }
 
     @JvmStatic
@@ -96,7 +107,7 @@ internal object NativeNsMenuBridge {
         val delegate = delegates[menuHandle] ?: return
         val menu = NsMenu.borrowed(menuHandle)
         val item = if (itemHandle != 0L) NsMenuItem.borrowed(itemHandle) else null
-        SwingUtilities.invokeLater { delegate.menuWillHighlightItem(menu, item) }
+        uiScope.launch { delegate.menuWillHighlightItem(menu, item) }
     }
 
     @JvmStatic
