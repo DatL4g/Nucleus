@@ -1,6 +1,7 @@
 package dev.nucleusframework.graalvm
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.graalvm.encoding.PlatformEncodingInitializer
 import dev.nucleusframework.graalvm.locale.NativeLocaleBridge
 import dev.nucleusframework.hidpi.applyLinuxHiDpiScale
 import java.io.File
@@ -14,6 +15,17 @@ object GraalVmInitializer {
     /** Call once at the very start of main(), before any AWT/Compose usage. */
     fun initialize() {
         if (isNativeImage) {
+            // Initialize the JDK platform (JNU) encoding FIRST, before any AWT/font native library
+            // loads. Oracle GraalVM's SVM — unlike BellSoft Liberica NIK — never calls the JDK's
+            // InitializeEncoding, so libawt's JNI_OnLoad would abort the VM with "platform encoding
+            // not initialized" / "Could not allocate library name". Ported from Liberica's
+            // JNIPlatformNativeLibrarySupport. Harmless under Liberica (encoding already set).
+            // macOS-only in effect: initialize() is gated by a native-image build-time platform
+            // fold (Platform.includedIn(DARWIN)), so the `nucleus_init_platform_encoding` C shim —
+            // which the plugin compiles into the image only on macOS — is referenced only there.
+            // On Windows/Linux SVM eliminates the call, avoiding an undefined-symbol link error.
+            PlatformEncodingInitializer.initialize()
+
             // Metal L&F — avoids platform-specific modules unsupported in native image
             System.setProperty("swing.defaultlaf", "javax.swing.plaf.metal.MetalLookAndFeel")
 

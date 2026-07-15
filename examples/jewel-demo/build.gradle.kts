@@ -1,4 +1,5 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -105,31 +106,10 @@ nucleus.application {
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
-        jvmVendor = JvmVendorSpec.BELLSOFT
+        jvmVendor = JvmVendorSpec.ORACLE
         imageName = "jewel-sample"
-        march = providers.gradleProperty("nativeMarch").getOrElse("native")
-        buildArgs.addAll(
-            "-H:+AddAllCharsets",
-            "-Djava.awt.headless=false",
-            "-Os",
-            "-H:-IncludeMethodData",
-        )
-        nativeImageConfigBaseDir.set(
-            layout.projectDirectory.dir(
-                when {
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isMacOsX -> "src/main/resources-macos/META-INF/native-image"
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isWindows -> "src/main/resources-windows/META-INF/native-image"
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isLinux -> "src/main/resources-linux/META-INF/native-image"
-                    else -> throw GradleException("Unsupported OS")
-                },
-            ),
-        )
+        optimization = NativeImageOptimization.SIZE
+
     }
 
     nativeDistributions {

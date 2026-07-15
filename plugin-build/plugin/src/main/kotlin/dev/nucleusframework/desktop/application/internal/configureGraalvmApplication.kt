@@ -224,6 +224,26 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                    libawt.dylib was compiled with -flat_namespace and references this symbol.
                                    A no-op stub exports the symbol so dyld can satisfy the reference at load time. */
                                 void Java_java_awt_Cursor_finalizeImpl(void) {}
+
+                                /* Initialize the JDK platform ("JNU") encoding on the *bundled* libjava.dylib.
+                                   Oracle GraalVM's native image links its own static libjava, but the bundled
+                                   AWT dylibs (libawt/libfontmanager) load @rpath/libjava.dylib — a separate
+                                   copy whose C `fastEncoding` global is never initialized, so the first AWT
+                                   JNI_OnLoad C->Java string conversion aborts with "platform encoding not
+                                   initialized". We dlopen the *same* bundled dylib (dyld shares it by path
+                                   with the one the AWT libs load) and call its exported InitializeEncoding,
+                                   using the JNIEnv passed from SubstrateVM. Compiled into the image and linked
+                                   via -H:NativeLinkerOption; invoked from PlatformEncodingInitializer. */
+                                #include <dlfcn.h>
+                                typedef void (*nucleus_init_enc_t)(void *env, const char *name);
+                                void nucleus_init_platform_encoding(void *env) {
+                                    nucleus_init_enc_t fn = (nucleus_init_enc_t) dlsym(RTLD_DEFAULT, "InitializeEncoding");
+                                    if (!fn) {
+                                        void *h = dlopen("@executable_path/libjava.dylib", RTLD_GLOBAL | RTLD_NOW);
+                                        if (h) fn = (nucleus_init_enc_t) dlsym(h, "InitializeEncoding");
+                                    }
+                                    if (fn) fn(env, "UTF-8");
+                                }
                                 """.trimIndent(),
                             )
                             stubCFile
@@ -649,7 +669,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedMetadataRepoDirsFile = metadataRepoDirsFile.get().asFile
             val resolvedBuildArgs = graalvm.buildArgs.get()
             val resolvedMarch = graalvm.march.get()
-            val resolvedOptimizeForSize = graalvm.optimizeForSize.get()
+            val resolvedOptimizationFlag = graalvm.optimization.orNull?.flag
+            val resolvedAllCharsets = graalvm.allCharsets.get()
+            val resolvedMlProfileInference = graalvm.mlProfileInference.get()
             val resolvedImageName = imageName.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
             val resolvedMacOsMinVersion =
@@ -686,10 +708,21 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         add(File(outputDir, resolvedImageName).absolutePath)
                         add("-march=$resolvedMarch")
 
-                        // Optimize for binary size. Placed before user buildArgs so an explicit
-                        // -O* in buildArgs overrides it (native-image honors the last -O* flag).
-                        if (resolvedOptimizeForSize) {
-                            add("-Os")
+                        // Optimization level. Placed before user buildArgs so an explicit -O* in
+                        // buildArgs overrides it (native-image honors the last -O* flag).
+                        if (resolvedOptimizationFlag != null) {
+                            add(resolvedOptimizationFlag)
+                        }
+
+                        // Embed all JDK charsets when the app needs legacy encodings.
+                        if (resolvedAllCharsets) {
+                            add("-H:+AddAllCharsets")
+                        }
+
+                        // Opt out of Oracle GraalVM's default ML-inferred PGO profile. Placed before
+                        // user buildArgs so an explicit override there still wins.
+                        if (!resolvedMlProfileInference) {
+                            add("-H:-MLProfileInference")
                         }
 
                         // macOS: force the link-time deployment target. native-image does NOT
@@ -911,11 +944,15 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             taskNameAction = "copy",
             taskNameObject = "graalvmJawtToLib",
         ) {
-            description = "Copy libjawt.dylib to lib/ subdir for Skiko"
+            description = "Copy libjawt.dylib + fontconfig to lib/ subdir for Skiko and AWT font init"
             dependsOn(nativeImageCompile, cleanAppBundle)
             doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
             from("${graalvmHome.get()}/lib") {
-                include("libjawt.dylib")
+                // fontconfig.bfc: SunFontManager/FontConfiguration reads it from <java.home>/lib at
+                // startup; java.home is the executable dir under native image, so without it
+                // FontConfiguration.getVersion() throws "Fontconfig head is null" the first time AWT
+                // font code runs (e.g. Font.createFont / BufferedImage.createGraphics).
+                include("libjawt.dylib", "fontconfig.bfc")
             }
             into(appBundleDir.map { it.dir("MacOS/lib") })
         }
@@ -1387,6 +1424,23 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
             into(outputDir.map { it.dir("bin") })
         }
 
+    // fontconfig.bfc: SunFontManager/FontConfiguration reads it from <java.home>/lib at startup;
+    // java.home is the executable dir under native image, so without it FontConfiguration.getVersion()
+    // throws "Fontconfig head is null" the first time AWT font code runs (e.g. Font.createFont).
+    // macOS does the same in copyJawtToLib.
+    val copyFontConfig =
+        tasks.register<Copy>(
+            taskNameAction = "copy",
+            taskNameObject = "graalvmFontConfig",
+        ) {
+            description = "Copy fontconfig.bfc to lib/ subdir for AWT font init"
+            dependsOn(nativeImageCompile)
+            from("${graalvmHome.get()}/lib") {
+                include("fontconfig.bfc")
+            }
+            into(outputDir.map { it.dir("lib") })
+        }
+
     // Bundle the MSVC C/C++ runtime DLLs next to the executable so the app runs on machines
     // without the Visual C++ Redistributable (otherwise: "VCRUNTIME140.dll not found").
     val copyCRuntime =
@@ -1430,7 +1484,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with DLLs"
-        dependsOn(copyBinary, copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib)
+        dependsOn(copyBinary, copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib, copyFontConfig)
         copyCRuntime?.let { dependsOn(it) }
     }
 }

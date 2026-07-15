@@ -30,12 +30,29 @@ abstract class GraalvmSettings
         // older CPUs ("does not support all of the following CPU features"). Override for local perf.
         val march: Property<String> = objects.notNullProperty("compatibility")
 
-        // Optimize the native image for binary size (`-Os`) instead of the default speed-oriented
-        // `-O2`. On Compose images this typically trims 20–30% off the executable. The runtime cost
-        // is negligible for desktop apps, where most work happens in Skiko's native code (unaffected
-        // by this flag). Opt-in: leave off to keep the speed-optimized default. Any `-O*` passed
-        // explicitly via [buildArgs] takes precedence.
-        val optimizeForSize: Property<Boolean> = objects.notNullProperty(false)
+        // Optimization level for native-image (the `-O*` flag). Leave unset to keep native-image's
+        // own default (`-O2`). Use [NativeImageOptimization.SIZE] to shrink Compose images (~20–30%),
+        // [NativeImageOptimization.LEVEL_3] for peak runtime performance (Oracle GraalVM only), or
+        // [NativeImageOptimization.QUICK_BUILD] for fast local iteration. Any `-O*` passed explicitly
+        // via [buildArgs] still takes precedence (native-image honors the last `-O*` flag).
+        val optimization: Property<NativeImageOptimization> = objects.nullableProperty()
+
+        // Embed every JDK charset in the image (`-H:+AddAllCharsets`). native-image otherwise ships
+        // only a minimal set (US-ASCII, ISO-8859-1, UTF-8, UTF-16 + platform default); any other
+        // charset requested via `Charset.forName(...)` throws UnsupportedCharsetException at runtime.
+        // Enable only if the app decodes bytes in a legacy encoding (e.g. windows-1255, ISO-8859-8,
+        // Shift_JIS) — it is NOT needed to display or type non-Latin text, which is Unicode-internal.
+        // Costs a few MB (mostly CJK tables). Off by default to match GraalVM's default.
+        val allCharsets: Property<Boolean> = objects.notNullProperty(false)
+
+        // Oracle GraalVM applies a Machine-Learning-inferred PGO profile by default at `-O2` when no
+        // real profile (`--pgo`) is supplied — the build log then reports `PGO: ML-inferred`. It is a
+        // static, pre-trained branch-frequency guess (no instrumentation, no profiling run) and is
+        // generally a small win, but it is Oracle-specific and non-deterministic across GraalVM
+        // versions. Set to `false` to opt out (`-H:-MLProfileInference`), yielding `PGO: off`. Only
+        // effective at optimization levels that run the ML pass (i.e. `-O2`); ignored under `-Os`.
+        // Defaults to `true` to match Oracle GraalVM's out-of-the-box behavior.
+        val mlProfileInference: Property<Boolean> = objects.notNullProperty(true)
 
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()

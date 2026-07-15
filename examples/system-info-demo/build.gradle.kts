@@ -1,4 +1,5 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -17,7 +18,7 @@ dependencies {
     implementation(project(":system-color"))
     implementation(project(":system-info"))
     implementation(project(":decorated-window-jewel"))
-    implementation(project(":decorated-window-jni"))
+    implementation(project(":decorated-window-tao"))
     implementation(project(":nucleus-application"))
 
     val jewelExclusions =
@@ -31,11 +32,13 @@ dependencies {
     implementation(libs.coroutines.core)
 
     // Lets-Plot charting
-    implementation("org.jetbrains.lets-plot:lets-plot-kotlin-kernel:4.13.0")
-    implementation("org.jetbrains.lets-plot:lets-plot-common:4.9.0")
-    implementation("org.jetbrains.lets-plot:canvas:4.9.0")
-    implementation("org.jetbrains.lets-plot:plot-raster:4.9.0")
-    implementation("org.jetbrains.lets-plot:lets-plot-compose-desktop:3.1.0")
+    implementation("org.jetbrains.lets-plot:lets-plot-kotlin-kernel:4.15.0")
+    implementation("org.jetbrains.lets-plot:lets-plot-common:4.11.0")
+    implementation("org.jetbrains.lets-plot:canvas:4.11.0")
+    implementation("org.jetbrains.lets-plot:plot-raster:4.11.0")
+    implementation("org.jetbrains.lets-plot:lets-plot-compose-desktop:3.2.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+    implementation("org.slf4j:slf4j-simple:2.0.18")
 }
 
 java {
@@ -64,15 +67,9 @@ nucleus.application {
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
-        jvmVendor = JvmVendorSpec.BELLSOFT
+        jvmVendor = JvmVendorSpec.ORACLE
         imageName = "system-info-demo"
-        march = "compatibility"
-        buildArgs.addAll(
-            "-H:+AddAllCharsets",
-            "-Djava.awt.headless=false",
-            "-Os",
-            "-H:-IncludeMethodData",
-        )
+        optimization = NativeImageOptimization.SIZE
     }
 
     nativeDistributions {
