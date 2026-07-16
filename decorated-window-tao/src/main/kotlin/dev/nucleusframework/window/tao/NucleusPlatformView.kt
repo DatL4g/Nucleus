@@ -10,8 +10,10 @@ package dev.nucleusframework.window.tao
  *  - [GtkWidget] on Linux — direct GTK widget embedding via
  *    `gtk_container_add` into Tao's GTK content widget. Implementor
  *    exposes a raw `GtkWidget*` handle (typically a `WebKitWebView`,
- *    `GtkGLArea`, etc.). **No overlay slot** — the `content` lambda
- *    of `NativeView` is ignored on Linux.
+ *    `GtkGLArea`, etc.). Supports the `content` overlay slot rendered
+ *    inline in the main Compose scene (the EGL surface already paints
+ *    above the embedded widget); interactive overlay regions route
+ *    input via `TaoLinuxOverlayController`'s GtkEventBox regions.
  *  - [HWnd] on Windows — child HWND reparented under the Tao main HWND
  *    via `SetParent`, sized via `SetWindowPos`, clipped with
  *    `SetWindowRgn(CreateRoundRectRgn)` for rounded corners. Supports
