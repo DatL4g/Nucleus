@@ -33,6 +33,11 @@ kotlin {
 nucleus.application {
     mainClass = "benchmarkdemo.MainKt"
 
+    // Benchmark orchestration: let run-all.sh point the run/runRelease fork at a specific JDK
+    // (jvm-c2 on stock HotSpot, jvm-graal on GraalVM JIT) without moving the Gradle daemon off
+    // its stable build JDK. The forked process is what gets measured — not the daemon.
+    providers.gradleProperty("runJavaHome").orNull?.let { javaHome = it }
+
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25

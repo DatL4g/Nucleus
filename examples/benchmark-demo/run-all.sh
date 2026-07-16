@@ -1,17 +1,15 @@
 #!/bin/zsh
 # Nucleus Benchmark — full matrix orchestrator (macOS).
 #
-# Builds every variant FIRST (build heat dissipates before any measurement), then runs them
-# strictly one at a time, sampling peak RSS and logging thermal state around each run.
-# Each variant's results JSON is archived under results/<timestamp>/<variant>.json with
-# peakRssMB injected.
+# Builds every variant FIRST, then runs them strictly one at a time, sampling peak RSS and
+# logging thermal state around each run. Each variant's results JSON is archived under
+# results/<timestamp>/<variant>.json with peakRssMB injected.
 #
-# Variants: jvm-c2, jvm-graal (runRelease: GraalVM JIT + ProGuard), aot-os, aot-o2, aot-o3,
-#           aot-o3-pgo, swiftui, tauri, flutter.
+# Variants: jvm-c2, jvm-c2-pg, jvm-graal (runRelease: GraalVM JIT + ProGuard), aot-os, aot-o2,
+#           aot-o3, aot-o3-pgo, swiftui, tauri, flutter.
 #
-# Usage:  ./run-all.sh                 # full matrix, 60s cooldown between runs
-#         COOLDOWN=0 ./run-all.sh     # no cooldown (thermally stable machine)
-#         ONLY="aot-o3-pgo tauri" ./run-all.sh   # subset
+# Usage:  ./run-all.sh                          # full matrix
+#         ONLY="aot-o3-pgo tauri" ./run-all.sh  # subset
 #
 # Requirements: the app auto-runs its suite on launch and writes
 # ~/nucleus-benchmarks/<id>.json on completion — the script keys off that file's mtime.
@@ -23,16 +21,21 @@ BM=$SCRIPT_DIR
 OUT=$BM/results/$(date +%Y%m%d-%H%M%S)
 BIN_DIR=$BM/build/compose/tmp/main/graalvm/nativeCompile
 JSON_DIR=$HOME/nucleus-benchmarks
-COOLDOWN=${COOLDOWN:-60}
-ONLY=${ONLY:-"jvm-c2 jvm-graal aot-os aot-o2 aot-o3 aot-o3-pgo swiftui tauri flutter"}
+ONLY=${ONLY:-"jvm-c2 jvm-c2-pg jvm-graal aot-os aot-o2 aot-o3 aot-o3-pgo swiftui tauri flutter"}
+
+# Toolchains (override per machine). GRAALVM_HOME drives native-image (aot-*) and the jvm-graal
+# JIT fork; JDK_C2_HOME is the HotSpot fork for the jvm-c2 baseline. When unset, everything
+# falls back to the daemon JDK.
+GRAALVM_HOME=${GRAALVM_HOME:-}
+JDK_C2_HOME=${JDK_C2_HOME:-}
 
 mkdir -p "$OUT/bins"
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$OUT/run.log"; }
 therm() { pmset -g therm 2>/dev/null | grep -E "Speed_Limit|CPU" | tr '\n' ' ' | tr -s ' '; }
 wants() { [[ " $ONLY " == *" $1 "* ]]; }
 
-log "Résultats: $OUT"
-log "Alimentation: $(pmset -g ps | head -1)"
+log "Results: $OUT"
+log "Power: $(pmset -g ps | head -1)"
 log "Machine: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m) — $(sysctl -n hw.ncpu) cores"
 
 # ─────────────────────────── PHASE 1 — BUILDS ───────────────────────────
@@ -40,14 +43,28 @@ log "Machine: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m) — 
 build_native() { # $1 = variant name, $2... = extra gradle props
   local name=$1; shift
   log "build $name…"
-  (cd "$ROOT" && ./gradlew :examples:benchmark-demo:nativeImageCompile "$@" \
-      --no-configuration-cache --rerun -q) 2>&1 | grep -E "Graal compiler" | tee -a "$OUT/run.log"
+  local blog="$OUT/build-$name.log"
+  # Run native-image with the GraalVM as the *current JVM* (JAVA_HOME): Gradle prefers the
+  # running JVM when it satisfies the toolchain spec, so this resolves to the real GraalVM
+  # deterministically — no fighting a stale auto-provisioned plain Oracle JDK 25 (no
+  # native-image) that also matches vendor=ORACLE/version=25. This mirrors `runGraalvmNative`.
+  # Capture the FULL build to a per-variant log (no -q, no grep pipe swallowing the exit code):
+  # a native-image failure must be loud, not a silently empty nativeCompile/ dir.
+  local jhome=${GRAALVM_HOME:-${JAVA_HOME:-}}
+  if ! (cd "$ROOT" && JAVA_HOME=$jhome ./gradlew :examples:benchmark-demo:nativeImageCompile "$@" \
+      --no-configuration-cache --rerun) > "$blog" 2>&1; then
+    log "ERROR: build $name failed (gradle) — see $blog"; tail -25 "$blog" | tee -a "$OUT/run.log"; return 1
+  fi
+  grep -E "Graal compiler" "$blog" | tee -a "$OUT/run.log"   # the config proof-line
+  if [[ ! -x "$BIN_DIR/benchmark-demo" ]]; then
+    log "ERROR: build $name — binary missing in $BIN_DIR"; tail -25 "$blog" | tee -a "$OUT/run.log"; return 1
+  fi
   rm -rf "$OUT/bins/$name"
   cp -R "$BIN_DIR" "$OUT/bins/$name"   # stash the whole dir (binary + AWT dylibs)
 }
 
 log "════ PHASE 1: builds ════"
-if wants jvm-c2 || wants jvm-graal; then
+if wants jvm-c2 || wants jvm-c2-pg || wants jvm-graal; then
   log "build jvm (classes + proguard jars)…"
   (cd "$ROOT" && ./gradlew :examples:benchmark-demo:compileKotlin \
       :examples:benchmark-demo:proguardReleaseJars -q) >> "$OUT/run.log" 2>&1
@@ -68,8 +85,7 @@ if wants flutter; then
   log "build flutter…"
   (cd "$BM/ports/flutter" && flutter build macos --release) >> "$OUT/run.log" 2>&1
 fi
-log "builds terminés — refroidissement ${COOLDOWN}s avant les mesures"
-sleep "$COOLDOWN"
+log "builds done"
 
 # ─────────────────────────── PHASE 2 — RUNS ────────────────────────────
 
@@ -86,7 +102,7 @@ run_variant() { # $1=variant  $2=json id  $3=pgrep pattern  $4...=launch cmd
       break
     fi
     if ! kill -0 "$launcher_pid" 2>/dev/null && ! pgrep -f "$pattern" > /dev/null; then
-      log "ERREUR: $name s'est terminé sans écrire son JSON"; return 1
+      log "ERROR: $name exited without writing its JSON"; return 1
     fi
     for pid in $(pgrep -f "$pattern"); do
       rss=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
@@ -106,14 +122,14 @@ PY
   log "$name OK — composite $(python3 -c "import json;print(round(json.load(open('$OUT/$name.json'))['compositeCpuScore'],1))") — RSS max $((peak / 1024)) MB — therm: $(therm)"
   pkill -f "$pattern" 2>/dev/null
   sleep 2
-  log "cooldown ${COOLDOWN}s"
-  sleep "$COOLDOWN"
 }
 
 wants jvm-c2     && run_variant jvm-c2     jvm     "benchmarkdemo.MainKt" \
-                      sh -c "cd '$ROOT' && ./gradlew :examples:benchmark-demo:run -q"
+                      sh -c "cd '$ROOT' && ./gradlew :examples:benchmark-demo:run ${JDK_C2_HOME:+-PrunJavaHome=$JDK_C2_HOME} -q"
+wants jvm-c2-pg  && run_variant jvm-c2-pg  jvm     "benchmarkdemo.MainKt" \
+                      sh -c "cd '$ROOT' && ./gradlew :examples:benchmark-demo:runRelease ${JDK_C2_HOME:+-PrunJavaHome=$JDK_C2_HOME} -q"
 wants jvm-graal  && run_variant jvm-graal  jvm     "benchmarkdemo.MainKt" \
-                      sh -c "cd '$ROOT' && ./gradlew :examples:benchmark-demo:runRelease -q"
+                      sh -c "cd '$ROOT' && ./gradlew :examples:benchmark-demo:runRelease ${GRAALVM_HOME:+-PrunJavaHome=$GRAALVM_HOME} -q"
 wants aot-os     && run_variant aot-os     graalvm "bins/aot-os/benchmark-demo"     "$OUT/bins/aot-os/benchmark-demo"
 wants aot-o2     && run_variant aot-o2     graalvm "bins/aot-o2/benchmark-demo"     "$OUT/bins/aot-o2/benchmark-demo"
 wants aot-o3     && run_variant aot-o3     graalvm "bins/aot-o3/benchmark-demo"     "$OUT/bins/aot-o3/benchmark-demo"
@@ -125,9 +141,9 @@ wants tauri      && run_variant tauri      tauri   "release/benchmark-demo" \
 wants flutter    && run_variant flutter    flutter "benchmark_flutter" \
                       "$BM/ports/flutter/build/macos/Build/Products/Release/benchmark_flutter.app/Contents/MacOS/benchmark_flutter"
 
-# ─────────────────────────── PHASE 3 — BILAN ───────────────────────────
+# ─────────────────────────── PHASE 3 — SUMMARY ───────────────────────────
 
-log "════ BILAN ════"
+log "════ SUMMARY ════"
 python3 - "$OUT" <<'PY' | tee -a "$OUT/run.log"
 import json, sys, glob, os
 
@@ -146,7 +162,7 @@ for f in sorted(glob.glob(os.path.join(out, "*.json"))):
     ))
 
 rows.sort(key=lambda r: -r[1])
-print(f"{'variante':14}{'CPU':>8}{'GFX':>8}{'RSS MB':>8}{'liste ms':>9}")
+print(f"{'variant':14}{'CPU':>8}{'GFX':>8}{'RSS MB':>8}{'list ms':>9}")
 for v, cpu, gfx, rss, lst, _ in rows:
     print(f"{v:14}{cpu:8.1f}{gfx or 0:8.0f}{rss or 0:8.0f}{(lst or 0):9.1f}")
 
@@ -157,4 +173,4 @@ for b in benches:
     print(f"{b:15}" + "".join(f"{r[5].get(b, 0):11.1f}" for r in rows))
 PY
 
-log "Terminé. Tout est dans $OUT"
+log "Done. Everything is in $OUT"

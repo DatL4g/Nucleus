@@ -23,16 +23,15 @@ faster**. `list_load` is in ms, lower = better.
 ## Run the full matrix in one command
 
 ```bash
-./run-all.sh                        # builds all 9 variants, runs them one at a time
-COOLDOWN=120 ./run-all.sh           # extra cooling pause between runs (throttling-prone machines)
+./run-all.sh                          # builds all 10 variants, runs them one at a time
 ONLY="aot-o3-pgo tauri" ./run-all.sh  # subset
 ```
 
-Variants: `jvm-c2`, `jvm-graal` (GraalVM JIT + ProGuard), `aot-os|o2|o3|o3-pgo`, `swiftui`,
-`tauri`, `flutter`. All builds happen up front (build heat dissipates before measuring), then
-each app runs **alone**, with peak RSS sampled every second and `pmset -g therm` logged around
-every run. Everything lands in `results/<timestamp>/` — one JSON per variant (with `peakRssMB`
-injected) plus a summary table at the end.
+Variants: `jvm-c2`, `jvm-c2-pg` (C2 + ProGuard), `jvm-graal` (GraalVM JIT + ProGuard),
+`aot-os|o2|o3|o3-pgo`, `swiftui`, `tauri`, `flutter`. All builds happen up front, then each app
+runs **alone**, with peak RSS sampled every second and `pmset -g therm` logged around every run.
+Everything lands in `results/<timestamp>/` — one JSON per variant (with `peakRssMB` injected) plus
+a summary table at the end.
 
 ## Run each runtime
 

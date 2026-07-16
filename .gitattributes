@@ -10,3 +10,6 @@ decorated-window-tao/src/main/native/vendor/tao/** linguist-vendored
 
 # Patches are text files with LF endings
 decorated-window-tao/src/main/native/vendor/tao-patches/*.patch text eol=lf
+
+# Benchmark demo (ports + reports) — exclude from GitHub Linguist language stats
+examples/benchmark-demo/** linguist-vendored
