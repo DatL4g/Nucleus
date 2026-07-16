@@ -1,0 +1,19 @@
+[package]
+name = "benchmark-demo"
+version = "1.0.0"
+edition = "2021"
+description = "Nucleus benchmark suite — Tauri/Rust port"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# rustc release == LLVM -O3, the fair AOT comparison against GraalVM -O3.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

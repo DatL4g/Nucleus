@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tauri Benchmark — rustc release (LLVM -O3)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f7f7f9; color: #1a1a1a; margin: 20px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #5f6368; margin-bottom: 10px; }
+    #status { font-weight: 600; margin-bottom: 12px; }
+    #fpsCanvas { display: none; background: #eef0f3; border: 1px solid #d5d7dc; border-radius: 6px; }
+    #list { display: none; height: 300px; overflow-y: auto; border: 1px solid #d5d7dc; border-radius: 6px;
+            font-size: 12px; line-height: 1.5; padding: 4px 8px; background: #ffffff; }
+    table { border-collapse: collapse; margin-top: 12px; }
+    td { padding: 2px 16px 2px 0; font-variant-numeric: tabular-nums; }
+    .score { font-size: 19px; margin-top: 10px; }
+    button { margin: 16px 0; padding: 8px 16px; font-size: 15px; border-radius: 6px;
+             border: none; background: #2563eb; color: #ffffff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>Tauri Benchmark Suite</h1>
+  <div class="sub" id="runtime">Rust · rustc release (LLVM -O3) + WebView</div>
+  <div id="status">Starting…</div>
+
+  <canvas id="fpsCanvas" width="600" height="400"></canvas>
+  <div id="list"></div>
+
+  <table id="results"></table>
+  <div class="score" id="score"></div>
+  <div id="uiResults"></div>
+  <div id="saved"></div>
+
+  <button id="run" disabled>Running…</button>
+
+  <script>
+    const invoke = window.__TAURI__.core.invoke;
+
+    // UI bench spec constants — shared across ports (see BENCHMARK-SPEC.md).
+    // Render ramps: grow the workload each 1s window while avg fps ≥ RAMP_MIN_FPS.
+    const RAMP_WINDOW_S = 1.0;
+    const RAMP_MIN_FPS = 55.0;
+    const RAMP_START = 25000, RAMP_STEP = 25000, RAMP_MAX = 500000; // particles
+    const STAR_START = 200, STAR_STEP = 200, STAR_MAX = 200000;      // rotating alpha stars
+    const TEXT_START = 500, TEXT_STEP = 500, TEXT_MAX = 200000;      // drifting labels
+    const LIST_ROWS = 50000;
+
+    const $ = id => document.getElementById(id);
+
+    // MMIX LCG — same generator as the other ports, using BigInt for exact u64 wrap.
+    function makeLcg(seed) {
+      let state = BigInt(seed);
+      const M = 6364136223846793005n, A = 1442695040888963407n, MASK = (1n << 64n) - 1n;
+      return {
+        nextDouble() {
+          state = (state * M + A) & MASK;
+          return Number(state >> 11n) * (1.0 / 9007199254740992.0);
+        },
+        range(lo, hi) { return lo + (hi - lo) * this.nextDouble(); },
+      };
+    }
+
+    function geoMean(values) {
+      return Math.exp(values.reduce((s, v) => s + Math.log(v), 0) / values.length);
+    }
+
+    const raf = () => new Promise(r => requestAnimationFrame(r));
+    const raf2 = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    function addRow(r) {
+      const row = document.createElement("tr");
+      row.innerHTML = `<td>${r.name}</td><td>×${r.threads}</td>` +
+        `<td>${r.throughputM.toFixed(2)} ${r.unit}</td><td>best ${r.bestSeconds.toFixed(3)}s</td>`;
+      $("results").appendChild(row);
+    }
+
+    // Generic render ramp: 1s windows; while a window averages ≥ RAMP_MIN_FPS, grow the count
+    // by `step` (up to `max`). Returns the largest sustained count — the machine's ceiling.
+    // cfg: { unit, start, step, max, advance(active, dt), draw(ctx, active, W, H) }
+    async function renderRamp(cfg) {
+      const canvas = $("fpsCanvas");
+      canvas.style.display = "block";
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      let active = cfg.start;
+      let sustained = 0;
+      let warmup = true;      // first window absorbs startup jank — never judged
+      let failedOnce = false; // failure must be confirmed by a second consecutive window
+      while (true) {
+        let frames = 0, start = 0, last = 0;
+        while (true) {
+          const now = await raf();
+          if (start === 0) { start = now; } else {
+            cfg.advance(active, Math.min((now - last) / 1000, 1 / 30));
+          }
+          last = now;
+          frames++;
+          ctx.fillStyle = "#eef0f3";
+          ctx.fillRect(0, 0, W, H);
+          cfg.draw(ctx, active, W, H);
+          // Force the async canvas pipeline to complete: without this 1px readback, WebKit
+          // rasterizes on the GPU behind rAF and the ramp measures command-submission cadence
+          // instead of actually-presented frames (inflates WebView numbers).
+          ctx.getImageData(0, 0, 1, 1);
+          if (last - start >= RAMP_WINDOW_S * 1000) break;
+        }
+        if (warmup) { warmup = false; continue; }
+        const fps = (frames - 1) / ((last - start) / 1000);
+        $("status").textContent =
+          `Render ramp — ${active.toLocaleString()} ${cfg.unit} — ${fps.toFixed(1)} fps`;
+        if (fps >= RAMP_MIN_FPS) {
+          failedOnce = false;
+          sustained = active;
+          if (active >= cfg.max) break;
+          // Geometric growth (+25%/window, min = step) — see BENCHMARK-SPEC.md.
+          active = Math.min(cfg.max, active + Math.max(cfg.step, Math.floor(active / 4)));
+        } else if (!failedOnce) {
+          failedOnce = true; // transient hitch? re-run the same count once
+        } else {
+          break;
+        }
+      }
+      canvas.style.display = "none";
+      return sustained;
+    }
+
+    function particleRamp() {
+      const x = new Float32Array(RAMP_MAX), y = new Float32Array(RAMP_MAX);
+      const vx = new Float32Array(RAMP_MAX), vy = new Float32Array(RAMP_MAX);
+      const rng = makeLcg(42);
+      for (let i = 0; i < RAMP_MAX; i++) {
+        x[i] = rng.nextDouble(); y[i] = rng.nextDouble();
+        vx[i] = rng.range(-0.2, 0.2); vy[i] = rng.range(-0.2, 0.2);
+      }
+      return renderRamp({
+        unit: "particles", start: RAMP_START, step: RAMP_STEP, max: RAMP_MAX,
+        advance(active, dt) {
+          for (let i = 0; i < active; i++) {
+            let nx = x[i] + vx[i] * dt, ny = y[i] + vy[i] * dt;
+            if (nx < 0) { nx = 0; vx[i] = -vx[i]; } else if (nx > 1) { nx = 1; vx[i] = -vx[i]; }
+            if (ny < 0) { ny = 0; vy[i] = -vy[i]; } else if (ny > 1) { ny = 1; vy[i] = -vy[i]; }
+            x[i] = nx; y[i] = ny;
+          }
+        },
+        draw(ctx, active, W, H) {
+          ctx.fillStyle = "#2563eb";
+          ctx.beginPath();
+          for (let i = 0; i < active; i++) ctx.rect(x[i] * (W - 3), y[i] * (H - 3), 3, 3);
+          ctx.fill();
+        },
+      });
+    }
+
+    function starRamp() {
+      const x = new Float32Array(STAR_MAX), y = new Float32Array(STAR_MAX);
+      const omega = new Float32Array(STAR_MAX);
+      const rng = makeLcg(7);
+      for (let i = 0; i < STAR_MAX; i++) {
+        x[i] = rng.nextDouble(); y[i] = rng.nextDouble();
+        omega[i] = rng.range(-2, 2);
+      }
+      let t = 0;
+      return renderRamp({
+        unit: "stars", start: STAR_START, step: STAR_STEP, max: STAR_MAX,
+        advance(_active, dt) { t += dt; },
+        draw(ctx, active, W, H) {
+          ctx.fillStyle = "rgba(37, 99, 235, 0.5)";
+          for (let i = 0; i < active; i++) {
+            const cx = x[i] * W, cy = y[i] * H, theta = omega[i] * t;
+            ctx.beginPath();
+            for (let k = 0; k < 12; k++) {
+              const r = k % 2 === 0 ? 14 : 6;
+              const a = theta + k * (Math.PI / 6);
+              const vx2 = cx + r * Math.cos(a), vy2 = cy + r * Math.sin(a);
+              if (k === 0) ctx.moveTo(vx2, vy2); else ctx.lineTo(vx2, vy2);
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
+        },
+      });
+    }
+
+    function textRamp() {
+      const x = new Float32Array(TEXT_MAX), y0 = new Float32Array(TEXT_MAX);
+      const rng = makeLcg(11);
+      for (let i = 0; i < TEXT_MAX; i++) {
+        x[i] = rng.nextDouble(); y0[i] = rng.nextDouble();
+      }
+      const labels = Array.from({ length: 100 }, (_, i) => `Bench#${i}`);
+      let t = 0;
+      return renderRamp({
+        unit: "texts", start: TEXT_START, step: TEXT_STEP, max: TEXT_MAX,
+        advance(_active, dt) { t += dt; },
+        draw(ctx, active, W, H) {
+          ctx.fillStyle = "#334155";
+          ctx.font = "12px system-ui";
+          for (let i = 0; i < active; i++) {
+            const ty = (y0[i] + 0.03 * t) % 1;
+            ctx.fillText(labels[i % 100], x[i] * W, ty * H);
+          }
+        },
+      });
+    }
+
+    // List-load bench: time from building 50k fresh DOM rows until painted (double rAF).
+    // The DOM has no built-in virtualization (unlike LazyColumn/List) — that difference is the point.
+    async function listBench() {
+      const list = $("list");
+      list.style.display = "block";
+      let best = Infinity;
+      for (let run = 0; run < 3; run++) {
+        list.innerHTML = "";
+        await raf2();
+        const t0 = performance.now();
+        const rows = new Array(LIST_ROWS);
+        for (let i = 0; i < LIST_ROWS; i++) {
+          rows[i] = `<div>Item ${i} — payload ${(i * 2654435761) % 4294967296}</div>`;
+        }
+        list.innerHTML = rows.join("");
+        await raf2();
+        best = Math.min(best, performance.now() - t0);
+      }
+      list.innerHTML = "";
+      list.style.display = "none";
+      return best;
+    }
+
+    async function runAll() {
+      $("run").disabled = true;
+      $("run").textContent = "Running…";
+      $("results").innerHTML = "";
+      $("score").textContent = "";
+      $("uiResults").textContent = "";
+      $("saved").textContent = "";
+
+      const si = await invoke("sys_info");
+      $("runtime").textContent = `Rust · rustc release (LLVM -O3) + WebView — ${si.cpus} cores`;
+
+      const cpu = [];
+      for (const name of si.benchNames) {
+        $("status").textContent = `Running CPU benchmarks… (${cpu.length}/${si.benchNames.length})`;
+        const r = await invoke("run_cpu_bench", { name });
+        cpu.push(r);
+        addRow(r);
+      }
+      const composite = geoMean(cpu.map(r => r.throughputM));
+      $("score").textContent = `Composite CPU score: ${composite.toFixed(1)}`;
+
+      const maxParticles = await particleRamp();
+      const maxStars = await starRamp();
+      const maxTexts = await textRamp();
+
+      $("status").textContent = `List-load benchmark — ${LIST_ROWS} rows`;
+      const listMs = await listBench();
+
+      // Geekbench-style anchor: 1000 × geo-mean of sustained/START per ramp.
+      const gfxScore = 1000 * Math.cbrt(
+        (Math.max(1, maxParticles) / RAMP_START) *
+        (Math.max(1, maxStars) / STAR_START) *
+        (Math.max(1, maxTexts) / TEXT_START));
+      $("uiResults").innerHTML =
+        `Particles: ${maxParticles.toLocaleString()} sustained @ ≥${RAMP_MIN_FPS} fps<br>` +
+        `Stars: ${maxStars.toLocaleString()} sustained @ ≥${RAMP_MIN_FPS} fps<br>` +
+        `Texts: ${maxTexts.toLocaleString()} sustained @ ≥${RAMP_MIN_FPS} fps<br>` +
+        `<b>Graphics score: ${gfxScore.toFixed(0)}</b><br>` +
+        `List load: ${listMs.toFixed(1)} ms (${LIST_ROWS} rows, best of 3)`;
+
+      $("status").textContent = "Saving results…";
+      const payload = {
+        schema: 1,
+        runtime: "tauri",
+        runtimeLabel: "Rust · rustc release (LLVM -O3) + WebView",
+        os: si.os,
+        cpus: si.cpus,
+        timestampMs: Date.now(),
+        cpu,
+        compositeCpuScore: composite,
+        compositeGraphicsScore: gfxScore,
+        ui: [
+          { name: "max_particles_55fps", unit: "particles", value: maxParticles, lowerIsBetter: false },
+          { name: "max_stars_55fps", unit: "stars", value: maxStars, lowerIsBetter: false },
+          { name: "max_texts_55fps", unit: "texts", value: maxTexts, lowerIsBetter: false },
+          { name: "list_load", unit: "ms", value: listMs, lowerIsBetter: true },
+        ],
+      };
+      const path = await invoke("save_results", { json: JSON.stringify(payload, null, 2) });
+      $("status").textContent = `Done — JSON: ${path}`;
+      $("saved").textContent = "";
+      $("run").disabled = false;
+      $("run").textContent = "Run again";
+    }
+
+    $("run").addEventListener("click", runAll);
+    runAll(); // fully automatic on launch
+  </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Build artifacts from the Swift/Tauri ports (not part of the Gradle build)
+swiftui/.build/
+tauri/src-tauri/target/
+tauri/node_modules/
+tauri/dist/

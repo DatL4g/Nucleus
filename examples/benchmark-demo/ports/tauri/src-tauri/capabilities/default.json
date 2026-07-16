@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Enables the benchmark window and its custom commands.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
