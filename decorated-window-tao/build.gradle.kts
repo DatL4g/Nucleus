@@ -19,6 +19,16 @@ dependencies {
     api(project(":decorated-window-core"))
     implementation(project(":core-runtime"))
     implementation(libs.compose.desktop.common)
+    // Compose Hot Reload interop (TaoHotReloadBridge). compileOnly: these
+    // artifacts are only referenced when running under the hot-reload agent,
+    // which puts them on the runtime classpath itself (the plugin adds
+    // runtime-jvm — which brings devtools-api — and the agent jar brings the
+    // `agent`/`core`/`orchestration` classes). Used only by `trackWindow`
+    // (WindowsState / orchestration publishing), not by any wrapping.
+    compileOnly(libs.hot.reload.agent)
+    compileOnly(libs.hot.reload.core)
+    compileOnly(libs.hot.reload.orchestration)
+    compileOnly(libs.hot.reload.devtools.api)
     testImplementation(kotlin("test"))
     // Skiko native runtime for the opt-in real-window smoke test
     testImplementation(compose.desktop.currentOs)

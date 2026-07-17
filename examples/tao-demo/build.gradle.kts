@@ -7,6 +7,7 @@ plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
+    alias(libs.plugins.composeHotReload)
     id("dev.nucleusframework")
 }
 
@@ -44,6 +45,20 @@ kotlin {
 // build. Adding it here only hits the JavaExec tasks.
 tasks.withType<JavaExec>().configureEach {
     jvmArgs("--enable-preview")
+}
+
+// ── Compose Hot Reload ──────────────────────────────────────────────────────
+// The Tao backend publishes its own window geometry into the hot-reload
+// orchestration `WindowsState` (see TaoHotReloadIntegration in decorated-window-tao),
+// so the dev-tools sidecar follows the Tao window exactly like it follows an AWT
+// `ComposeWindow`. `--enable-preview` is already added by the JavaExec block above
+// (ComposeHotRun extends JavaExec); macOS still needs `-XstartOnFirstThread` for
+// the Tao/AppKit main-runloop (the Nucleus plugin only adds it to its own `:run`).
+tasks.withType<org.jetbrains.compose.reload.gradle.ComposeHotRun>().configureEach {
+    mainClass.set("dev.nucleusframework.sampletao.MainKt")
+    if (org.apache.tools.ant.taskdefs.condition.Os.isFamily(org.apache.tools.ant.taskdefs.condition.Os.FAMILY_MAC)) {
+        jvmArgs("-XstartOnFirstThread")
+    }
 }
 
 nucleus.application {
