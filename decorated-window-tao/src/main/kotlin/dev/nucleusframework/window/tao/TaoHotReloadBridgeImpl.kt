@@ -25,15 +25,41 @@ import kotlin.math.roundToInt
  * pixels the dev-tools sidecar expects (matching AWT's `window.x/width`, which
  * `startWindowManager` sends verbatim). Fractional HiDPI scales may drift a
  * few pixels; integer scales are exact.
+ *
+ * Version-skew safety: this class compiles against the catalog's hot-reload
+ * version, but the runtime classes come from whatever agent the user's Compose
+ * plugin launched — and the orchestration API is not binary-stable across
+ * releases (e.g. `WindowsState.WindowState` gained a `title` parameter in
+ * 1.2.0 and dropped the old constructor). Every entry point is guarded: the
+ * first [LinkageError] (or any other failure) permanently disables tracking
+ * for that window, so the sidecar merely stops following it — the app itself
+ * must never be taken down by dev tooling.
  */
 internal class TaoHotReloadBridgeImpl : TaoHotReloadBridge {
 
     override fun trackWindow(window: TaoWindow, title: String?, alwaysOnTop: Boolean) {
+        // [title] is unused: WindowsState.WindowState has no title field in the
+        // hot-reload version bundled by Compose 1.11.x. Kept in the bridge
+        // surface so the call sites don't change when a newer API gains one.
         val windowId = WindowId.create()
         // Conflated channel: coalesce bursts of move/resize events (GTK fires
         // one per pixel of a drag) into a single WindowsState update, exactly
         // like the AWT tracker's `Channel.CONFLATED` + `conflate()`.
         val windowState = Channel<WindowsState.WindowState?>(Channel.CONFLATED)
+
+        // One-shot kill switch: flipped on the first failure inside a Tao
+        // callback (see class KDoc). Closing the channel also ends the pump.
+        var broken = false
+
+        fun guarded(block: () -> Unit) {
+            if (broken) return
+            try {
+                block()
+            } catch (t: Throwable) {
+                broken = true
+                windowState.close()
+            }
+        }
 
         // Pump channel → orchestration WindowsState. Runs on the orchestration
         // task's dispatcher (off the Tao main thread). `null` removes the
@@ -66,10 +92,8 @@ internal class TaoHotReloadBridgeImpl : TaoHotReloadBridge {
                 WindowsState.WindowState(
                     x = x, y = y, width = w, height = h,
                     isAlwaysOnTop = alwaysOnTop,
-                    title = title,
                 ),
             )
-            // Legacy message (deprecated, but older devtools still consume it).
             OrchestrationMessage.ApplicationWindowPositioned(
                 windowId, x, y, w, h, isAlwaysOnTop = alwaysOnTop,
             ).sendAsync()
@@ -84,20 +108,22 @@ internal class TaoHotReloadBridgeImpl : TaoHotReloadBridge {
         // the first meaningful broadcast happens via onResized (fires right
         // after onWindowReady with the mapped size). Still try once in case
         // geometry is already available.
-        broadcastActiveState()
+        guarded { broadcastActiveState() }
 
-        window.onMoved { _, _ -> broadcastActiveState() }
-        window.onResized { _, _ -> broadcastActiveState() }
+        window.onMoved { _, _ -> guarded { broadcastActiveState() } }
+        window.onResized { _, _ -> guarded { broadcastActiveState() } }
         window.onFocusChanged { focused ->
             if (focused) {
-                // Sidecar brings itself toFront() on this.
-                OrchestrationMessage.ApplicationWindowGainedFocus(windowId).sendAsync()
-                broadcastActiveState()
+                guarded {
+                    // Sidecar brings itself toFront() on this.
+                    OrchestrationMessage.ApplicationWindowGainedFocus(windowId).sendAsync()
+                    broadcastActiveState()
+                }
             }
         }
         window.onMinimizedChanged { minimized ->
-            if (minimized) broadcastGone() else broadcastActiveState()
+            guarded { if (minimized) broadcastGone() else broadcastActiveState() }
         }
-        window.onDestroyed { broadcastGone() }
+        window.onDestroyed { guarded { broadcastGone() } }
     }
 }

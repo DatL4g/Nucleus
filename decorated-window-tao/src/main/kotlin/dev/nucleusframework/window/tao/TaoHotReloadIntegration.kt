@@ -57,9 +57,14 @@ internal object TaoHotReloadIntegration {
      * `WindowsState` so the dev-tools sidecar can follow it. No-op when hot
      * reload is inactive. [title] / [alwaysOnTop] are captured from the
      * `openDecoratedWindow` call site (TaoWindow exposes no getters for them).
+     *
+     * Failure-proof: the runtime hot-reload classes come from the agent and can
+     * be a different (binary-incompatible) version than the one the bridge was
+     * compiled against — a broken bridge must degrade to "no sidecar tracking",
+     * never crash the app. See [TaoHotReloadBridgeImpl].
      */
     fun trackWindow(window: TaoWindow, title: String?, alwaysOnTop: Boolean) {
-        bridge?.trackWindow(window, title, alwaysOnTop)
+        runCatching { bridge?.trackWindow(window, title, alwaysOnTop) }
     }
 }
 
