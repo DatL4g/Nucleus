@@ -12,7 +12,7 @@ import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import javax.inject.Inject
 
-private const val DEFAULT_PROGUARD_VERSION = "7.7.0"
+private const val DEFAULT_PROGUARD_VERSION = "7.9.1"
 
 abstract class ProguardSettings
     @Inject
