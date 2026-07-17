@@ -56,6 +56,13 @@ private fun isOracleGraalvm(javaHome: File): Boolean =
                 line.contains("Oracle", ignoreCase = true)
         }
 
+// native-image reads arguments from an @argfile using the JDK argument-file syntax: tokens are
+// separated by whitespace/newlines, double quotes group a token, and backslash is an escape
+// character. Wrap every argument in double quotes and escape backslashes and quotes so Windows
+// absolute paths (C:\Users\...) survive verbatim instead of being mangled by the tokenizer.
+private fun escapeNativeImageArgFileArgument(arg: String): String =
+    "\"" + arg.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 internal fun JvmApplicationContext.configureGraalvmApplication() {
     val graalvm = app.graalvm
@@ -793,7 +800,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
 
                 // Build args at execution time so that outputs from dependent tasks
                 // (static analysis dir, metadata repo dirs file, …) exist on disk.
-                args =
+                val builtArgs =
                     buildList {
                         add("-jar")
                         add(resolvedUberJar)
@@ -907,6 +914,25 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         }
 
                         addAll(resolvedBuildArgs)
+                    }
+
+                // On Windows, native-image.cmd is a batch script launched through cmd.exe,
+                // which caps the whole command line at 8191 characters ("La ligne de commande
+                // est trop longue"). The many absolute -H:ConfigurationFileDirectories= entries
+                // plus --pgo=<path> and buildArgs blow past that. Route the arguments through a
+                // native-image @argfile (JDK argument-file syntax) so only "@<file>" reaches the
+                // command line. Other platforms pass the arguments directly.
+                args =
+                    if (currentOS == OS.Windows) {
+                        val argFile = File(outputDir, "native-image-args.txt")
+                        argFile.writeText(
+                            builtArgs.joinToString(System.lineSeparator()) {
+                                escapeNativeImageArgFileArgument(it)
+                            },
+                        )
+                        listOf("@${argFile.absolutePath}")
+                    } else {
+                        builtArgs
                     }
             }
         }
