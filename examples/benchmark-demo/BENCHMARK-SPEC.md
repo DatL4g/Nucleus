@@ -37,12 +37,11 @@ GraalVM's default ML-inferred one). The `--headless` CPU suite is the training w
 exercises all 12 kernels:
 
 ```bash
-./gradlew :examples:benchmark-demo:nativeImageCompileRelease -Ppgo=instrument
-cd examples/benchmark-demo/pgo && <instrumented benchmark-demo> --headless   # writes default.iprof
-./gradlew :examples:benchmark-demo:nativeImageCompileRelease                 # applies pgo/default.iprof
+./gradlew :examples:benchmark-demo:runWithPgoInstrument   # instrumented build + run, records graalvm/pgo/default.iprof
+./gradlew :examples:benchmark-demo:nativeImageCompile      # applies graalvm/pgo/default.iprof
 ```
 
-`build.gradle.kts` applies `pgo/default.iprof` automatically whenever the file exists.
+The Nucleus plugin applies `graalvm/pgo/default.iprof` automatically whenever the file exists.
 
 ## Suite overview (Geekbench-style spread)
 

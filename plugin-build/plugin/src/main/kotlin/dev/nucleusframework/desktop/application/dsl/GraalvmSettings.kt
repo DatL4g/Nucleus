@@ -61,6 +61,7 @@ abstract class GraalvmSettings
         val macOS: GraalvmMacOSSettings = objects.new()
         val windows: GraalvmWindowsSettings = objects.new()
         val metadataRepository: MetadataRepositorySettings = objects.new()
+        val pgo: GraalvmPgoSettings = objects.new()
 
         fun macOS(fn: Action<GraalvmMacOSSettings>) {
             fn.execute(macOS)
@@ -73,6 +74,42 @@ abstract class GraalvmSettings
         fun metadataRepository(fn: Action<MetadataRepositorySettings>) {
             fn.execute(metadataRepository)
         }
+
+        fun pgo(fn: Action<GraalvmPgoSettings>) {
+            fn.execute(pgo)
+        }
+    }
+
+/**
+ * Profile-Guided Optimization settings (Oracle GraalVM only).
+ *
+ * Workflow:
+ * 1. `./gradlew runWithPgoInstrument` — builds an instrumented native image, packages and runs
+ *    it. Exercise the app's hot paths, then quit: the profile is recorded to [profile].
+ * 2. Rebuild (`nativeImageCompile` / `packageGraalvmNative` / …) — the recorded profile is
+ *    picked up automatically (`--pgo=<profile>`), replacing Oracle's default ML-inferred one.
+ *
+ * A recorded profile is meant to be committed alongside the project so CI release builds
+ * benefit from it. Delete the file (or pass `-Pnucleus.graalvm.pgo=off`) to build without it.
+ *
+ * On community toolchains (GraalVM CE, Liberica NIK, Mandrel) `--pgo` is not available:
+ * a recorded profile is then ignored with a warning instead of failing the build, so the
+ * same repository builds everywhere. Instrumentation, however, fails fast with a clear
+ * message since it cannot produce a profile without Oracle GraalVM.
+ */
+abstract class GraalvmPgoSettings
+    @Inject
+    constructor(
+        objects: ObjectFactory,
+    ) {
+        /** Automatically apply [profile] when the file exists. Defaults to `true`. */
+        val enabled: Property<Boolean> = objects.notNullProperty(true)
+
+        /**
+         * Location of the recorded profile. Defaults to `graalvm/pgo/default.iprof`
+         * in the project directory (next to the native-image config dir).
+         */
+        val profile: RegularFileProperty = objects.fileProperty()
     }
 
 abstract class GraalvmMacOSSettings
