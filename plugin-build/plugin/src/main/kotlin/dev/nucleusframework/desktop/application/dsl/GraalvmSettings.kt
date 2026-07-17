@@ -179,7 +179,7 @@ abstract class MetadataRepositorySettings
         val enabled: Property<Boolean> = objects.notNullProperty(true)
 
         /** Version of the metadata repository artifact. */
-        val version: Property<String> = objects.notNullProperty("0.10.6")
+        val version: Property<String> = objects.notNullProperty("1.1.4")
 
         /** Module coordinates (group:artifact) to exclude from repository resolution. */
         val excludedModules: SetProperty<String> =

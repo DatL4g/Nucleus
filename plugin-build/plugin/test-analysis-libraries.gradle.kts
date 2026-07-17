@@ -109,7 +109,7 @@ val testOracleRepo: Configuration by configurations.creating {
 }
 
 dependencies {
-    testOracleRepo("org.graalvm.buildtools:graalvm-reachability-metadata:0.10.6:repository@zip")
+    testOracleRepo("org.graalvm.buildtools:graalvm-reachability-metadata:1.1.4:repository@zip")
 }
 
 tasks.withType<Test> {
