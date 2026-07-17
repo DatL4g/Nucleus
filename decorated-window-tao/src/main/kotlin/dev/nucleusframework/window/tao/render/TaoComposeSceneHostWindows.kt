@@ -76,6 +76,18 @@ internal class TaoComposeSceneHostWindows(
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
 
+    /**
+     * ARGB color the render loop clears the surface to each frame, pushed in
+     * via [LocalRequestedClearColor] by the themed window (window background)
+     * and by `TitleBar` (resolved title-bar background). Defaults to opaque
+     * white until the first composition. Aligns
+     * the Windows host with macOS / Linux (and the AWT backends) so a Compose
+     * region without an explicit background matches the chrome color instead
+     * of a hardcoded white.
+     */
+    val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
+        androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
+
     /** App-level pre-dispatch hook. See [TaoComposeSceneHost.previewKeyHandler]. */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
 
@@ -988,7 +1000,11 @@ internal class TaoComposeSceneHostWindows(
             }
 
         try {
-            surface.canvas.clear(0xFFFFFFFF.toInt())
+            // Clear to the resolved title-bar background (pushed by `TitleBar`
+            // via [LocalRequestedClearColor]) so a Compose region without an
+            // explicit background matches the chrome color — aligned with the
+            // macOS / Linux Tao hosts and the AWT backends.
+            surface.canvas.clear(clearColorArgbState.value)
             sc.render(surface.canvas.asComposeCanvas(), now)
             // `flushAndSubmit` issues the glFlush that commits the frame to
             // the back buffer; the present happens below, after the overlay/

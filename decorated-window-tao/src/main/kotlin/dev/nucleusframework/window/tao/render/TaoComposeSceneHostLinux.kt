@@ -95,6 +95,18 @@ internal class TaoComposeSceneHostLinux(
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
 
+    /**
+     * ARGB color the render loop clears the surface to each frame, pushed in
+     * via [LocalRequestedClearColor] by the themed window (window background)
+     * and by `TitleBar` (resolved title-bar background). Defaults to opaque
+     * white until the first composition. The
+     * post-render carve ([applyFrameDecoration]) re-clears the CSD shadow
+     * margins and rounded corners to transparent, so the drop shadow still
+     * composites over clean transparency regardless of this clear color.
+     */
+    val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
+        androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
+
     /** App-level pre-dispatch hook. See [TaoComposeSceneHost.previewKeyHandler]. */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
 
@@ -1275,7 +1287,14 @@ internal class TaoComposeSceneHostLinux(
             cachedSurface = surface
         }
 
-        surface.canvas.clear(0x00000000)
+        // Clear to the resolved title-bar background (pushed by `TitleBar` via
+        // [LocalRequestedClearColor]) so any Compose region without an explicit
+        // background matches the chrome color — aligned with the macOS / Windows
+        // Tao hosts and the AWT backends, instead of showing the desktop through
+        // a transparent clear. The CSD shadow margins + rounded corners are carved
+        // back to transparent by [applyFrameDecoration] below, so the drop shadow
+        // still composites over clean transparency.
+        surface.canvas.clear(clearColorArgbState.value)
         sc.render(surface.canvas.asComposeCanvas(), now)
         applyFrameDecoration(surface.canvas, now)
         surface.flushAndSubmit(syncCpu = false)

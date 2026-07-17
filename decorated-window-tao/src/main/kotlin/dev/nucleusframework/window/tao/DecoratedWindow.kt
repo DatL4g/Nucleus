@@ -56,10 +56,15 @@ private val hiddenFromDockLogger: java.util.logging.Logger =
 
 /**
  * Holds the ARGB clear color the Skia render loop applies to each frame,
- * pushed in by the themed window and by `TitleBar` from the resolved chrome
- * background. macOS-only: Linux/Windows hosts ignore it (they have native
- * window chrome with proper backgrounds). Defaults to opaque white via
- * [TaoComposeSceneHost.clearColorArgbState] until the first composition.
+ * pushed in by the themed window (`DecoratedWindowComposable`, from the window
+ * background) and by `TitleBar` from the resolved chrome background — the
+ * latter composes deeper, so it wins when both are present. Honored by all
+ * three Tao hosts (macOS / Windows / Linux) so a Compose region without an
+ * explicit background matches the chrome color on every platform — mirroring
+ * the AWT backends' `Modifier.background(titleBarBackground)` in
+ * `DecoratedWindowBody`. On Linux the host still carves the CSD shadow margins
+ * and rounded corners back to transparent after rendering, so the drop shadow
+ * is unaffected. Defaults to opaque white until the first composition.
  */
 internal val LocalRequestedClearColor =
     staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
@@ -501,6 +506,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
+                LocalRequestedClearColor provides host.clearColorArgbState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
@@ -876,6 +882,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
+                LocalRequestedClearColor provides host.clearColorArgbState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
