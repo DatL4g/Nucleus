@@ -119,7 +119,7 @@ nucleus.application {
         homepage = "https://github.com/KdroidFilter/NucleusDemo"
 
         // --- Compression ---
-        compressionLevel = CompressionLevel.Maximum
+        compressionLevel = CompressionLevel.Ultra
 
         // --- Artifact naming ---
         // Variables: ${name}, ${version}, ${os}, ${arch}, ${ext}
