@@ -885,6 +885,14 @@ internal class TaoComposeSceneHostWindows(
                 it.resourceCacheLimit = 0
                 it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
             }
+            // The purge above only frees Skia's GPU cache. Every remeasure of
+            // the drag also minted Compose layers/pictures whose native Skia
+            // memory is released by the skiko Cleaner only after a GC — and a
+            // static scene allocates nothing after the drag, so no GC ever
+            // comes and the drag's peak footprint stays resident. Nudge one
+            // collection here so the Cleaner can run; bounded to drag end.
+            @Suppress("ExplicitGarbageCollectionCall")
+            System.gc()
         }
     }
 
