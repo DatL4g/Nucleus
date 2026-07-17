@@ -176,6 +176,33 @@ tasks.register("reformatAll") {
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:ktlintFormat"))
 }
 
+val publishAllToMavenLocal by tasks.registering {
+    group = "publishing"
+    description = "Publishes all runtime libraries and the Gradle plugin to Maven Local."
+
+    dependsOn(gradle.includedBuild("plugin-build").task(":plugin:publishToMavenLocal"))
+}
+
+gradle.projectsEvaluated {
+    publishAllToMavenLocal.configure {
+        dependsOn(subprojects.mapNotNull { it.tasks.findByName("publishToMavenLocal") })
+    }
+}
+
+tasks.register<Exec>("publishDevToMavenLocal") {
+    group = "publishing"
+    description = "Publishes all runtime libraries and the Gradle plugin to Maven Local with version 'dev'."
+
+    workingDir = rootDir
+    // The publish version is resolved from GITHUB_REF at configuration time (see each module's
+    // build.gradle.kts), so re-invoke the build with it set to force version "dev" everywhere.
+    environment("GITHUB_REF", "refs/tags/vdev")
+
+    val gradlew =
+        if (Os.isFamily(Os.FAMILY_WINDOWS)) listOf("cmd", "/c", "gradlew.bat") else listOf("./gradlew")
+    commandLine(gradlew + listOf("publishAllToMavenLocal", "--no-configuration-cache"))
+}
+
 tasks.register("preMerge") {
     description = "Runs all the tests/verification tasks on both top level and included build."
 
