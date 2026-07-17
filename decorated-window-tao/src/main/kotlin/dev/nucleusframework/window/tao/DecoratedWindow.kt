@@ -186,6 +186,21 @@ internal fun ApplicationScope.openDecoratedWindow(
             skipTaskbar = hiddenFromDock,
         )
 
+    // Compose Hot Reload: the agent only auto-wraps AWT `ComposeWindow`/
+    // `ComposeDialog` `setContent` — Tao owns its own windows, so we wrap the
+    // scene content in `DevelopmentEntryPoint` ourselves, and publish this
+    // window's geometry into the orchestration `WindowsState` so the dev-tools
+    // sidecar can follow it. Both no-op when not running under the hot-reload
+    // agent. See [TaoHotReloadIntegration].
+    val hotReloadContent: @Composable TaoDecoratedWindowScope.() -> Unit = {
+        TaoHotReloadIntegration.wrapContent { content() }
+    }
+    // Popups (popupFor != null) are transient overlays; the sidecar tracks
+    // only real windows/dialogs, matching Compose Hot Reload's AWT tracker.
+    if (popupFor == null) {
+        TaoHotReloadIntegration.trackWindow(window, title, alwaysOnTop)
+    }
+
     if (Platform.Current == Platform.Windows) {
         return openDecoratedWindowWindows(
             window,
@@ -203,7 +218,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             onKeyEvent,
             initialCompositionLocalContext,
             nativePopupLayers,
-            content,
+            hotReloadContent,
         )
     }
 
@@ -225,7 +240,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             onKeyEvent,
             initialCompositionLocalContext,
             nativePopupLayers,
-            content,
+            hotReloadContent,
         )
     }
 
@@ -337,7 +352,7 @@ internal fun ApplicationScope.openDecoratedWindow(
                     }
                 }
                 Column(modifier = Modifier.fillMaxSize()) {
-                    scopeFactory().content()
+                    scopeFactory().hotReloadContent()
                 }
             }
         }

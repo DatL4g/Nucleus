@@ -7,6 +7,7 @@ plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
+    alias(libs.plugins.composeHotReload)
     id("dev.nucleusframework")
 }
 

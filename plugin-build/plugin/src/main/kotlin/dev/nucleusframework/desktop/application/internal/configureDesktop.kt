@@ -33,7 +33,7 @@ internal fun configureDesktop(
             appData.configureGraalvmApplication()
         }
 
-        propagateMainClassToComposeApplication(project, appInternal)
+        propagateMainClassToHotReloadRun(project, appInternal)
         injectStartOnFirstThreadForTaoHotReload(project)
     }
 
@@ -46,43 +46,86 @@ internal fun configureDesktop(
     }
 }
 
+private const val COMPOSE_HOT_RUN_TASK = "org.jetbrains.compose.reload.gradle.ComposeHotRun"
+private const val COMPOSE_HOT_DEV_RUN_TASK = "org.jetbrains.compose.reload.gradle.ComposeHotDevRun"
+
 /**
- * Forwards [dev.nucleusframework.desktop.application.dsl.JvmApplication.mainClass] to
- * `compose.desktop.application.mainClass` so that Compose Hot Reload tasks (e.g. `hotRun`,
- * `hotSnapshotMain`) can resolve the entry point without the user duplicating it via
- * `-PmainClass=...` or a manual `compose.desktop.application { ... }` block.
+ * Makes Compose Hot Reload's run tasks work out of the box on Nucleus projects.
  *
- * This runs in Nucleus's `afterEvaluate`, which fires AFTER the Compose plugin's own
- * `afterEvaluate` (because Nucleus is applied last in user build scripts). By then Compose
- * has already inspected its `_isJvmApplicationInitialized` flag, so initializing the
- * `application` extension here cannot trigger duplicate task registration.
+ * `hotRun`: the hot-reload plugin resolves `mainClass` from a convention chain ending in
+ * `compose.desktop.application.mainClass` — but that extension is only initialized lazily at
+ * execution time, so in Nucleus projects (where `compose.desktop.application { }` must stay
+ * unconfigured, see [checkNoComposeDesktopApplication]) the chain always comes up empty and
+ * `hotRun` fails with "Missing 'mainClass' property". `ComposeHotRun` is a plain [JavaExec],
+ * so [dev.nucleusframework.desktop.application.dsl.JvmApplication.mainClass] is set as the
+ * standard `JavaExec.mainClass` convention instead. The hot-reload plugin's own overrides are
+ * replicated ahead of the Nucleus default, so `-PmainClass=...` / `-DmainClass=...` still win;
+ * `--mainClass=...` sets the property directly and bypasses the convention entirely.
  *
- * Reflection is intentional: a hard dependency on the Compose Gradle plugin classes would
- * couple Nucleus's classpath to a specific Compose version. Reflection lets this become a
- * silent no-op on projects that don't apply the Compose plugin at all.
+ * `hotDev`: `ComposeHotDevRun` renders a single `@Composable` via
+ * `org.jetbrains.compose.reload.jvm.DevApplication --className=... --funName=...`, parameters
+ * the IDE run-gutter injects (`-PclassName` / `-PfunName`) — invoked bare it fails while the
+ * argfile is serialized ("property 'className' has no value"), and no project-level default
+ * `@Composable` exists to point it at. When no `className` is provided the task is redirected
+ * to the application's own main class, i.e. a bare `hotDev` behaves exactly like `hotRun`;
+ * with `-PclassName` the stock dev-composable behavior is untouched.
+ *
+ * Task types are identified by class name to avoid a compile-time dependency on the
+ * hot-reload Gradle plugin (mirrors [injectStartOnFirstThreadForTaoHotReload]).
  */
-private fun propagateMainClassToComposeApplication(
+private fun propagateMainClassToHotReloadRun(
     project: Project,
     appInternal: JvmApplicationInternal,
 ) {
     val mainClass = appInternal.data.mainClass ?: return
-    val desktop = composeDesktopExtension(project) ?: return
-    // Only forward when the Compose Desktop application has ALREADY been initialized
-    // (by an explicit `compose.desktop.application { }` block or the Hot Reload plugin).
-    // `desktop.application` is a lazy getter that initializes the extension as a side effect;
-    // triggering it here would make the Compose plugin register its own packaging tasks, which
-    // collide with Nucleus's identically-named ones. See [isComposeJvmApplicationInitialized].
-    if (!isComposeJvmApplicationInitialized(desktop)) return
-    runCatching {
-        // Accessing via reflection avoids a compile-time dependency on the Compose plugin.
-        val applicationGetter = desktop.javaClass.getMethod("getApplication")
-        val composeApplication = applicationGetter.invoke(desktop) ?: return
-        val mainClassSetter = composeApplication.javaClass.methods
-            .firstOrNull { it.name == "setMainClass" && it.parameterCount == 1 }
-            ?: return
-        mainClassSetter.invoke(composeApplication, mainClass)
+    val mainClassConvention =
+        project.providers
+            .gradleProperty("mainClass")
+            .orElse(project.providers.systemProperty("mainClass"))
+            .orElse(mainClass)
+    val classNameProvided =
+        project.providers
+            .gradleProperty("className")
+            .orElse(project.providers.systemProperty("className"))
+            .isPresent
+    project.tasks.withType(JavaExec::class.java).configureEach { task ->
+        when {
+            task.isSubtypeOf(COMPOSE_HOT_RUN_TASK) -> task.mainClass.convention(mainClassConvention)
+            !classNameProvided && task.isSubtypeOf(COMPOSE_HOT_DEV_RUN_TASK) ->
+                task.redirectBareHotDevToAppMain(mainClass)
+        }
     }
 }
+
+/**
+ * Points a `hotDev` invoked without `-PclassName` at the app's main class instead of
+ * `DevApplication`. `className`/`funName` still need serializable values (the argfile task
+ * queries them, and they were assigned with `.value(<empty provider>)`, which shadows any
+ * convention) — the placeholders end up as `--className`/`--funName` program args that a
+ * regular `main` ignores. Reflection keeps the hot-reload plugin off the compile classpath.
+ */
+private fun JavaExec.redirectBareHotDevToAppMain(appMainClass: String) {
+    runCatching {
+        setHotDevProperty("getClassName\$hot_reload_gradle_plugin", appMainClass)
+        setHotDevProperty("getFunName\$hot_reload_gradle_plugin", "main")
+        mainClass.set(appMainClass)
+    }
+}
+
+private fun JavaExec.setHotDevProperty(
+    getterName: String,
+    value: String,
+) {
+    @Suppress("UNCHECKED_CAST")
+    val property =
+        javaClass.methods.first { it.name == getterName }.invoke(this)
+            as org.gradle.api.provider.Property<String>
+    property.set(value)
+}
+
+private fun JavaExec.isSubtypeOf(taskClassName: String): Boolean =
+    generateSequence<Class<*>>(javaClass) { it.superclass }
+        .any { it.name == taskClassName }
 
 /**
  * Fails with an actionable message when both `nucleus.application { }` and
