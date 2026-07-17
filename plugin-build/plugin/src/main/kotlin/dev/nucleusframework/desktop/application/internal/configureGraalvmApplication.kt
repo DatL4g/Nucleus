@@ -18,8 +18,10 @@ import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentArch
 import dev.nucleusframework.internal.utils.currentOS
 import dev.nucleusframework.internal.utils.executableName
+import dev.nucleusframework.internal.utils.javaExecutable
 import dev.nucleusframework.internal.utils.uppercaseFirstChar
 import org.gradle.api.DefaultTask
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Delete
 import org.gradle.api.tasks.Exec
@@ -57,20 +59,51 @@ private fun isOracleGraalvm(javaHome: File): Boolean =
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 internal fun JvmApplicationContext.configureGraalvmApplication() {
     val graalvm = app.graalvm
-    val javaToolchains = project.extensions.getByType(JavaToolchainService::class.java)
 
-    val graalvmLauncher =
-        javaToolchains.launcherFor { spec ->
-            spec.languageVersion.set(JavaLanguageVersion.of(graalvm.javaLanguageVersion.get()))
-            if (graalvm.jvmVendor.isPresent) {
-                spec.vendor.set(graalvm.jvmVendor)
+    val graalvmHome: Provider<String>
+    val graalvmJavaExecutable: Provider<String>
+    if (graalvm.toolchain.autoDownload.get()) {
+        // Auto-provisioned toolchain: Oracle GraalVM (Liberica NIK on Intel macs) is
+        // downloaded on first use and cached under the Gradle user home, so once
+        // provisioned resolution costs a single marker-file read. GRAALVM_HOME, when
+        // set to a valid installation, bypasses the download. Provisioning goes through
+        // a ValueSource so the `tar` extraction stays configuration-cache compatible.
+        graalvmHome =
+            project.providers.of(GraalvmToolchainValueSource::class.java) { spec ->
+                spec.parameters.version.set(
+                    graalvm.toolchain.version.orNull
+                        ?: graalvm.toolchain.channel
+                            .get()
+                            .defaultVersion,
+                )
+                spec.parameters.macosIntelFallback.set(graalvm.toolchain.macosIntelFallback.get())
+                spec.parameters.installBaseDir.set(
+                    (
+                        graalvm.toolchain.installDir.orNull
+                            ?.asFile
+                            ?: project.gradle.gradleUserHomeDir.resolve("nucleus/graalvm")
+                    ).absolutePath,
+                )
             }
-        }
-
-    val graalvmHome =
-        graalvmLauncher.map { launcher ->
-            launcher.metadata.installationPath.asFile.absolutePath
-        }
+        graalvmJavaExecutable = graalvmHome.map { javaExecutable(it) }
+    } else {
+        val javaToolchains = project.extensions.getByType(JavaToolchainService::class.java)
+        val graalvmLauncher =
+            javaToolchains.launcherFor { spec ->
+                spec.languageVersion.set(JavaLanguageVersion.of(graalvm.javaLanguageVersion.get()))
+                if (graalvm.jvmVendor.isPresent) {
+                    spec.vendor.set(graalvm.jvmVendor)
+                }
+            }
+        graalvmHome =
+            graalvmLauncher.map { launcher ->
+                launcher.metadata.installationPath.asFile.absolutePath
+            }
+        graalvmJavaExecutable =
+            graalvmLauncher.map { launcher ->
+                launcher.executablePath.asFile.absolutePath
+            }
+    }
 
     val nativeImageConfigDir = graalvm.nativeImageConfigBaseDir
     val mainClassName = app.mainClass
@@ -122,11 +155,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             description = "Run the app with the GraalVM native-image-agent to collect reflection metadata"
 
             mainClass.set(app.mainClass)
-            setExecutable(
-                graalvmLauncher
-                    .get()
-                    .executablePath.asFile.absolutePath,
-            )
+            setExecutable(graalvmJavaExecutable.get())
 
             useAppRuntimeFiles { (runtimeJars, _) ->
                 classpath = runtimeJars
@@ -796,7 +825,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                     "PGO instrumentation requires Oracle GraalVM " +
                                         "(--pgo-instrument is not available in GraalVM CE, Liberica NIK or " +
                                         "Mandrel). Current toolchain: $resolvedGraalvmHome. " +
-                                        "Set graalvm { jvmVendor = JvmVendorSpec.ORACLE }."
+                                        "With the auto-downloaded toolchain this is only expected on Intel " +
+                                        "macs (Liberica NIK fallback); otherwise check GRAALVM_HOME, or set " +
+                                        "graalvm { jvmVendor = JvmVendorSpec.ORACLE } when autoDownload is off."
                                 }
                                 add("--pgo-instrument")
                                 logger.lifecycle(
