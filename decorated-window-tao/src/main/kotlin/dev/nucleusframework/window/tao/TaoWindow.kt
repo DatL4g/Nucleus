@@ -72,8 +72,7 @@ class TaoWindow internal constructor(
     @Volatile
     private var closeRequestedListener: (() -> Unit)? = null
 
-    @Volatile
-    private var destroyedListener: (() -> Unit)? = null
+    private val destroyedListeners = CopyOnWriteArrayList<() -> Unit>()
 
     @Volatile
     private var redrawListener: (() -> Unit)? = null
@@ -550,8 +549,9 @@ class TaoWindow internal constructor(
         closeRequestedListener = block
     }
 
+    /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */
     fun onDestroyed(block: () -> Unit) {
-        destroyedListener = block
+        destroyedListeners += block
     }
 
     fun onRedrawRequested(block: () -> Unit) {
@@ -692,7 +692,7 @@ class TaoWindow internal constructor(
             TaoEventCode.SCALE_FACTOR_CHANGED -> scaleFactorListener?.invoke(a / 1000f)
             TaoEventCode.CLOSE_REQUESTED -> closeRequestedListener?.invoke()
             TaoEventCode.DESTROYED -> {
-                destroyedListener?.invoke()
+                destroyedListeners.forEach { it.invoke() }
                 TaoApplication.remove(handle)
             }
             TaoEventCode.REDRAW_REQUESTED -> {

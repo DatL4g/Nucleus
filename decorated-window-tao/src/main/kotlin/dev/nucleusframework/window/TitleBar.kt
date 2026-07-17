@@ -215,19 +215,19 @@ fun DecoratedWindowScope.BasicTitleBar(
     // own slide by the tween duration.
     val menuBarOffset = if (isFullscreenWithNewControls) menuBarOffsetPt.dp else 0.dp
 
-    // Push the resolved title-bar background into the Skia clear color
-    // (re-applied every frame in `TaoComposeSceneHost`) so any Compose
-    // region without an explicit background — most visibly the gap above
-    // the offset title bar during the macOS fullscreen menu-bar slide-in —
-    // matches the chrome color rather than flashing white. This is the
-    // tao equivalent of the AWT NSWindow background jbr/jni get for free
-    // from the user's theme.
+    // Push the resolved title-bar background into the Skia clear color,
+    // re-applied every frame by every Tao host (macOS / Windows / Linux), so
+    // any Compose region without an explicit background matches the chrome
+    // color rather than flashing a hardcoded white or — on Linux — showing
+    // the desktop through the transparent CSD clear. This is the Tao
+    // equivalent of the AWT NSWindow background that jbr/jni get for free from
+    // the user's theme (see `DecoratedWindowBody`'s `Modifier.background`).
+    // On Linux the host still carves the CSD shadow margins / rounded corners
+    // back to transparent after rendering, so the drop shadow is unaffected.
     val titleBarBackground by style.colors.backgroundFor(currentState)
-    if (isMacOS) {
-        val clearColorState = LocalRequestedClearColor.current
-        SideEffect {
-            clearColorState?.value = titleBarBackground.toArgb()
-        }
+    val clearColorState = LocalRequestedClearColor.current
+    SideEffect {
+        clearColorState?.value = titleBarBackground.toArgb()
     }
 
     // Push the animated offset back to native so the AppKit traffic-light

@@ -57,21 +57,28 @@ internal class ResizeFrameDecoration(
     private var inBand: Boolean = false
 
     /**
-     * Returns the resize direction if [x], [y] (logical px, window-local) sits
-     * in the edge band of a window sized [widthLogical] × [heightLogical].
+     * Returns the resize direction if [x], [y] (logical px, frame-local) sits
+     * in the edge band of a frame sized [widthLogical] × [heightLogical].
      * Returns `null` if outside the band — caller forwards the event normally.
+     *
+     * [outerBandLogical] extends the hit zone *outside* the frame — used when
+     * the window carries an invisible CSD shadow margin, whose area doubles as
+     * the resize grip exactly like native GTK client-side decorations (the
+     * window input shape clips it to GTK's 12 px resize ring).
      *
      * Corner zones win over edge zones (a click at (4, 4) on a 200×200 window
      * is `NorthWest`, not `North`). This matches the JBR + Tao precedence.
      */
+    @Suppress("LongParameterList")
     fun hitTest(
         x: Float,
         y: Float,
         widthLogical: Int,
         heightLogical: Int,
         forTouch: Boolean = false,
+        outerBandLogical: Int = 0,
     ): Direction? {
-        if (!isInsideFrame(x, y, widthLogical, heightLogical)) return null
+        if (!isInsideFrame(x, y, widthLogical, heightLogical, outerBandLogical)) return null
         val edge = if (forTouch) touchEdgeThicknessLogical else edgeThicknessLogical
         val nearLeft = x < edge
         val nearRight = x >= widthLogical - edge
@@ -104,13 +111,14 @@ internal class ResizeFrameDecoration(
         y: Float,
         widthLogical: Int,
         heightLogical: Int,
+        outerBandLogical: Int = 0,
     ): Boolean =
         widthLogical > 0 &&
             heightLogical > 0 &&
-            x >= 0f &&
-            y >= 0f &&
-            x < widthLogical &&
-            y < heightLogical
+            x >= -outerBandLogical &&
+            y >= -outerBandLogical &&
+            x < widthLogical + outerBandLogical &&
+            y < heightLogical + outerBandLogical
 
     /**
      * Pointer-move hook. If [direction] is non-null the cursor is updated to
