@@ -283,11 +283,56 @@ internal class TaoComposeSceneHostLinux(
     /** Backend kind of the current EGL attachment: 1 = X11, 2 = Wayland. */
     private var attachedKind: Int = 0
 
+    /** True once attached on the X11/XWayland backend (vs native Wayland). */
+    val isX11: Boolean get() = attachedKind == 1
+
+    /**
+     * Opt-in for the GTK-style CSD drop shadow around the visible frame.
+     * Set by [dev.nucleusframework.window.tao.openDecoratedWindow] before
+     * [attach] for regular decorated windows/dialogs (not popups, not
+     * fully-undecorated ghost windows).
+     */
+    var decorationShadowEnabled: Boolean = false
+
+    /**
+     * GTK-theme drop shadow drawn in the invisible margin around the
+     * visible frame; also owns the `_GTK_FRAME_EXTENTS` / xdg-geometry
+     * declaration and the focus-driven backdrop cross-fade. Inactive until
+     * [attach] arms it (and never armed when unsupported — no compositor,
+     * no ARGB visual, WM without `_GTK_FRAME_EXTENTS`).
+     */
+    val windowShadow = TaoWindowShadowLinux(::requestRedrawCoalesced)
+
+    /**
+     * True while a compositor-driven interactive resize/move drag is in
+     * flight. The compositor's grab makes GTK report a focus-out for the
+     * whole drag, but a native GTK window keeps its focused shadow while
+     * being resized or moved — so focus loss is masked for the shadow while
+     * this is set. Cleared when focus comes back (the grab ended) or on the
+     * next real button press (events only reach us once the grab is over).
+     */
+    private var compositorDragActive = false
+
     /** True while the EGL attachment is torn down because the window is hidden. */
     private var gpuSuspended: Boolean = false
 
     fun attach() {
         attachGpu()
+
+        if (decorationShadowEnabled && !window.isPopup) {
+            val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+            // The shadow hugs the same rounded shape as the content carve
+            // (uniform radius on all four corners, per-DE).
+            val radius = cornerRadiusPx.toFloat()
+            windowShadow.initialize(
+                gtkWindowPtr = gtkWindow,
+                kind = attachedKind,
+                radiusTopLeft = radius,
+                radiusTopRight = radius,
+                radiusBottomRight = radius,
+                radiusBottomLeft = radius,
+            )
+        }
 
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val dndManager =
@@ -774,7 +819,10 @@ internal class TaoComposeSceneHostLinux(
                         ysFixed[0] / TOUCH_POSITION_SCALE,
                         forTouch = true,
                     )
-                if (resizeDecoration.onLeftPress(direction)) return
+                if (resizeDecoration.onLeftPress(direction)) {
+                    compositorDragActive = true
+                    return
+                }
             }
 
             val pointers = ArrayList<ComposeScenePointer>(count)
@@ -1126,7 +1174,13 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onFocusChanged(focused: Boolean) {
+        if (focused) compositorDragActive = false
         windowInfo.isWindowFocused = focused
+        // Kick the 200ms normal <-> backdrop shadow cross-fade (no-op when
+        // the shadow is inactive). Focus loss during a compositor drag is
+        // the grab talking, not the user switching windows — keep the
+        // focused shadow, like native GTK CSD windows do during a resize.
+        windowShadow.onFocusChanged(focused || compositorDragActive)
     }
 
     private fun updateWindowInfoSize() {
@@ -1223,17 +1277,7 @@ internal class TaoComposeSceneHostLinux(
 
         surface.canvas.clear(0x00000000)
         sc.render(surface.canvas.asComposeCanvas(), now)
-        // Also drop the rounding when tiled/snapped (Aero Snap): a half/quarter
-        // screen window sits flush against the screen edge, so rounded corners
-        // there look wrong — native CSD windows square off when tiled too.
-        if (cornerRadiusPx > 0 && !window.isMaximized && !window.isFullscreen && !window.isTiled) {
-            // widthPx/heightPx are physical pixels and the canvas has no scale
-            // transform, so the logical radius must be scaled up to physical to
-            // keep the corner curvature constant in logical terms across DPI
-            // (the AWT path gets this for free via Graphics2D's scale transform).
-            val radiusPhysical = (cornerRadiusPx * scale).roundToInt().coerceAtLeast(1)
-            carveRoundedCorners(surface.canvas, widthPx, heightPx, radiusPhysical)
-        }
+        applyFrameDecoration(surface.canvas, now)
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
@@ -1251,28 +1295,99 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * Alpha-blended rounded-corner clip. Paints the four corner cut-outs with
-     * `BlendMode.CLEAR` (destination alpha → 0) so the compositor blends the
-     * content behind those pixels — works uniformly on X11 and Wayland (no
-     * XShape needed).
+     * Post-render frame decoration: corner carve + CSD shadow.
      *
-     * The path is `full_rect XOR rounded_rect` via `EVEN_ODD` fill, which
-     * yields exactly the four corner pieces; AA at the rounded edge stays in
-     * the destination, only the strictly-outside pixels are zeroed.
+     * Mirrors the CSD shadow margins for the current window state (the WM
+     * declaration itself is zeroed/restored synchronously by the native
+     * window-state-event handler; this drives Compose padding, the carve and
+     * the shadow drawing — margins drop for maximized, fullscreen AND tiled
+     * windows), then clears everything outside the visible rounded frame and
+     * paints the themed shadow into the freed margins.
      */
-    private fun carveRoundedCorners(
+    private fun applyFrameDecoration(
         canvas: Canvas,
-        w: Int,
-        h: Int,
+        now: Long,
+    ) {
+        val isMaximized = window.isMaximized
+        val isFullscreen = window.isFullscreen
+        val isTiled = window.isTiled
+        val s = if (scale > 0f) scale else 1f
+        windowShadow.reconcile(
+            suspended = isMaximized || isFullscreen || isTiled,
+            surfaceWLogical = (widthPx / s).roundToInt(),
+            surfaceHLogical = (heightPx / s).roundToInt(),
+        )
+        val shadowInsets = windowShadow.effectiveInsets
+
+        // Drop the rounding when tiled/snapped (Aero Snap): a half/quarter
+        // screen window sits flush against the screen edge, so rounded corners
+        // there look wrong — native CSD windows square off when tiled too.
+        val roundCorners = cornerRadiusPx > 0 && !isMaximized && !isFullscreen && !isTiled
+        if (roundCorners || !shadowInsets.isZero) {
+            // widthPx/heightPx are physical pixels and the canvas has no scale
+            // transform, so the logical radius must be scaled up to physical to
+            // keep the corner curvature constant in logical terms across DPI
+            // (the AWT path gets this for free via Graphics2D's scale transform).
+            val radiusPhysical =
+                if (roundCorners) (cornerRadiusPx * scale).roundToInt().coerceAtLeast(1) else 0
+            // With shadow margins the visible frame is inset — the carve then
+            // also clears any content that leaked into the margin area, so the
+            // shadow below composites over clean transparency.
+            carveOutsideFrame(
+                canvas,
+                left = (shadowInsets.left * s).roundToInt(),
+                top = (shadowInsets.top * s).roundToInt(),
+                right = widthPx - (shadowInsets.right * s).roundToInt(),
+                bottom = heightPx - (shadowInsets.bottom * s).roundToInt(),
+                surfaceW = widthPx,
+                surfaceH = heightPx,
+                radius = radiusPhysical,
+            )
+        }
+        // Shadow after the carve: its geometry never overlaps the visible
+        // frame interior (GTK paints outset shadows around the border box),
+        // so plain src-over into the just-cleared margins is correct.
+        windowShadow.draw(canvas, widthPx, heightPx, s, now)
+    }
+
+    /**
+     * Alpha-blended clip of everything outside the visible rounded frame.
+     * Paints the cut-outs with `BlendMode.CLEAR` (destination alpha → 0) so
+     * the compositor blends the content behind those pixels — works
+     * uniformly on X11 and Wayland (no XShape needed).
+     *
+     * Without shadow margins the frame equals the surface and this clears
+     * exactly the four corner pieces (the historical behavior); with margins
+     * it additionally clears the whole margin band, so the GTK shadow drawn
+     * afterwards composites over clean transparency.
+     *
+     * The path is `surface_rect XOR rounded_frame_rect` via `EVEN_ODD` fill;
+     * AA at the rounded edge stays in the destination, only the strictly
+     * outside pixels are zeroed. All coordinates are physical pixels.
+     */
+    @Suppress("LongParameterList")
+    private fun carveOutsideFrame(
+        canvas: Canvas,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        surfaceW: Int,
+        surfaceH: Int,
         radius: Int,
     ) {
-        val wf = w.toFloat()
-        val hf = h.toFloat()
-        val rf = radius.toFloat()
+        if (right <= left || bottom <= top) return
         PathBuilder(PathFillMode.EVEN_ODD)
-            .addRect(Rect.makeXYWH(0f, 0f, wf, hf))
-            .addRRect(RRect.makeXYWH(0f, 0f, wf, hf, rf))
-            .detach()
+            .addRect(Rect.makeXYWH(0f, 0f, surfaceW.toFloat(), surfaceH.toFloat()))
+            .addRRect(
+                RRect.makeLTRB(
+                    left.toFloat(),
+                    top.toFloat(),
+                    right.toFloat(),
+                    bottom.toFloat(),
+                    radius.toFloat(),
+                ),
+            ).detach()
             .use { frame ->
                 Paint().use { paint ->
                     paint.blendMode = BlendMode.CLEAR
@@ -1325,6 +1440,9 @@ internal class TaoComposeSceneHostLinux(
      * reentrantly from inside the very Move dispatch that started the drag.
      */
     fun onNativeWindowDragStarted() {
+        // The move grab also steals the focus notify — keep the focused
+        // shadow for the whole drag (see [compositorDragActive]).
+        compositorDragActive = true
         // The compositor's interactive-move grab swallows the button release, so
         // neither the Compose scene nor the title-bar drag gesture ever see it:
         // the pointer stays "pressed" and the window ignores hover/clicks until a
@@ -1373,8 +1491,13 @@ internal class TaoComposeSceneHostLinux(
         // would never show again after the first edge drag.
         if (pressed && buttonCode == dev.nucleusframework.window.tao.TaoMouseButton.LEFT) {
             val direction = currentResizeDirection(lastPointerX, lastPointerY)
-            if (resizeDecoration.onLeftPress(direction)) return
+            if (resizeDecoration.onLeftPress(direction)) {
+                compositorDragActive = true
+                return
+            }
         }
+        // Any other real press means no compositor grab is in flight.
+        if (pressed) compositorDragActive = false
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
 
         // A press reaching the parent scene is outside every popup layer (the
@@ -1419,9 +1542,21 @@ internal class TaoComposeSceneHostLinux(
         if (window.isFullscreen) return null
         if (window.isMaximized) return null
         val s = if (scale > 0f) scale else 1f
-        val widthLogical = (widthPx / s).toInt()
-        val heightLogical = (heightPx / s).toInt()
-        return resizeDecoration.hitTest(xPx / s, yPx / s, widthLogical, heightLogical, forTouch)
+        // With CSD shadow margins the resize band is measured against the
+        // *visible* frame, and extends into the invisible margin like GTK's
+        // resize ring (the input shape already clips it to 12 px outside).
+        val insets = windowShadow.effectiveInsets
+        val widthLogical = (widthPx / s).toInt() - insets.left - insets.right
+        val heightLogical = (heightPx / s).toInt() - insets.top - insets.bottom
+        val outerBand = if (insets.isZero) 0 else maxOf(insets.left, insets.top, insets.right, insets.bottom)
+        return resizeDecoration.hitTest(
+            xPx / s - insets.left,
+            yPx / s - insets.top,
+            widthLogical,
+            heightLogical,
+            forTouch,
+            outerBandLogical = outerBand,
+        )
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
@@ -1821,6 +1956,7 @@ internal class TaoComposeSceneHostLinux(
         // Clear any input region we may have set while the window was
         // alive; harmless even if the EGL surface is about to go away.
         overlayController.dispose()
+        windowShadow.dispose()
         if (attachmentHandle != 0L) {
             NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
             NativeTaoEglBridge.nativeDetach(attachmentHandle)

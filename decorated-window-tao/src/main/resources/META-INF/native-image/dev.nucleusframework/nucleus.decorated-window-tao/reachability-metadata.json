@@ -336,6 +336,10 @@
             "jniAccessible": true
         },
         {
+            "type": "dev.nucleusframework.window.tao.NativeTaoLinuxShadowBridge",
+            "jniAccessible": true
+        },
+        {
             "type": "dev.nucleusframework.window.tao.NativeTaoLinuxWidgetBridge$OverlayInputCallback",
             "jniAccessible": true,
             "methods": [
