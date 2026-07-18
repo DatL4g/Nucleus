@@ -22,6 +22,18 @@ dependencies {
     // store format below activates the sandboxed pipeline so the marker/shim rewrite is exercised
     // end-to-end on macOS.
     implementation(libs.zstd.kmp.jvm)
+    // Issue #366 e2e repro: androidx bundled sqlite driver (same native layer as Room on desktop).
+    implementation("androidx.sqlite:sqlite-bundled:2.6.1")
+}
+
+// Issue #366 e2e repro — see SqliteReproMain.kt. LD_LIBRARY_PATH points at a
+// patched libgtk-3.so.0 whose DT_NEEDED includes libsqlite3.so.0, recreating
+// the NixOS GTK closure that triggers the crash.
+tasks.register<JavaExec>("runSqliteRepro") {
+    group = "nucleus"
+    mainClass.set("dev.nucleusframework.sampletao.SqliteReproMainKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    environment("LD_LIBRARY_PATH", "/tmp/gtk-shim")
 }
 
 java {

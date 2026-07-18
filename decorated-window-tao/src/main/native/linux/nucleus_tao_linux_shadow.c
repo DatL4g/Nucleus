@@ -175,7 +175,12 @@ static struct {
 
 static void *shadow_load_first(const char *const *names) {
     for (int i = 0; names[i] != NULL; i++) {
-        void *h = dlopen(names[i], RTLD_NOW | RTLD_GLOBAL);
+        /* RTLD_LOCAL: every symbol is fetched via dlsym() on the returned
+         * handle, so GTK's dependency closure must NOT enter the global
+         * scope — on NixOS it includes libsqlite3 (via tinysparql), which
+         * would interpose the sqlite bundled in androidx/Room's JNI lib
+         * and crash the JVM (issue #366). */
+        void *h = dlopen(names[i], RTLD_NOW | RTLD_LOCAL);
         if (h != NULL) return h;
     }
     return NULL;
