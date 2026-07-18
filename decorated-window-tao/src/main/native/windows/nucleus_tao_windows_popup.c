@@ -342,10 +342,20 @@ static void uninstallMouseHookIfLast(void) {
 /* Global (low-level) variant for OWNERLESS panels: a thread-local WH_MOUSE
  * hook only observes messages dispatched to this thread's windows, so it
  * never sees clicks landing on other applications or the desktop — exactly
- * the clicks a standalone tray popup must dismiss on. WH_MOUSE_LL is
- * system-wide; its callback runs on the installing thread's message loop
- * (the Tao event loop, which pumps continuously). */
-static HHOOK sMouseHookLL = NULL;
+ * the clicks a standalone tray popup must dismiss on.
+ *
+ * WH_MOUSE_LL callbacks are delivered through the INSTALLING thread's
+ * message pump. Installing from the Tao event loop therefore ties the
+ * system-wide mouse to that thread's responsiveness: whenever it runs long
+ * Java work (first composition, OGG decode, a GC safepoint), it stops
+ * pumping and every mouse event in the OS waits on LowLevelHooksTimeout
+ * (~300 ms each) — the cursor visibly freezes. The hook must live on a
+ * dedicated native thread that never attaches to the JVM and never runs
+ * Java, so its pump can never stall. The proc only posts
+ * WM_APP_OUTSIDE_CLICK to popup HWNDs; delivery to a busy Tao thread just
+ * queues, which is harmless. */
+static HANDLE sMouseHookLLThread = NULL;
+static DWORD  sMouseHookLLThreadId = 0;
 static volatile LONG sMouseHookLLRefcount = 0;
 
 static LRESULT CALLBACK mouseHookLLProc(int code, WPARAM w, LPARAM l) {
@@ -360,50 +370,78 @@ static LRESULT CALLBACK mouseHookLLProc(int code, WPARAM w, LPARAM l) {
               (msg == WM_RBUTTONDOWN) ? BTN_SECONDARY : BTN_MIDDLE;
 
     /* Only ownerless popups: owner-based ones are covered by the thread
-     * hook and would double-fire otherwise. Fixed-size snapshot: more than
-     * 16 simultaneous ownerless popups silently drop the tail — far above
-     * any real usage (one tray popup). */
-    PopupState *snapshot[16];
-    int n = 0;
-    EnterCriticalSection(&sOpenListLock);
-    for (PopupState *q = sOpenChainHead; q && n < 16; q = q->nextOpen) {
-        if (q->parent == NULL) snapshot[n++] = q;
-    }
+     * hook and would double-fire otherwise.
+     *
+     * The whole pass runs under sOpenListLock: this proc now executes on
+     * the dedicated hook thread, so popup destruction (which unlinks under
+     * the same lock on the Tao thread) could otherwise free a state while
+     * we iterate. Everything inside is non-blocking (PostMessageW is
+     * async), so the hold time stays microseconds. */
     HWND target = WindowFromPoint(m->pt);
+    EnterCriticalSection(&sOpenListLock);
     PopupState *targetPopup = target ? findPopupByHwndLocked(target) : NULL;
     BOOL targetIsKnownPopup = targetPopup && pointInsideContentScreen(targetPopup, m->pt);
-    LeaveCriticalSection(&sOpenListLock);
-    if (targetIsKnownPopup) return CallNextHookEx(NULL, code, w, l);
-
-    for (int i = 0; i < n; i++) {
-        PopupState *q = snapshot[i];
-        if (!q->outsideMonitorActive || !q->outsideListener) continue;
-        if (pointInsideContentScreen(q, m->pt)) continue;
-        if (!IsWindowVisible(q->gl.hwnd)) continue;
-        /* NEVER call into Java from a low-level hook: the callback can
-         * trigger a recomposition, and a WH_MOUSE_LL proc that exceeds
-         * LowLevelHooksTimeout (~300 ms) gets silently unhooked by Windows
-         * while stalling the system-wide mouse. Defer to the WndProc. */
-        PostMessageW(q->gl.hwnd, WM_APP_OUTSIDE_CLICK, (WPARAM)btn, 0);
+    if (!targetIsKnownPopup) {
+        for (PopupState *q = sOpenChainHead; q; q = q->nextOpen) {
+            if (q->parent != NULL) continue;
+            if (!q->outsideMonitorActive || !q->outsideListener) continue;
+            if (pointInsideContentScreen(q, m->pt)) continue;
+            if (!IsWindowVisible(q->gl.hwnd)) continue;
+            /* NEVER call into Java from a low-level hook: the callback can
+             * trigger a recomposition, and a WH_MOUSE_LL proc that exceeds
+             * LowLevelHooksTimeout (~300 ms) gets silently unhooked by
+             * Windows while stalling the system-wide mouse. Defer to the
+             * WndProc. */
+            PostMessageW(q->gl.hwnd, WM_APP_OUTSIDE_CLICK, (WPARAM)btn, 0);
+        }
     }
+    LeaveCriticalSection(&sOpenListLock);
     return CallNextHookEx(NULL, code, w, l);
+}
+
+/* Dedicated pump for the LL hook. Installs the hook itself (LL callbacks
+ * are delivered to the installing thread), pumps until WM_QUIT, then
+ * unhooks on the way out so the hook never outlives its pump. */
+static DWORD WINAPI mouseHookLLThreadMain(LPVOID readyEvent) {
+    HHOOK hook = SetWindowsHookExW(WH_MOUSE_LL, mouseHookLLProc,
+                                   GetModuleHandleW(NULL), 0);
+    /* Materialize the message queue BEFORE signaling readiness, so the
+     * uninstall side's PostThreadMessage(WM_QUIT) can never race a
+     * queue-less thread and leak the hook. */
+    MSG msg;
+    PeekMessageW(&msg, NULL, WM_USER, WM_USER, PM_NOREMOVE);
+    SetEvent((HANDLE)readyEvent);
+    if (hook == NULL) return 0;
+    while (GetMessageW(&msg, NULL, 0, 0) > 0) {
+        /* No windows on this thread: the loop exists solely to dispatch
+         * the LL hook callbacks. */
+    }
+    UnhookWindowsHookEx(hook);
+    return 0;
 }
 
 /* Same request-count/retry-if-absent contract as installMouseHookIfNeeded. */
 static void installMouseHookLLIfNeeded(void) {
-    InterlockedIncrement(&sMouseHookLLRefcount);
-    if (sMouseHookLL == NULL) {
-        sMouseHookLL = SetWindowsHookExW(WH_MOUSE_LL, mouseHookLLProc,
-                                         GetModuleHandleW(NULL), 0);
+    if (InterlockedIncrement(&sMouseHookLLRefcount) == 1) {
+        HANDLE ready = CreateEventW(NULL, TRUE, FALSE, NULL);
+        HANDLE thread = CreateThread(NULL, 0, mouseHookLLThreadMain, ready, 0,
+                                     &sMouseHookLLThreadId);
+        if (thread != NULL && ready != NULL) {
+            WaitForSingleObject(ready, 2000);
+        }
+        if (ready != NULL) CloseHandle(ready);
+        sMouseHookLLThread = thread;
     }
 }
 
 static void uninstallMouseHookLLIfLast(void) {
     if (InterlockedDecrement(&sMouseHookLLRefcount) == 0) {
-        if (sMouseHookLL) {
-            UnhookWindowsHookEx(sMouseHookLL);
-            sMouseHookLL = NULL;
-        }
+        HANDLE thread = sMouseHookLLThread;
+        DWORD threadId = sMouseHookLLThreadId;
+        sMouseHookLLThread = NULL;
+        sMouseHookLLThreadId = 0;
+        if (threadId != 0) PostThreadMessageW(threadId, WM_QUIT, 0, 0);
+        if (thread != NULL) CloseHandle(thread);
     }
 }
 
