@@ -8,8 +8,8 @@ import dev.nucleusframework.window.DecoratedDialogScope
  * Tao-owned [window] handle. Mirrors `AwtDecoratedDialogScope`'s relationship
  * with the core scope.
  */
-interface TaoDecoratedDialogScope :
+public interface TaoDecoratedDialogScope :
     DecoratedDialogScope,
     ColumnScope {
-    val window: TaoWindow
+    public val window: TaoWindow
 }

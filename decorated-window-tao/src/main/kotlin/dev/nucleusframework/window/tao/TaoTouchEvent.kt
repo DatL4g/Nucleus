@@ -10,16 +10,16 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
  * them with a single `when`.
  */
 @Suppress("MagicNumber")
-object TaoTouchEvent {
-    const val PRESS: Int = 0
-    const val MOVE: Int = 1
-    const val RELEASE: Int = 2
-    const val CANCEL: Int = 3
+public object TaoTouchEvent {
+    public const val PRESS: Int = 0
+    public const val MOVE: Int = 1
+    public const val RELEASE: Int = 2
+    public const val CANCEL: Int = 3
 
     /**
      * Sentinel `forceFixed` value meaning the digitizer doesn't expose
      * pressure (most consumer touchscreens). Distinguishable from a true
      * 0 reading.
      */
-    const val FORCE_UNKNOWN: Int = -1
+    public const val FORCE_UNKNOWN: Int = -1
 }

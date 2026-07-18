@@ -12,8 +12,8 @@ import dev.nucleusframework.window.DecoratedWindowScope
  * body content directly under `TitleBar()`, matching the layout convention
  * used by the JBR/JNI backends.
  */
-interface TaoDecoratedWindowScope :
+public interface TaoDecoratedWindowScope :
     DecoratedWindowScope,
     ColumnScope {
-    val window: TaoWindow
+    public val window: TaoWindow
 }

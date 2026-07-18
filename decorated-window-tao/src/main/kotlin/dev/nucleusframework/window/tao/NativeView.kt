@@ -56,7 +56,7 @@ import kotlin.math.roundToInt
  * make it fully circular regardless of size.
  */
 @Composable
-fun NativeView(
+public fun NativeView(
     factory: () -> NucleusPlatformView,
     modifier: Modifier = Modifier,
     update: (NucleusPlatformView) -> Unit = {},

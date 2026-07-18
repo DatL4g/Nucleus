@@ -87,7 +87,7 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
  */
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedWindowScope.TitleBar(
+public fun DecoratedWindowScope.TitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
@@ -108,7 +108,7 @@ fun DecoratedWindowScope.TitleBar(
 
 @Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
-fun DecoratedWindowScope.BasicTitleBar(
+public fun DecoratedWindowScope.BasicTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

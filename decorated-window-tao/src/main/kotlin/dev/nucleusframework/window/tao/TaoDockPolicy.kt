@@ -23,7 +23,7 @@ import dev.nucleusframework.core.runtime.Platform
  * Public because [dev.nucleusframework.application.nucleusApplication] wires the
  * opt-in from another module; not intended for direct use by applications.
  */
-object TaoDockPolicy {
+public object TaoDockPolicy {
     private var enabled = false
     private var visibleWindowCount = 0
 
@@ -32,21 +32,21 @@ object TaoDockPolicy {
      * current window count. Called once at startup from the Tao launcher's root
      * composition, so a tray-only app drops out of the Dock immediately.
      */
-    fun setEnabled(value: Boolean) {
+    public fun setEnabled(value: Boolean) {
         if (Platform.Current != Platform.MacOS) return
         enabled = value
         if (enabled) applyPolicy(dockVisible = visibleWindowCount > 0)
     }
 
     /** A dock-contributing window became visible. */
-    fun onWindowShown() {
+    public fun onWindowShown() {
         if (Platform.Current != Platform.MacOS) return
         visibleWindowCount++
         if (enabled && visibleWindowCount == 1) applyPolicy(dockVisible = true)
     }
 
     /** A dock-contributing window was hidden or left the composition. */
-    fun onWindowHidden() {
+    public fun onWindowHidden() {
         if (Platform.Current != Platform.MacOS) return
         if (visibleWindowCount > 0) visibleWindowCount--
         if (enabled && visibleWindowCount == 0) applyPolicy(dockVisible = false)

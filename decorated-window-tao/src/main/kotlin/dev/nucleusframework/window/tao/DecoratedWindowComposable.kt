@@ -52,7 +52,7 @@ import kotlin.math.roundToInt
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
 @Composable
-fun ApplicationScope.DecoratedWindow(
+public fun ApplicationScope.DecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     title: String = "",

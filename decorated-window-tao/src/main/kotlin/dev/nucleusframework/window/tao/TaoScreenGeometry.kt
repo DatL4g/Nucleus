@@ -15,7 +15,7 @@ import dev.nucleusframework.core.runtime.Platform
  * All values follow the same conventions as the native deco bridges: physical
  * pixels, top-left origin, `[x, y, width, height]`.
  */
-object TaoScreenGeometry {
+public object TaoScreenGeometry {
     /**
      * The primary monitor's work area (full screen minus taskbar / menu bar /
      * dock) as `[x, y, width, height]` in physical pixels, or `null` when the
@@ -27,7 +27,7 @@ object TaoScreenGeometry {
      * X11-side query (XRandR primary ∩ `_NET_WORKAREA`) — the same coordinate
      * space the standalone panel is positioned in. Ignored on Windows/macOS.
      */
-    fun primaryMonitorWorkAreaPx(window: TaoWindow? = null): LongArray? =
+    public fun primaryMonitorWorkAreaPx(window: TaoWindow? = null): LongArray? =
         when (Platform.Current) {
             Platform.Windows ->
                 if (NativeTaoWindowsDecoBridge.isLoaded) {
@@ -58,7 +58,7 @@ object TaoScreenGeometry {
      * [primaryMonitorWorkAreaPx] on Linux.
      */
     @Suppress("MagicNumber")
-    fun primaryMonitorScaleFactor(window: TaoWindow? = null): Float {
+    public fun primaryMonitorScaleFactor(window: TaoWindow? = null): Float {
         val scaleMilli =
             when (Platform.Current) {
                 Platform.Windows ->

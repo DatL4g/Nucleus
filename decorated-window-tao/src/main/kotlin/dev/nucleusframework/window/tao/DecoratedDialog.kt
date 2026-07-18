@@ -43,7 +43,7 @@ import dev.nucleusframework.window.DecoratedDialogState
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
-fun ApplicationScope.DecoratedDialog(
+public fun ApplicationScope.DecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,

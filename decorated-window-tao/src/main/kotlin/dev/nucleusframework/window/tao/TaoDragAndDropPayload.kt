@@ -15,6 +15,6 @@ package dev.nucleusframework.window.tao
  *
  * Stage 3 covers files only on Windows; text / HTML / URLs land in follow-ups.
  */
-class TaoDragAndDropPayload internal constructor(
-    val files: List<String>,
+public class TaoDragAndDropPayload internal constructor(
+    public val files: List<String>,
 )

@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -87,7 +88,7 @@ internal val LocalRequestedClearColor =
  * `DecoratedWindow` content lambda — call sites should fail loudly or no-op
  * when absent.
  */
-val LocalTaoWindow = staticCompositionLocalOf<TaoWindow?> { null }
+public val LocalTaoWindow: ProvidableCompositionLocal<TaoWindow?> = staticCompositionLocalOf { null }
 
 /**
  * Translucent black scrim painted over the parent window's content while a

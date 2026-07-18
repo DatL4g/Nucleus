@@ -11,7 +11,7 @@ import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
  * AWT backends: opt in to the large corner radius via the Modifier on
  * `TitleBar { … }`, not via this enum.
  */
-enum class MacOSStyle {
+public enum class MacOSStyle {
     /** Modern (Tahoe) on macOS 26+, classic chrome on older releases. */
     Auto,
 

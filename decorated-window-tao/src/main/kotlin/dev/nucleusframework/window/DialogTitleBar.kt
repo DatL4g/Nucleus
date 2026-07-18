@@ -62,7 +62,7 @@ private val isKdeDlg: Boolean =
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun DecoratedDialogScope.DialogTitleBar(
+public fun DecoratedDialogScope.DialogTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

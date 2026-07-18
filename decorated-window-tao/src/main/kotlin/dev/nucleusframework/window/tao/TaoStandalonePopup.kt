@@ -29,7 +29,7 @@ import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostMac
  * desktops). Returns false on the rare Wayland-only setups; callers should
  * then fall back to a regular window.
  */
-fun isTaoStandalonePopupAvailable(): Boolean =
+public fun isTaoStandalonePopupAvailable(): Boolean =
     when (Platform.Current) {
         Platform.Windows, Platform.MacOS -> true
         Platform.Linux ->
@@ -65,7 +65,7 @@ fun isTaoStandalonePopupAvailable(): Boolean =
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun TaoStandalonePopup(
+public fun TaoStandalonePopup(
     visible: Boolean,
     position: WindowPosition.Absolute,
     size: DpSize,

@@ -43,6 +43,10 @@ java {
 }
 
 kotlin {
+    // JetBrains convention (kotlin-desktop-toolkit): every declaration must
+    // state its visibility explicitly, so the public API surface can only
+    // change deliberately (enforced together with the BCV apiCheck task).
+    explicitApi()
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }

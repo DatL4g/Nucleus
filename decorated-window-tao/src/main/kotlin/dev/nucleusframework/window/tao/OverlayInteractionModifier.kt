@@ -55,7 +55,7 @@ import kotlin.math.roundToInt
  *  - **Windows / outside any `NativeView`**: no-op so call sites
  *    stay portable.
  */
-fun Modifier.consumeOverlayPointerEvents(cursor: PointerIcon? = null): Modifier =
+public fun Modifier.consumeOverlayPointerEvents(cursor: PointerIcon? = null): Modifier =
     composed {
         val mac = LocalNativeViewOverlayController.current
         val linux = LocalTaoLinuxOverlayController.current

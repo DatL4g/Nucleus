@@ -13,7 +13,7 @@ import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
  * @param widthPx, heightPx physical pixels of the texture.
  * @param scale       contentsScale applied to the layer (1.0 / 2.0 / 3.0).
  */
-data class MetalFrame(
+public data class MetalFrame(
     val drawablePtr: Long,
     val texturePtr: Long,
     val widthPx: Int,

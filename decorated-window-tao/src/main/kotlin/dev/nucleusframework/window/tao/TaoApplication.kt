@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
  * The lambda runs once Tao has finished launching, on the macOS main thread.
  * [run] does **not** return until [TaoApplication.exit] is called.
  */
-object TaoApplication {
+public object TaoApplication {
     private val handleSeq = AtomicLong(1L)
     private val windows = ConcurrentHashMap<Long, TaoWindow>()
     private var onLaunched: ((TaoApplication) -> Unit)? = null
@@ -32,7 +32,7 @@ object TaoApplication {
      * Takes over the calling thread (must be the macOS main thread) and runs
      * the Tao event loop. Calls [block] once on launch with this object.
      */
-    fun run(block: (TaoApplication) -> Unit) {
+    public fun run(block: (TaoApplication) -> Unit) {
         check(NativeTaoBridge.isLoaded) {
             "nucleus_tao native library is not available — supported targets: " +
                 "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."
@@ -60,7 +60,7 @@ object TaoApplication {
     }
 
     /** Posts an exit request and unblocks [run]. */
-    fun exit() {
+    public fun exit() {
         NativeTaoBridge.nativeExit()
     }
 
@@ -68,7 +68,7 @@ object TaoApplication {
      * Posts a window-creation request to the event loop. Returns immediately
      * with a [TaoWindow] handle; the OS window appears asynchronously.
      */
-    fun openWindow(
+    public fun openWindow(
         title: String = "Window",
         width: Double = 640.0,
         height: Double = 480.0,

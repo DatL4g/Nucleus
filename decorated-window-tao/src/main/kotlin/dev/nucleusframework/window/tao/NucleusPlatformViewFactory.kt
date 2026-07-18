@@ -17,7 +17,7 @@ package dev.nucleusframework.window.tao
  */
 
 /** macOS — embeds an `NSView*` returned by [handle]. */
-fun nucleusNsPlatformView(
+public fun nucleusNsPlatformView(
     handle: () -> Long,
     onResize: (widthPx: Int, heightPx: Int) -> Unit = { _, _ -> },
     onSetBounds: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit = { _, _, _, _ -> },
@@ -35,7 +35,7 @@ fun nucleusNsPlatformView(
 }
 
 /** Windows — embeds an `HWND` returned by [handle] (may be 0 for DComp backends). */
-fun nucleusHwndPlatformView(
+public fun nucleusHwndPlatformView(
     handle: () -> Long,
     onResize: (widthPx: Int, heightPx: Int) -> Unit = { _, _ -> },
     onSetBounds: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit = { _, _, _, _ -> },
@@ -53,7 +53,7 @@ fun nucleusHwndPlatformView(
 }
 
 /** Linux — embeds a `GtkWidget*` returned by [handle]. */
-fun nucleusGtkPlatformView(
+public fun nucleusGtkPlatformView(
     handle: () -> Long,
     onResize: (widthPx: Int, heightPx: Int) -> Unit = { _, _ -> },
     onSetBounds: (xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) -> Unit = { _, _, _, _ -> },

@@ -28,5 +28,5 @@ import androidx.compose.runtime.staticCompositionLocalOf
  * Provided by [DecoratedWindow]; the lambda sets the enclosing scene's
  * `compositionLocalContext`. `null` outside a Tao window content lambda.
  */
-val LocalTaoCompositionLocalContextBridge: ProvidableCompositionLocal<((CompositionLocalContext?) -> Unit)?> =
+public val LocalTaoCompositionLocalContextBridge: ProvidableCompositionLocal<((CompositionLocalContext?) -> Unit)?> =
     staticCompositionLocalOf { null }
