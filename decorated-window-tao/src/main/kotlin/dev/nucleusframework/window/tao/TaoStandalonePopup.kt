@@ -15,10 +15,10 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowPosition
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.render.StandalonePopupHost
-import dev.nucleusframework.window.tao.render.TaoStandalonePopupHost
-import dev.nucleusframework.window.tao.render.TaoStandalonePopupHostLinux
-import dev.nucleusframework.window.tao.render.TaoStandalonePopupHostMac
+import dev.nucleusframework.window.tao.popup.StandalonePopupHost
+import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHost
+import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostLinux
+import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostMac
 
 /**
  * Whether [TaoStandalonePopup] can actually show a panel on this system.

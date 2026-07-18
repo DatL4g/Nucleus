@@ -15,7 +15,7 @@ private const val LIBRARY_NAME = "nucleus_tao_linux_widget"
  * `:backdrop` states) and the invisible margin is declared to the WM via
  * `gdk_window_set_shadow_width()` (`_GTK_FRAME_EXTENTS` on X11,
  * xdg_surface window-geometry margins on Wayland). See
- * [dev.nucleusframework.window.tao.render.TaoWindowShadowLinux] for the
+ * [dev.nucleusframework.window.tao.deco.TaoWindowShadowLinux] for the
  * drawing/animation half.
  *
  * Threading: every entry point must run on the GTK main thread (= Tao

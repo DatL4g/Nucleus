@@ -2,6 +2,7 @@
 
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.toRgbaIcon
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge

@@ -2,6 +2,9 @@
 
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.deco.LocalNativeViewOverlayControllerWindows
+import dev.nucleusframework.window.tao.deco.NativeViewOverlayController
+import dev.nucleusframework.window.tao.deco.NativeViewOverlayControllerWindows
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -22,8 +25,8 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.render.LocalTaoLinuxOverlayController
-import dev.nucleusframework.window.tao.render.LocalTaoPopupHost
+import dev.nucleusframework.window.tao.deco.LocalTaoLinuxOverlayController
+import dev.nucleusframework.window.tao.popup.LocalTaoPopupHost
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -95,7 +98,7 @@ private fun HwndEmbedding(
     content: @Composable () -> Unit,
 ) {
     val host = LocalTaoNativeViewHost.current
-    val popupHost = dev.nucleusframework.window.tao.render.LocalTaoPopupHostWindows.current
+    val popupHost = dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows.current
     val handle = view.hwndHandle
     val latestContent by rememberUpdatedState(content)
 

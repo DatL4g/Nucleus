@@ -12,7 +12,7 @@ private const val LIBRARY_NAME = "nucleus_tao_egl"
  *
  * Replaces [NativeTaoGlxBridge] on the path selected by the JVM system
  * property `nucleus.tao.linux.renderer = glx | egl` (see
- * [dev.nucleusframework.window.tao.render.TaoComposeSceneHostLinux]).
+ * [dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux]).
  *
  * Phase 1 (this commit): X11 only. Wayland (`nativeAttachWayland`) and the
  * `wp_fractional_scale_v1` / `wp_viewporter` plumbing land in follow-ups.
