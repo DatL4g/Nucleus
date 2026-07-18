@@ -33,9 +33,11 @@ import kotlin.system.exitProcess
  * to the system library and operates on statement objects created by the
  * bundled copy -> SIGSEGV (issue: sqlite3VdbeMemGrow via bindText).
  *
- * Run with LD_LIBRARY_PATH pointing at a patched libgtk-3.so.0 that has
- * libsqlite3.so.0 added as DT_NEEDED (patchelf --add-needed) to recreate
- * the NixOS closure on any distro.
+ * Must run in a dedicated JVM with LD_LIBRARY_PATH pointing at a patched
+ * libgtk-3.so.0 that has libsqlite3.so.0 added as DT_NEEDED to recreate
+ * the NixOS closure on any distro — [GtkSqliteInterpositionTest] builds
+ * that shim and forks this main (a SIGSEGV kills the whole JVM, so the
+ * outcome has to be observed from outside).
  */
 private inline fun <R> SQLiteStatement.use(block: (SQLiteStatement) -> R): R =
     try {
