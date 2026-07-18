@@ -22,6 +22,10 @@ dependencies {
     // store format below activates the sandboxed pipeline so the marker/shim rewrite is exercised
     // end-to-end on macOS.
     implementation(libs.zstd.kmp.jvm)
+    testImplementation(libs.junit)
+    // Issue #366 e2e regression test: androidx bundled sqlite driver (same
+    // native layer as Room on desktop). See GtkSqliteInterpositionTest.
+    testImplementation("androidx.sqlite:sqlite-bundled:2.6.1")
 }
 
 java {

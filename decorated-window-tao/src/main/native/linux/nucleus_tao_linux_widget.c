@@ -145,7 +145,10 @@ static struct {
 
 static void *load_first(const char *const *names) {
     for (int i = 0; names[i] != NULL; i++) {
-        void *h = dlopen(names[i], RTLD_NOW | RTLD_GLOBAL);
+        /* RTLD_LOCAL: keep GTK's closure out of the global symbol scope —
+         * on NixOS it pulls libsqlite3, which interposes the sqlite bundled
+         * in androidx/Room's JNI lib and segfaults (issue #366). */
+        void *h = dlopen(names[i], RTLD_NOW | RTLD_LOCAL);
         if (h != NULL) return h;
     }
     return NULL;
@@ -741,7 +744,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoLinuxWidgetBridge_nativeRemoveInpu
      * instead of polluting the logs. */
     static gulong (*p_gtk_widget_get_type)(void) = NULL;
     if (p_gtk_widget_get_type == NULL) {
-        void *libgtk = dlopen("libgtk-3.so.0", RTLD_NOW | RTLD_GLOBAL);
+        void *libgtk = dlopen("libgtk-3.so.0", RTLD_NOW | RTLD_LOCAL);
         if (libgtk != NULL) {
             p_gtk_widget_get_type = (gulong (*)(void)) dlsym(libgtk, "gtk_widget_get_type");
         }
