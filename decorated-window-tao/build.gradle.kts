@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.vanniktechMavenPublish)
+    // Freezes the public ABI: `apiCheck` fails on any change to public FQNs or
+    // signatures vs api/decorated-window-tao.api (see REFACTOR_VERIFICATION.md).
+    alias(libs.plugins.binaryCompatibilityValidator)
 }
 
 val publishVersion =
