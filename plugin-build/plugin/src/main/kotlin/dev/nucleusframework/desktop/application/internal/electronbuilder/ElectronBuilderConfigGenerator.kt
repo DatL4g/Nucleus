@@ -506,7 +506,7 @@ internal class ElectronBuilderConfigGenerator {
         }
     }
 
-    private fun generateLinuxConfig(
+    internal fun generateLinuxConfig(
         yaml: StringBuilder,
         distributions: JvmApplicationDistributions,
         targetFormat: TargetFormat,
@@ -555,6 +555,16 @@ internal class ElectronBuilderConfigGenerator {
                     }
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
+                // fpm-generated RPMs list only files, never %dir entries for the app's own
+                // directory tree. The jpackage launcher (libapplauncher.so) discovers the app
+                // and runtime dirs by scanning `rpm -ql <pkg>` for paths ending in /app and
+                // /runtime; without directory entries those scans find nothing, so the launcher
+                // cannot locate its .cfg and dies with `Error opening "<app>.cfg"` on Fedora/RHEL.
+                // --rpm-auto-add-directories makes fpm own every payload directory (while still
+                // excluding the standard filesystem-package dirs), mirroring what jpackage's own
+                // template.spec does via `comm -23` against the filesystem package. See issue #251.
+                yaml.appendLine("  fpm:")
+                yaml.appendLine("    - \"--rpm-auto-add-directories\"")
             }
             TargetFormat.Pacman -> {
                 yaml.appendLine("pacman:")
