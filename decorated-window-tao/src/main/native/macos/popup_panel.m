@@ -423,7 +423,7 @@ static NSRect to_screen_frame_ownerless(jint xPx, jint yPx, jint wPx, jint hPx) 
 /* ================================================================== */
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeCreatePanel(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeCreatePanel(
     JNIEnv *env, jclass clazz,
     jlong parentNsViewPtr,
     jint xPx, jint yPx, jint widthPx, jint heightPx)
@@ -519,7 +519,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeCreatePanel(
 /* Ownerless screen-coord setter: repositions a standalone panel on the
  * primary screen using top-left-origin physical pixels. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFrameOnScreen(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetFrameOnScreen(
     JNIEnv *env, jclass clazz,
     jlong panelPtr,
     jint xPx, jint yPx, jint widthPx, jint heightPx)
@@ -532,7 +532,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFrameOnScreen(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFrameInWindow(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetFrameInWindow(
     JNIEnv *env, jclass clazz,
     jlong panelPtr,
     jint xPx, jint yPx, jint widthPx, jint heightPx)
@@ -547,7 +547,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFrameInWindow(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeOrderFront(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeOrderFront(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)env; (void)clazz;
@@ -564,7 +564,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeOrderFront(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeOrderOut(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeOrderOut(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)env; (void)clazz;
@@ -574,7 +574,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeOrderOut(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFocusable(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetFocusable(
     JNIEnv *env, jclass clazz, jlong panelPtr, jboolean focusable)
 {
     (void)env; (void)clazz;
@@ -606,7 +606,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetFocusable(
  * subviews (a WKWebView etc.). Used for "watermark"-style popups that
  * should be visible but not block interaction. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetIgnoresMouseEvents(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetIgnoresMouseEvents(
     JNIEnv *env, jclass clazz, jlong panelPtr, jboolean ignore)
 {
     (void)env; (void)clazz;
@@ -636,7 +636,7 @@ static NSCursor *cursorForCode(jint code) {
  * sets it immediately — Compose only calls this while the pointer is over
  * the panel, so an instant [set] is always appropriate. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetPanelCursor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetPanelCursor(
     JNIEnv *env, jclass clazz, jlong panelPtr, jint iconCode)
 {
     (void)env; (void)clazz;
@@ -656,7 +656,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetPanelCursor(
  * native subview (WKWebView etc.). When disabled (default) the panel
  * intercepts everything — what Compose `Popup` / `DropdownMenu` need. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetRegionHitTestEnabled(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetRegionHitTestEnabled(
     JNIEnv *env, jclass clazz, jlong panelPtr, jboolean enable)
 {
     (void)env; (void)clazz;
@@ -674,7 +674,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetRegionHitTestEna
  * `hitTest:` returns hit only inside one of these rects. Pass count=0
  * to clear (full passthrough). */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetInteractiveRegions(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetInteractiveRegions(
     JNIEnv *env, jclass clazz, jlong panelPtr, jfloatArray rectsPx, jint count)
 {
     (void)clazz;
@@ -699,7 +699,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetInteractiveRegio
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetEventCallback(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetEventCallback(
     JNIEnv *env, jclass clazz, jlong panelPtr, jobject callback)
 {
     (void)clazz;
@@ -747,7 +747,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeSetEventCallback(
  * Both monitors return the event unchanged so AppKit dispatches it normally
  * (we observe; we don't consume). */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeInstallOutsideClickMonitor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panelPtr, jobject listener)
 {
     (void)clazz;
@@ -827,7 +827,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeInstallOutsideClick
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeUninstallOutsideClickMonitor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeUninstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)clazz;
@@ -849,7 +849,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeUninstallOutsideCli
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeRelease(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeRelease(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)clazz;
@@ -890,7 +890,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeRelease(
 }
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeContentNsView(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeContentNsView(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)env; (void)clazz;

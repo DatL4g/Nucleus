@@ -630,7 +630,7 @@ static void ensurePopupClassRegistered(void) {
 /* ============================================================ */
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeCreatePanel(
     JNIEnv *env, jclass clazz, jlong parentHwnd, jint xPx, jint yPx, jint widthPx, jint heightPx) {
     (void)clazz;
     if (sJVM == NULL) (*env)->GetJavaVM(env, &sJVM);
@@ -702,7 +702,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetFrameInWindow(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeSetFrameInWindow(
     JNIEnv *env, jclass clazz, jlong panel, jint xPx, jint yPx, jint widthPx, jint heightPx,
     jint contentXPx, jint contentYPx, jint contentWidthPx, jint contentHeightPx) {
     (void)env; (void)clazz;
@@ -728,7 +728,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetFrameInWi
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetFocusable(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeSetFocusable(
     JNIEnv *env, jclass clazz, jlong panel, jboolean focusable) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -737,7 +737,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetFocusable
 }
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeContentHwnd(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeContentHwnd(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -745,7 +745,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeContentHwnd(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeMakeCurrent(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeMakeCurrent(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -754,7 +754,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeMakeCurrent(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSwapBuffers(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeSwapBuffers(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -763,7 +763,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSwapBuffers(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetEventCallback(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeSetEventCallback(
     JNIEnv *env, jclass clazz, jlong panel, jobject callback) {
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -775,7 +775,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetEventCall
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeInstallOutsideClickMonitor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeInstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panel, jobject listener) {
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -799,7 +799,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeInstallOutsi
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeUninstallOutsideClickMonitor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeUninstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -819,7 +819,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeUninstallOut
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeRelease(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeRelease(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -848,7 +848,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeRelease(
 /* Maps a TaoCursorIcon constant (NativeTaoBridge.kt) to a system cursor for
  * the panel's client area (consumed by WM_SETCURSOR above). */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetPanelCursor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeSetPanelCursor(
     JNIEnv *env, jclass clazz, jlong panel, jint kind)
 {
     (void)env; (void)clazz;
@@ -886,7 +886,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetPanelCurs
 static LONG sHighResTimerRefcount = 0;
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetHighResTimer(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeSetHighResTimer(
     JNIEnv *env, jclass clazz, jboolean enable)
 {
     (void)env; (void)clazz;
@@ -900,7 +900,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetHighResTi
 /* Shows/hides the panel without releasing it. SW_SHOWNOACTIVATE keeps the
  * non-activating contract. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeSetPanelVisible(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeWindows_nativeSetPanelVisible(
     JNIEnv *env, jclass clazz, jlong panel, jboolean visible)
 {
     (void)env; (void)clazz;

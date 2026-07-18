@@ -22,8 +22,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
-import dev.nucleusframework.window.tao.NativeTaoBridge
-import dev.nucleusframework.window.tao.NativeTaoEglBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoMouseButton
 import dev.nucleusframework.window.tao.TaoWindow

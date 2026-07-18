@@ -350,7 +350,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 /* ================================================================== */
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
 {
     (void)env; (void)clazz;
@@ -389,7 +389,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeInstallDec
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeUninstallDecoration(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeUninstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)env; (void)clazz;
@@ -412,7 +412,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeUninstallD
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetTitleBarHeight(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetTitleBarHeight(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint heightPx)
 {
     (void)env; (void)clazz;
@@ -425,7 +425,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetTitleBa
 /* Background color (ARGB) — synced to DWM caption/border color and dark-mode
  * flag so the "sheet of glass" composited during resize matches the theme. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetBackgroundColor(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBackgroundColor(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint argb)
 {
     (void)env; (void)clazz;
@@ -452,7 +452,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetBackgro
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetStartupBackgroundEraseEnabled(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetStartupBackgroundEraseEnabled(
     JNIEnv *env, jclass clazz, jlong hwndLong, jboolean enabled)
 {
     (void)env; (void)clazz;
@@ -464,7 +464,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetStartup
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetFullscreen(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetFullscreen(
     JNIEnv *env, jclass clazz, jlong hwndLong, jboolean fullscreen)
 {
     (void)env; (void)clazz;
@@ -546,7 +546,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetFullscr
 }
 
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsFullscreen(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsFullscreen(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)env; (void)clazz;
@@ -564,7 +564,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsFullscre
  * Used by DecoratedDialog to make the dialog behave like a real JDialog.
  * Pass ownerHwndLong == 0 to clear the owner. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetOwner(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetOwner(
     JNIEnv *env, jclass clazz, jlong childHwndLong, jlong ownerHwndLong)
 {
     (void)env; (void)clazz;
@@ -583,7 +583,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetOwner(
  * (pre-Windows 10 1607). Used by DecoratedWindow when the window's own
  * scale factor isn't yet resolvable (pre-onWindowReady). */
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorScaleMilli(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorScaleMilli(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -611,7 +611,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimary
  * screen minus the taskbar) in physical pixels. Used by DecoratedWindow to
  * resolve [WindowPosition.Aligned] for the initial outer position. */
 JNIEXPORT jlongArray JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorWorkArea(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorWorkArea(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
@@ -636,7 +636,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimary
  * cannot drive a drag during a touch sequence. We instead track the
  * finger's screen position ourselves and apply `setOuterPosition`. */
 JNIEXPORT jintArray JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeClientToScreen(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeClientToScreen(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint xClient, jint yClient)
 {
     (void)clazz;
@@ -652,7 +652,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeClientToSc
 }
 
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsCursorOverWindowOrOwnedPopup(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsCursorOverWindowOrOwnedPopup(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)env; (void)clazz;
@@ -674,7 +674,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsCursorOv
  * coordinates (physical pixels). Used by DecoratedDialog to centre itself on
  * its parent. Returns NULL if hwnd is invalid. */
 JNIEXPORT jlongArray JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeGetWindowRect(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetWindowRect(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)clazz;
@@ -705,7 +705,7 @@ static int clampInt(int value, int minValue, int maxValue) {
 
 /* Win32 IsZoomed. */
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsMaximized(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsMaximized(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)env; (void)clazz;
@@ -720,7 +720,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeIsMaximize
  * work area top + the title-bar mid-height so the bar lands on screen.
  * Returns the restored outer rect as [x, y, w, h] in physical pixels. */
 JNIEXPORT jlongArray JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativePrepareTitleBarTouchDrag(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativePrepareTitleBarTouchDrag(
     JNIEnv *env, jclass clazz, jlong hwndLong,
     jint currentScreenX, jint currentScreenY,
     jint startScreenX, jint startScreenY)
@@ -823,7 +823,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativePrepareTit
  * `SetWindowPos` directly from the touch-event handler keeps the window
  * pinned to the finger. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsDecoBridge_nativeSetWindowOuterPositionPx(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetWindowOuterPositionPx(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint xPx, jint yPx)
 {
     (void)env; (void)clazz;

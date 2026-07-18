@@ -155,7 +155,7 @@ static void ensureMetalJVMCached(JNIEnv *env) {
     dispatch_once(&onceToken, ^{
         (*env)->GetJavaVM(env, &sMetalJVM);
         jclass local = (*env)->FindClass(env,
-            "dev/nucleusframework/window/tao/NativeMetalBridge");
+            "dev/nucleusframework/window/tao/ffi/NativeMetalBridge");
         if (local) {
             sMetalBridgeClass = (*env)->NewGlobalRef(env, local);
             (*env)->DeleteLocalRef(env, local);
@@ -926,10 +926,10 @@ static void ensureFrameClassLoaded(JNIEnv *env) {
 }
 
 // ── JNI entry points ─────────────────────────────────────────────────────
-// Symbol naming follows dev.nucleusframework.window.tao.NativeMetalBridge
+// Symbol naming follows dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeAttach(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttach(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
 
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
@@ -998,7 +998,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeAttach(
  * children of a host NSView whose own observer already manages the FS
  * dance. */
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeAttachOverlay(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttachOverlay(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     if (view == nil) return 0;
@@ -1051,7 +1051,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeAttachOverlay(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeConfigureChrome(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeConfigureChrome(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     if (view == nil) return;
@@ -1293,7 +1293,7 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeApplyButtonLayout(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeApplyButtonLayout(
         JNIEnv *env, jclass clazz, jlong nsViewPtr, jfloat titleBarHeight) {
     NTLOG("nativeApplyButtonLayout h=%.1f", titleBarHeight);
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
@@ -1317,7 +1317,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeApplyButtonLayout(
  * Mirrors `decorated-window-jni`'s `JniMacTitleBarBridge.nativeSetRTL`.
  */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetButtonLayoutRtl(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetButtonLayoutRtl(
         JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean isRtl) {
     NTLOG("nativeSetButtonLayoutRtl rtl=%d", (int)isRtl);
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
@@ -1352,7 +1352,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetButtonLayoutRtl(
  * modern chrome behaviours. Cheap query — caches the result in a static.
  */
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeIsMacOSTahoeOrLater(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeIsMacOSTahoeOrLater(
         JNIEnv *env, jclass clazz) {
     static jboolean cached = (jboolean) -1;
     if (cached != (jboolean) -1) return cached;
@@ -1373,7 +1373,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeIsMacOSTahoeOrLater
  * (a popup can legitimately extend beyond the owner up to the screen edge).
  */
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeOwnerWorkAreaSize(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeOwnerWorkAreaSize(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     if (view == nil) return 0;
@@ -1396,7 +1396,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeOwnerWorkAreaSize(
  * Liquid-Glass-friendly chrome path. No-op on macOS < 26.
  */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeApplyLargeCornerRadius(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeApplyLargeCornerRadius(
         JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean enabled) {
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     if (view == nil) return;
@@ -1426,7 +1426,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeApplyLargeCornerRad
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetWindowBackgroundColor(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowBackgroundColor(
         JNIEnv *env, jclass clazz, jlong nsViewPtr, jint argb) {
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     if (view == nil) return;
@@ -1443,7 +1443,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetWindowBackground
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeDetach(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDetach(
         JNIEnv *env, jclass clazz, jlong handle) {
     if (handle == 0) return;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
@@ -1481,21 +1481,21 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeDetach(
 }
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeDevicePtr(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDevicePtr(
         JNIEnv *env, jclass clazz, jlong handle) {
     if (handle == 0) return 0;
     return (jlong)(uintptr_t) (__bridge void *) HANDLE_OF(handle)->device;
 }
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeQueuePtr(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeQueuePtr(
         JNIEnv *env, jclass clazz, jlong handle) {
     if (handle == 0) return 0;
     return (jlong)(uintptr_t) (__bridge void *) HANDLE_OF(handle)->queue;
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeResize(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
         JNIEnv *env, jclass clazz, jlong handle, jint widthPx, jint heightPx, jfloat scale) {
     if (handle == 0) return;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
@@ -1515,7 +1515,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeResize(
 }
 
 JNIEXPORT jobject JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeBeginFrame(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeBeginFrame(
         JNIEnv *env, jclass clazz, jlong handle) {
     if (handle == 0) return NULL;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
@@ -1548,7 +1548,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeBeginFrame(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeIsInTransition(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeIsInTransition(
         JNIEnv *env, jclass clazz, jlong handle) {
     if (handle == 0) return JNI_FALSE;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
@@ -1556,7 +1556,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeIsInTransition(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativePresent(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresent(
         JNIEnv *env, jclass clazz, jlong handle, jlong drawablePtr) {
     if (handle == 0 || drawablePtr == 0) return;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
@@ -1584,7 +1584,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativePresent(
 // this call. The AWT/skiko MetalVSyncer pattern: arm the flag, then park on the
 // semaphore; the CVDisplayLink callback disarms + signals on the next refresh.
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeVSyncWait(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeVSyncWait(
         JNIEnv *env, jclass clazz, jlong handle) {
     (void) env; (void) clazz;
     if (handle == 0) return;
@@ -1599,7 +1599,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeVSyncWait(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeStartDisplayLink(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeStartDisplayLink(
         JNIEnv *env, jclass clazz, jlong handle) {
     (void) env; (void) clazz;
     if (handle == 0) return;
@@ -1617,7 +1617,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeStartDisplayLink(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeStopDisplayLink(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeStopDisplayLink(
         JNIEnv *env, jclass clazz, jlong handle) {
     (void) env; (void) clazz;
     if (handle == 0) return;
@@ -1640,7 +1640,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeStopDisplayLink(
  * the enclosing CATransaction together with AppKit mutations made by
  * `nativePresentWithInterop`'s callback. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetPresentsWithTransaction(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetPresentsWithTransaction(
         JNIEnv *env, jclass clazz, jlong handle, jboolean enabled) {
     (void)env; (void)clazz;
     if (handle == 0) return;
@@ -1660,7 +1660,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetPresentsWithTran
  * nativeSetPresentsWithTransaction) so [drawable present] joins our
  * outer CATransaction instead of being scheduled out of band. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativePresentWithInterop(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInterop(
         JNIEnv *env, jclass clazz, jlong handle, jlong drawablePtr, jobject interopActions) {
     (void) clazz;
     if (handle == 0 || drawablePtr == 0) return;
@@ -1748,7 +1748,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativePresentWithInterop(
 // All entry points hop to the AppKit main queue before touching AppKit.
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetNewFullscreenControls(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetNewFullscreenControls(
         JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean enabled) {
     if (nsViewPtr == 0) return;
     ensureMetalJVMCached(env);
@@ -1773,7 +1773,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetNewFullscreenCon
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeInstallMenuBarMonitor(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeInstallMenuBarMonitor(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
     if (nsViewPtr == 0) return;
     ensureMetalJVMCached(env);
@@ -1789,7 +1789,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeInstallMenuBarMonit
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeRemoveMenuBarMonitor(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeRemoveMenuBarMonitor(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
     if (nsViewPtr == 0) return;
     void *rawPtr = (void *)(uintptr_t)nsViewPtr;
@@ -1806,7 +1806,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeRemoveMenuBarMonito
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetMenuBarOffset(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetMenuBarOffset(
         JNIEnv *env, jclass clazz, jlong nsViewPtr, jfloat offsetPt) {
     if (nsViewPtr == 0) return;
     void *rawPtr = (void *)(uintptr_t)nsViewPtr;
@@ -1825,7 +1825,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeSetMenuBarOffset(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeUpdateFullScreenButtons(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeUpdateFullScreenButtons(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
     if (nsViewPtr == 0) return;
     void *rawPtr = (void *)(uintptr_t)nsViewPtr;
@@ -1842,7 +1842,7 @@ Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeUpdateFullScreenBut
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeMetalBridge_nativeShutdown(
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeShutdown(
         JNIEnv *env, jclass clazz) {
     // Stop further dispatch_async work and silence JNI callbacks. Cleanup of
     // remaining monitors is best-effort: a JVM shutdown hook may run very

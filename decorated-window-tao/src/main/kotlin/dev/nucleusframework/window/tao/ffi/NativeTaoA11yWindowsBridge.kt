@@ -1,4 +1,4 @@
-package dev.nucleusframework.window.tao
+package dev.nucleusframework.window.tao.ffi
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 

@@ -21,7 +21,7 @@ pub(crate) fn dispatch_deep_link(url: &str) {
         return;
     }
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("dev/nucleusframework/window/tao/NativeTaoBridge") {
+        let class = match env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge") {
             Ok(c) => c,
             Err(_) => return,
         };

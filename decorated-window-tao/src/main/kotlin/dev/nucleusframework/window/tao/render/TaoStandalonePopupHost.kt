@@ -17,8 +17,8 @@ import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
-import dev.nucleusframework.window.tao.NativeTaoGlBridge
-import dev.nucleusframework.window.tao.PopupNativeBridgeWindows
+import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
+import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.TaoMainDispatcher
 import dev.nucleusframework.window.tao.TaoScreenGeometry

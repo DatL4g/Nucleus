@@ -12,7 +12,7 @@ use crate::platform::macos::ffi::{
 use crate::state::WINDOWS;
 
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeActivateInputContext(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeActivateInputContext(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -36,7 +36,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nati
 /// Tao's stock `firstRectForCharacterRange:` returns size 0×0, which prevents
 /// native candidate windows from following the caret.
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_NativeTaoBridge_nativeSetImeRect(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetImeRect(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

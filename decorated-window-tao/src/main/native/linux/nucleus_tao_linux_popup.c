@@ -618,7 +618,7 @@ static void *event_thread_main(void *arg) {
 #define EXPORT JNIEXPORT __attribute__((visibility("default")))
 
 EXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeIsAvailable(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeIsAvailable(
     JNIEnv *env, jclass clazz)
 {
     (void) env; (void) clazz;
@@ -626,7 +626,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeIsAvailable(
 }
 
 EXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeDisplayPtr(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeDisplayPtr(
     JNIEnv *env, jclass clazz)
 {
     (void) env; (void) clazz;
@@ -641,7 +641,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeDisplayPtr(
  * arbitrary threads (tray callbacks, Tao main) and the command connection
  * is single-thread-owned. */
 EXPORT jfloat JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeScale(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeScale(
     JNIEnv *env, jclass clazz)
 {
     (void) env; (void) clazz;
@@ -694,7 +694,7 @@ static unsigned long read_root_cardinals(Display *dpy, Window root,
  * doesn't. Own short-lived connection — callable from any thread.
  */
 EXPORT jlongArray JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativePrimaryWorkArea(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativePrimaryWorkArea(
     JNIEnv *env, jclass clazz)
 {
     (void) clazz;
@@ -830,7 +830,7 @@ static Visual *choose_argb_visual(Display *dpy, int *out_depth) {
 }
 
 EXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeCreatePanel(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeCreatePanel(
     JNIEnv *env, jclass clazz, jint xPx, jint yPx, jint widthPx, jint heightPx)
 {
     (void) clazz;
@@ -896,7 +896,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeCreatePanel(
 }
 
 EXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeWindowXid(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeWindowXid(
     JNIEnv *env, jclass clazz, jlong panel)
 {
     (void) env; (void) clazz;
@@ -905,7 +905,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeWindowXid(
 }
 
 EXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetFrameOnScreen(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeSetFrameOnScreen(
     JNIEnv *env, jclass clazz, jlong panel, jint xPx, jint yPx, jint widthPx, jint heightPx)
 {
     (void) env; (void) clazz;
@@ -925,7 +925,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetFrameOnScre
 }
 
 EXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetPanelVisible(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeSetPanelVisible(
     JNIEnv *env, jclass clazz, jlong panel, jboolean visible)
 {
     (void) env; (void) clazz;
@@ -944,7 +944,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetPanelVisibl
 }
 
 EXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetFocusable(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeSetFocusable(
     JNIEnv *env, jclass clazz, jlong panel, jboolean focusable)
 {
     (void) env; (void) clazz;
@@ -956,7 +956,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetFocusable(
 }
 
 EXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetPanelCursor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeSetPanelCursor(
     JNIEnv *env, jclass clazz, jlong panel, jint iconCode)
 {
     (void) env; (void) clazz;
@@ -987,7 +987,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetPanelCursor
 }
 
 EXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetEventCallback(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeSetEventCallback(
     JNIEnv *env, jclass clazz, jlong panel, jobject callback)
 {
     (void) clazz;
@@ -1007,7 +1007,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeSetEventCallba
 }
 
 EXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeInstallOutsideClickMonitor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeInstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panel, jobject listener)
 {
     (void) clazz;
@@ -1024,7 +1024,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeInstallOutside
 }
 
 EXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeUninstallOutsideClickMonitor(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeUninstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panel)
 {
     (void) clazz;
@@ -1038,7 +1038,7 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeUninstallOutsi
 }
 
 EXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_PopupNativeBridgeLinux_nativeRelease(
+Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeRelease(
     JNIEnv *env, jclass clazz, jlong panel)
 {
     (void) clazz;

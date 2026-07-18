@@ -1,5 +1,7 @@
 package dev.nucleusframework.window.tao.render
 
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+
 /**
  * Output of `NativeMetalBridge.nativeBeginFrame`. Constructed from the ObjC
  * side via JNI — keep the constructor signature `(JJIIF)V` in sync with

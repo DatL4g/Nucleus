@@ -4,7 +4,7 @@ package dev.nucleusframework.window.tao.render
 
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
-import dev.nucleusframework.window.tao.NativeTaoLinuxShadowBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxShadowBridge
 import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType

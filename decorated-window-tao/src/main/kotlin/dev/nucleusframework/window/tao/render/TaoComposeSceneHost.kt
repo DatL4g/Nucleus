@@ -25,10 +25,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
-import dev.nucleusframework.window.tao.NativeMetalBridge
-import dev.nucleusframework.window.tao.NativeTaoBridge
-import dev.nucleusframework.window.tao.NativeTaoMacOsDecoBridge
-import dev.nucleusframework.window.tao.NativeTaoMacOsNativeViewBridge
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoMainDispatcher
@@ -363,7 +363,7 @@ internal class TaoComposeSceneHost(
     private fun launchMacOsOutboundDrag(
         request: dev.nucleusframework.window.tao.TaoDragAndDropManager.OutboundRequest,
     ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
-        if (!dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.isLoaded) return null
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.isLoaded) return null
         if (nsViewHandle == 0L) return null
 
         val allowed =
@@ -372,16 +372,16 @@ internal class TaoComposeSceneHost(
                     acc or
                         when (action) {
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy ->
-                                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+                                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move ->
-                                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE
+                                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link ->
-                                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK
+                                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK
                             else -> 0
                         }
                 }.let {
                     if (it == 0) {
-                        dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+                        dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
                     } else {
                         it
                     }
@@ -393,18 +393,18 @@ internal class TaoComposeSceneHost(
                 ?.map { it.absolutePath }
                 ?.toTypedArray()
         val effect =
-            dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.nativeStartDrag(
+            dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.nativeStartDrag(
                 nsView = nsViewHandle,
                 files = files,
                 text = request.text,
                 allowedEffects = allowed,
             )
         return when (effect) {
-            dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy
-            dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move
-            dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link
             else -> null
         }
@@ -412,14 +412,14 @@ internal class TaoComposeSceneHost(
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private fun registerInboundDnD() {
-        if (!dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.isLoaded) {
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.isLoaded) {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
                 "macOS DnD lib not loaded — inbound disabled",
             )
             return
         }
         val callback = InboundDnDCallback()
-        dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.nativeRegister(
+        dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.nativeRegister(
             nsView = nsViewHandle,
             callback = callback,
         )
@@ -431,7 +431,7 @@ internal class TaoComposeSceneHost(
      * interface methods aren't picked up by `GetMethodID` under native-image.
      */
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
-    private inner class InboundDnDCallback : dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.Callback {
+    private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.Callback {
         private fun rootNode() = scene?.rootDragAndDropNode
 
         private fun makeDragEvent(
@@ -503,11 +503,11 @@ internal class TaoComposeSceneHost(
                 "onDragEnter x=$x y=$y hasFiles=$hasFiles",
             )
             if (!hasFiles) {
-                return dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+                return dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             }
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             val ev = makeDragEvent(x, y, null)
             val accepted = node.acceptDragAndDropTransfer(ev)
             if (accepted) {
@@ -515,9 +515,9 @@ internal class TaoComposeSceneHost(
                 node.onEntered(ev)
             }
             return if (accepted) {
-                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             }
         }
 
@@ -530,13 +530,13 @@ internal class TaoComposeSceneHost(
         ): Int {
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             val ev = makeDragEvent(x, y, null)
             node.onMoved(ev)
             return if (node.hasEligibleDropTarget) {
-                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             }
         }
 
@@ -561,14 +561,14 @@ internal class TaoComposeSceneHost(
             )
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             val ev = makeDropEvent(x, y, files)
             val accepted = node.onDrop(ev)
             node.onEnded(ev)
             return if (accepted) {
-                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             }
         }
     }
@@ -1416,8 +1416,8 @@ internal class TaoComposeSceneHost(
             attachmentHandle = 0L
         }
         if (nsViewHandle != 0L) {
-            if (dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge.isLoaded) {
-                dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge
+            if (dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.isLoaded) {
+                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge
                     .nativeRevoke(nsViewHandle)
             }
             nsViewHandle = 0L

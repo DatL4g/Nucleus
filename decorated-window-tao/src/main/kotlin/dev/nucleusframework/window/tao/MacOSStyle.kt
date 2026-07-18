@@ -1,5 +1,7 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+
 /**
  * macOS visual treatment applied to a [DecoratedWindow] at construction.
  *

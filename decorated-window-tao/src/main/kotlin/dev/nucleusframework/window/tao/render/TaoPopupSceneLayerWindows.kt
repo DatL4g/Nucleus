@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
-import dev.nucleusframework.window.tao.PopupNativeBridgeWindows
+import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import org.jetbrains.skia.DirectContext
 
 /**

@@ -35,8 +35,8 @@ import dev.nucleusframework.window.TitleBarScope
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
-import dev.nucleusframework.window.tao.NativeMetalBridge
-import dev.nucleusframework.window.tao.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
 import dev.nucleusframework.window.utils.linux.linuxTitleBarIcons
 import dev.nucleusframework.window.utils.windows.windowsTitleBarIcons

@@ -43,9 +43,9 @@ import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.LocalFullscreenTitleBarHolder
 import dev.nucleusframework.window.tao.LocalRequestedClearColor
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
-import dev.nucleusframework.window.tao.NativeMetalBridge
-import dev.nucleusframework.window.tao.NativeTaoBridge
-import dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.WindowControlsLinux
@@ -526,7 +526,7 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                                     // `SetWindowPos` directly so the window still follows the
                                     // finger even when the OS-driven path is unavailable.
                                     val hwnd =
-                                        dev.nucleusframework.window.tao.NativeTaoBridge
+                                        dev.nucleusframework.window.tao.ffi.NativeTaoBridge
                                             .nativeHwndHandle(window.handle)
                                     val rect =
                                         if (hwnd != 0L) {

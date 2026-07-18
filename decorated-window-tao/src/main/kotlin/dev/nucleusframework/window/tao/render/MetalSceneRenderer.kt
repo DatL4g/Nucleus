@@ -3,7 +3,7 @@ package dev.nucleusframework.window.tao.render
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.scene.ComposeScene
-import dev.nucleusframework.window.tao.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext

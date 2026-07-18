@@ -3267,7 +3267,7 @@
       ]
     },
     {
-      "type": "dev.nucleusframework.window.tao.NativeMetalBridge",
+      "type": "dev.nucleusframework.window.tao.ffi.NativeMetalBridge",
       "jniAccessible": true,
       "methods": [
         {

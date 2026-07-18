@@ -25,9 +25,9 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
-import dev.nucleusframework.window.tao.NativeTaoBridge
-import dev.nucleusframework.window.tao.NativeTaoGlBridge
-import dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
@@ -579,7 +579,7 @@ internal class TaoComposeSceneHostWindows(
     private fun launchWindowsOutboundDrag(
         request: dev.nucleusframework.window.tao.TaoDragAndDropManager.OutboundRequest,
     ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
-        if (!dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.isLoaded) return null
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.isLoaded) return null
         if (hwnd == 0L) return null
 
         val allowed =
@@ -588,16 +588,16 @@ internal class TaoComposeSceneHostWindows(
                     acc or
                         when (action) {
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy ->
-                                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move ->
-                                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_MOVE
+                                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_MOVE
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link ->
-                                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_LINK
+                                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_LINK
                             else -> 0
                         }
                 }.let {
                     if (it == 0) {
-                        dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                        dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
                     } else {
                         it
                     }
@@ -609,18 +609,18 @@ internal class TaoComposeSceneHostWindows(
                 ?.map { it.absolutePath }
                 ?.toTypedArray()
         val effect =
-            dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.nativeStartDrag(
+            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.nativeStartDrag(
                 hwnd = hwnd,
                 files = files,
                 text = request.text,
                 allowedEffects = allowed,
             )
         return when (effect) {
-            dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy
-            dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_MOVE ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_MOVE ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move
-            dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_LINK ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_LINK ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link
             else -> null
         }
@@ -628,7 +628,7 @@ internal class TaoComposeSceneHostWindows(
 
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
     private fun registerInboundDnD() {
-        if (!dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.isLoaded) {
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.isLoaded) {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
                 "windows DnD lib not loaded — inbound disabled",
             )
@@ -636,7 +636,7 @@ internal class TaoComposeSceneHostWindows(
         }
         val callback = InboundDnDCallback()
         val rc =
-            dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge
+            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge
                 .nativeRegister(hwnd, callback)
         dev.nucleusframework.window.tao.TaoDnDDiagnostics
             .log("RegisterDragDrop rc=$rc")
@@ -649,7 +649,7 @@ internal class TaoComposeSceneHostWindows(
      */
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback :
-        dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.Callback {
+        dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.Callback {
         private fun rootNode() = scene?.rootDragAndDropNode
 
         private fun makeDragEvent(
@@ -721,11 +721,11 @@ internal class TaoComposeSceneHostWindows(
                 "onDragEnter x=$x y=$y hasFiles=$hasFiles",
             )
             if (!hasFiles) {
-                return dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             val ev = makeDragEvent(x, y, null)
             val accepted = node.acceptDragAndDropTransfer(ev)
             if (accepted) {
@@ -733,9 +733,9 @@ internal class TaoComposeSceneHostWindows(
                 node.onEntered(ev)
             }
             return if (accepted) {
-                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
         }
 
@@ -748,13 +748,13 @@ internal class TaoComposeSceneHostWindows(
         ): Int {
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             val ev = makeDragEvent(x, y, null)
             node.onMoved(ev)
             return if (node.hasEligibleDropTarget) {
-                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
         }
 
@@ -779,14 +779,14 @@ internal class TaoComposeSceneHostWindows(
             )
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             val ev = makeDropEvent(x, y, files)
             val accepted = node.onDrop(ev)
             node.onEnded(ev)
             return if (accepted) {
-                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
         }
     }
@@ -1307,16 +1307,16 @@ internal class TaoComposeSceneHostWindows(
 
     fun nativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? {
         if (hwnd == 0L) return null
-        if (!dev.nucleusframework.window.tao.NativeTaoWindowsNativeViewBridge.isLoaded) return null
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge.isLoaded) return null
         val parent = hwnd
         return object : dev.nucleusframework.window.tao.TaoNativeViewHost {
             override fun attach(childHandle: Long) {
-                dev.nucleusframework.window.tao.NativeTaoWindowsNativeViewBridge
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeAttach(parent, childHandle)
             }
 
             override fun detach(childHandle: Long) {
-                dev.nucleusframework.window.tao.NativeTaoWindowsNativeViewBridge
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeDetach(childHandle)
             }
 
@@ -1327,7 +1327,7 @@ internal class TaoComposeSceneHostWindows(
                 widthPx: Int,
                 heightPx: Int,
             ) {
-                dev.nucleusframework.window.tao.NativeTaoWindowsNativeViewBridge
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeSetFrame(parent, handle, xPx, yPx, widthPx, heightPx)
             }
 
@@ -1335,7 +1335,7 @@ internal class TaoComposeSceneHostWindows(
                 handle: Long,
                 radiusPx: Float,
             ) {
-                dev.nucleusframework.window.tao.NativeTaoWindowsNativeViewBridge
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeSetCornerRadius(parent, handle, radiusPx)
             }
         }
@@ -1428,8 +1428,8 @@ internal class TaoComposeSceneHostWindows(
             attachmentHandle = 0L
         }
         if (hwnd != 0L) {
-            if (dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge.isLoaded) {
-                dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge
+            if (dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.isLoaded) {
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge
                     .nativeRevoke(hwnd)
             }
             NativeTaoWindowsDecoBridge.nativeUninstallDecoration(hwnd)

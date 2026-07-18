@@ -26,9 +26,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
-import dev.nucleusframework.window.tao.NativeTaoBridge
-import dev.nucleusframework.window.tao.NativeTaoEglBridge
-import dev.nucleusframework.window.tao.NativeTaoLinuxTouchBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
@@ -581,7 +581,7 @@ internal class TaoComposeSceneHostLinux(
     private fun launchLinuxOutboundDrag(
         request: dev.nucleusframework.window.tao.TaoDragAndDropManager.OutboundRequest,
     ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
-        if (!dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.isLoaded) return null
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded) return null
         if (window.handle == 0L) return null
 
         val allowed =
@@ -590,16 +590,16 @@ internal class TaoComposeSceneHostLinux(
                     acc or
                         when (action) {
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy ->
-                                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
+                                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move ->
-                                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE
+                                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE
                             androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link ->
-                                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK
+                                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK
                             else -> 0
                         }
                 }.let {
                     if (it == 0) {
-                        dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
+                        dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
                     } else {
                         it
                     }
@@ -611,18 +611,18 @@ internal class TaoComposeSceneHostLinux(
                 ?.map { it.absolutePath }
                 ?.toTypedArray()
         val effect =
-            dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.nativeStartDrag(
+            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.nativeStartDrag(
                 handle = window.handle,
                 files = files,
                 text = request.text,
                 allowedEffects = allowed,
             )
         return when (effect) {
-            dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy
-            dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move
-            dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK ->
+            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link
             else -> null
         }
@@ -630,9 +630,9 @@ internal class TaoComposeSceneHostLinux(
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private fun registerInboundDnD() {
-        if (!dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.isLoaded) return
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded) return
         val callback = InboundDnDCallback()
-        dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge
+        dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge
             .nativeRegister(window.handle, callback)
     }
 
@@ -642,7 +642,7 @@ internal class TaoComposeSceneHostLinux(
      * interface methods aren't picked up by `GetMethodID` under native-image.
      */
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
-    private inner class InboundDnDCallback : dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.Callback {
+    private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.Callback {
         private fun rootNode() = scene?.rootDragAndDropNode
 
         // Coordinates from native are already in physical pixels (post
@@ -715,7 +715,7 @@ internal class TaoComposeSceneHostLinux(
         ): Int {
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             val ev = makeDragEvent(x, y, null)
             val accepted = node.acceptDragAndDropTransfer(ev)
             if (accepted) {
@@ -723,9 +723,9 @@ internal class TaoComposeSceneHostLinux(
                 node.onEntered(ev)
             }
             return if (accepted) {
-                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
         }
 
@@ -738,13 +738,13 @@ internal class TaoComposeSceneHostLinux(
         ): Int {
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             val ev = makeDragEvent(x, y, null)
             node.onMoved(ev)
             return if (node.hasEligibleDropTarget) {
-                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
         }
 
@@ -764,14 +764,14 @@ internal class TaoComposeSceneHostLinux(
         ): Int {
             val node =
                 rootNode()
-                    ?: return dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
+                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             val ev = makeDropEvent(x, y, files)
             val accepted = node.onDrop(ev)
             node.onEnded(ev)
             return if (accepted) {
-                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
-                dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
         }
     }
@@ -1783,20 +1783,20 @@ internal class TaoComposeSceneHostLinux(
      */
     fun nativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? {
         if (window.handle == 0L) return null
-        if (!dev.nucleusframework.window.tao.NativeTaoLinuxWidgetBridge.isLoaded) return null
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge.isLoaded) return null
         val gtkWindow =
-            dev.nucleusframework.window.tao.NativeTaoBridge
+            dev.nucleusframework.window.tao.ffi.NativeTaoBridge
                 .nativeLinuxGtkWindow(window.handle)
         if (gtkWindow == 0L) return null
         val outer = this
         return object : dev.nucleusframework.window.tao.TaoNativeViewHost {
             override fun attach(childHandle: Long) {
-                dev.nucleusframework.window.tao.NativeTaoLinuxWidgetBridge
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeAttach(gtkWindow, childHandle)
             }
 
             override fun detach(childHandle: Long) {
-                dev.nucleusframework.window.tao.NativeTaoLinuxWidgetBridge
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeDetach(childHandle)
             }
 
@@ -1815,7 +1815,7 @@ internal class TaoComposeSceneHostLinux(
                 val yLogical = (yPx / s).toInt()
                 val wLogical = (widthPx / s).toInt().coerceAtLeast(1)
                 val hLogical = (heightPx / s).toInt().coerceAtLeast(1)
-                dev.nucleusframework.window.tao.NativeTaoLinuxWidgetBridge
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeSetFrame(gtkWindow, handle, xLogical, yLogical, wLogical, hLogical)
             }
 
@@ -1853,7 +1853,7 @@ internal class TaoComposeSceneHostLinux(
                 if (window.handle == 0L) {
                     0L
                 } else {
-                    dev.nucleusframework.window.tao.NativeTaoBridge
+                    dev.nucleusframework.window.tao.ffi.NativeTaoBridge
                         .nativeLinuxGtkWindow(window.handle)
                 }
             },
@@ -1926,10 +1926,10 @@ internal class TaoComposeSceneHostLinux(
         a11yFuture?.cancel(false)
         a11yScheduler.shutdownNow()
         textToolbar.hide()
-        if (dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge.isLoaded &&
+        if (dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded &&
             window.handle != 0L
         ) {
-            dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge
+            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge
                 .nativeRevoke(window.handle)
         }
         if (NativeTaoLinuxTouchBridge.isLoaded && window.handle != 0L) {

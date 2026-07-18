@@ -4,7 +4,7 @@ package dev.nucleusframework.window.tao.render
 
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.unit.IntSize
-import dev.nucleusframework.window.tao.NativeTaoLinuxWidgetBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
 import dev.nucleusframework.window.tao.TaoMouseButton
 
 /**

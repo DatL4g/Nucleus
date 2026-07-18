@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import androidx.compose.ui.input.pointer.PointerIcon
 import java.awt.Cursor
 

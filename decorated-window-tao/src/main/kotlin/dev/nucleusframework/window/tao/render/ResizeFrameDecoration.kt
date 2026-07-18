@@ -2,7 +2,7 @@
 
 package dev.nucleusframework.window.tao.render
 
-import dev.nucleusframework.window.tao.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.TaoCursorIcon
 
 /**

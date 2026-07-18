@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.CoroutineDispatcher
 import java.util.concurrent.ConcurrentLinkedQueue

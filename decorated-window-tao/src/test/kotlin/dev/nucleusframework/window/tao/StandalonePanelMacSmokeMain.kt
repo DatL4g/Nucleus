@@ -1,5 +1,7 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
 import org.jetbrains.skia.DirectContext
 
 /**

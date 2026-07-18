@@ -1,5 +1,7 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
+import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.makeGLWithInterface
