@@ -518,7 +518,7 @@ impl NodeWrapper<'_> {
     // clickable nodes.
     fn n_actions(&self) -> i32 {
         let base = i32::from(self.0.is_clickable(&filter));
-        base + self.0.custom_actions().len() as i32
+        base + self.0.data().custom_actions().len() as i32
     }
 
     fn get_action_name(&self, index: i32) -> String {
@@ -529,7 +529,7 @@ impl NodeWrapper<'_> {
         let base = i32::from(clickable);
         usize::try_from(index - base)
             .ok()
-            .and_then(|ci| self.0.custom_actions().get(ci))
+            .and_then(|ci| self.0.data().custom_actions().get(ci))
             .map(|a| a.description.to_string())
             .unwrap_or_default()
     }
@@ -1030,7 +1030,7 @@ impl PlatformNode {
     // per-node custom index, matching the embedder's dispatch contract.
     pub fn do_action(&self, index: i32) -> Result<bool> {
         let (clickable, custom_len) = self.resolve(|node| {
-            Ok((node.is_clickable(&filter), node.custom_actions().len() as i32))
+            Ok((node.is_clickable(&filter), node.data().custom_actions().len() as i32))
         })?;
         let base = i32::from(clickable);
         if index < 0 || index >= base + custom_len {
