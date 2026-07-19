@@ -141,7 +141,7 @@ def main():
             else:
                 print(f"  custom actions seen: {names}")
         except Exception as e:  # noqa: BLE001
-            print(f"  custom action error: {e}")
+            print(f"  custom action error: {type(e).__name__}: {e!r}")
     updated = False
     if performed:
         deadline2 = time.time() + 15
