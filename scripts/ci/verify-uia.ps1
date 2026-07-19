@@ -161,6 +161,42 @@ if ($null -ne $vol) {
     Assert ([math]::Abs($newVal - 0.7) -lt 0.05) "RangeValue.SetValue(0.7) -> $newVal"
 } else { Assert $false "RangeValue skipped: element missing" }
 
+# ── Advanced semantics ───────────────────────────────────────────────────
+function Find-ByPrefix($window, [string]$prefix, [int]$timeoutSec = 20) {
+    $deadline = (Get-Date).AddSeconds($timeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        $list = New-Object System.Collections.ArrayList
+        Collect-Raw $window 0 $list
+        foreach ($el in $list) {
+            try { if ($el.Current.Name -and $el.Current.Name.StartsWith($prefix)) { return $el } } catch {}
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    return $null
+}
+
+# 5. Disabled button exposes IsEnabled=false.
+$cannot = Find-ByName $win "Cannot press" 20
+Assert ($null -ne $cannot -and -not $cannot.Current.IsEnabled) "'Cannot press' exposed as disabled"
+
+# 6. Toggleable without an explicit role still exposes TogglePattern.
+$bare = Find-ByName $win "Bare toggleable" 20
+$bareToggle = $false
+if ($null -ne $bare) {
+    try { $null = $bare.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern); $bareToggle = $true } catch {}
+}
+Assert $bareToggle "'Bare toggleable' exposes TogglePattern"
+
+# 7. Live region: invoking 'Update status' surfaces the new status text.
+$upd = Find-ByName $win "Update status" 20
+if ($null -ne $upd) {
+    $upd.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Assert ($null -ne (Find-ByPrefix $win "Status updated at")) "live region text updated after 'Update status'"
+} else { Assert $false "live region skipped: 'Update status' missing" }
+
+# Custom actions have no standard UIA pattern; their labels are covered by
+# the AT-SPI (Linux) and AX (macOS) probes.
+
 if ($failures -gt 0) { Dump-Names $win }
 Write-Host "── $failures failure(s) ──"
 exit $(if ($failures -gt 0) { 1 } else { 0 })
