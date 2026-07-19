@@ -273,7 +273,15 @@ private fun runApp() =
                 val taoWindow = nucleusWindow.unsafe.taoWindow!!
                 var clicks by remember { mutableStateOf(0) }
                 val enabledBlobs = remember { mutableStateListOf(true, true, true, true) }
-                var selectedTab by remember { mutableStateOf(Tab.Demo) }
+                // NUCLEUS_DEMO_TAB lets automation (the CI a11y probes) land
+                // directly on a given tab, e.g. NUCLEUS_DEMO_TAB=A11y.
+                var selectedTab by remember {
+                    mutableStateOf(
+                        Tab.entries.firstOrNull {
+                            it.name.equals(System.getenv("NUCLEUS_DEMO_TAB"), ignoreCase = true)
+                        } ?: Tab.Demo,
+                    )
+                }
                 val events = previewEvents
 
                 TitleBar(modifier = Modifier.macOSLargeCornerRadius()) { state ->

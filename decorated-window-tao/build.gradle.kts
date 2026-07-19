@@ -120,6 +120,25 @@ tasks.configureEach {
 // a main() via JavaExec (process main thread = macOS main thread). Windows uses
 // the in-process JUnit test in StandalonePanelNativeSmokeTest.
 
+// ── Test-classes artifact for the native test runner ────────────────────────
+// examples/tao-native-test compiles the stage-1/stage-2 suites into a GraalVM
+// native image; it consumes the compiled test classes through this
+// configuration (test source sets are not published otherwise).
+
+val taoTestClassesJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("test-classes")
+    from(sourceSets.test.get().output)
+}
+
+val taoTestArtifacts: Configuration by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+}
+
+artifacts {
+    add(taoTestArtifacts.name, taoTestClassesJar)
+}
+
 // ── Stage-2 headful window test suite ───────────────────────────────────────
 // Real Tao windows, one process, one event loop (see
 // src/test/.../headful/TaoWindowTestHarness.kt). JavaExec instead of a Test

@@ -440,3 +440,87 @@ jobs:
       - name: Run headful suite
         if: runner.os != 'Linux'
         run: ./gradlew :decorated-window-tao:taoHeadfulTest
+
+  # Native accessibility protocol: launches tao-demo on its A11y tab and
+  # verifies the OS-level projection from the OUTSIDE, through the same client
+  # APIs assistive tech uses — UIA on Windows (hard gate), AT-SPI via pyatspi
+  # on Linux (hard gate), the AX client API on macOS (self-skips on runners:
+  # AX clients need the TCC Accessibility permission, which CI cannot grant).
+  tao-a11y:
+    needs: build-natives
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Download decorated-window-tao artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-tao/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-tao-*'
+          merge-multiple: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Install display + AT-SPI stack (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
+            at-spi2-core python3-pyatspi dbus-x11
+
+      - name: Verify AT-SPI projection (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1600x1200x24 &
+          for i in $(seq 1 50); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.2; done
+          openbox &
+          eval $(dbus-launch --sh-syntax)
+          export DBUS_SESSION_BUS_ADDRESS
+          # Same switch scripts/a11y-linux-iter.sh flips: without it the a11y
+          # bus reports disabled and AccessKit never registers.
+          dbus-send --session --dest=org.a11y.Bus --type=method_call --print-reply \
+            /org/a11y/bus org.freedesktop.DBus.Properties.Set \
+            string:org.a11y.Status string:IsEnabled variant:boolean:true
+          NUCLEUS_DEMO_TAB=A11y ./gradlew :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          python3 scripts/ci/verify-atspi.py
+          status=$?
+          pkill -f dev.nucleusframework.sampletao.MainKt || true
+          exit $status
+
+      - name: Verify UIA projection (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          NUCLEUS_DEMO_TAB=A11y ./gradlew :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo"
+          status=$?
+          taskkill //F //IM java.exe //T 2>/dev/null || true
+          exit $status
+
+      - name: Verify AX projection (macOS, self-skips without TCC trust)
+        if: runner.os == 'macOS'
+        run: |
+          NUCLEUS_DEMO_TAB=A11y ./gradlew :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          for i in $(seq 1 90); do
+            APP_PID=$(pgrep -f dev.nucleusframework.sampletao.MainKt || true)
+            [ -n "$APP_PID" ] && break
+            sleep 2
+          done
+          if [ -z "$APP_PID" ]; then echo "tao-demo never started"; tail -50 /tmp/tao-demo.log; exit 1; fi
+          swift scripts/ci/verify-ax.swift "$APP_PID"
+          status=$?
+          pkill -f dev.nucleusframework.sampletao.MainKt || true
+          exit $status

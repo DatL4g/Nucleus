@@ -26,7 +26,7 @@ import kotlin.system.exitProcess
  * Compose host touches). All cases share one Tao event loop and run
  * sequentially, each in a fresh real window. Exit code = number of failures.
  */
-internal object TaoHeadfulTestSuiteMain {
+public object TaoHeadfulTestSuiteMain {
     private val cases: List<TaoWindowTestCase> =
         listOf(
             TaoWindowTestCase("window maps, paints and reports a real size") {
