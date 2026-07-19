@@ -120,6 +120,29 @@ tasks.configureEach {
 // a main() via JavaExec (process main thread = macOS main thread). Windows uses
 // the in-process JUnit test in StandalonePanelNativeSmokeTest.
 
+// ── Stage-2 headful window test suite ───────────────────────────────────────
+// Real Tao windows, one process, one event loop (see
+// src/test/.../headful/TaoWindowTestHarness.kt). JavaExec instead of a Test
+// task because the Tao loop runs once per process and, on macOS, AppKit only
+// accepts window creation from thread 0. Not part of `check`: needs a display
+// (real session on macOS/Windows CI runners, Xvfb+WM on Linux).
+
+val taoHeadfulTest by tasks.registering(JavaExec::class) {
+    description = "Runs the stage-2 real-window Tao test suite (requires a display)"
+    group = "verification"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
+    // Forward the watchdog override into the forked JVM.
+    System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
+        systemProperty("nucleus.tao.headful.watchdogMillis", it)
+    }
+    // NO -XstartOnFirstThread here: taoApplication marshals to the AppKit main
+    // thread itself (main_thread_dispatch.m), exactly like a normal `java`
+    // launch — and the flag would deadlock the AWT classes the Compose host
+    // touches. smokeStandalonePanelMac needs it only because it creates an
+    // NSPanel directly, without the Tao loop machinery.
+}
+
 val smokeStandalonePanelMac by tasks.registering(JavaExec::class) {
     description = "Smoke-checks the macOS standalone-popup native chain (ownerless NSPanel + Metal)"
     group = "verification"
