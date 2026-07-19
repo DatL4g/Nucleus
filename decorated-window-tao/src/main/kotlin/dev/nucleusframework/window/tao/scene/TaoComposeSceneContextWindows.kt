@@ -1,7 +1,5 @@
 package dev.nucleusframework.window.tao.scene
 
-import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
-import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import androidx.compose.runtime.CompositionContext
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.platform.PlatformContext
@@ -9,6 +7,8 @@ import androidx.compose.ui.scene.ComposeSceneContext
 import androidx.compose.ui.scene.ComposeSceneLayer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
+import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 
 /**
  * Windows port of [TaoComposeSceneContext]. Used by overlay scenes that

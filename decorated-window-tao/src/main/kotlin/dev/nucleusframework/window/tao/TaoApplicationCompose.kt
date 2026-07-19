@@ -1,7 +1,5 @@
 package dev.nucleusframework.window.tao
 
-import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Applier
 import androidx.compose.runtime.Composable
@@ -13,6 +11,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel

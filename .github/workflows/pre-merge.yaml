@@ -353,3 +353,37 @@ jobs:
 
       - name: Run Gradle tasks
         run: ./gradlew preMerge --continue
+
+  # Stage-1 offscreen Tao scene tests on the full OS matrix. These tests are
+  # headless (CPU-recorded ComposeScene, no display), so plain runners work on
+  # all three platforms; the native artifacts are downloaded for the
+  # native-load smoke tests, which self-skip when their platform libs are absent.
+  tao-tests:
+    needs: build-natives
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Download decorated-window-tao artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-tao/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-tao-*'
+          merge-multiple: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Run Tao scene tests
+        run: ./gradlew :decorated-window-tao:test

@@ -2,13 +2,6 @@
 
 package dev.nucleusframework.window.tao.scene
 
-import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
-import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
-import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
-import dev.nucleusframework.window.tao.event.taoKeyEvent
-import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
-import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
-import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,14 +25,21 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
+import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
+import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
+import dev.nucleusframework.window.tao.event.taoKeyEvent
+import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
+import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -251,17 +251,18 @@ internal class TaoComposeSceneHostWindows(
                 null
             }
         attachmentHandle = handle
-        directContext = (ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")).also {
-            // Bound the GPU resource cache. Each frame wraps the default
-            // framebuffer in a fresh BackendRenderTarget + Surface, and Skia
-            // allocates a stencil/scratch attachment sized to the current
-            // window for it. During a border drag every new window size mints
-            // new scratch resources; even with VSync pacing the present (see
-            // onResizeLoopChanged) an explicit budget forces purgeAsNeeded on
-            // each flush so the cache stays bounded, and onResizeLoopChanged
-            // additionally purges the scratch accumulated across the drag.
-            it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
-        }
+        directContext =
+            (ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")).also {
+                // Bound the GPU resource cache. Each frame wraps the default
+                // framebuffer in a fresh BackendRenderTarget + Surface, and Skia
+                // allocates a stencil/scratch attachment sized to the current
+                // window for it. During a border drag every new window size mints
+                // new scratch resources; even with VSync pacing the present (see
+                // onResizeLoopChanged) an explicit budget forces purgeAsNeeded on
+                // each flush so the cache stays bounded, and onResizeLoopChanged
+                // additionally purges the scratch accumulated across the drag.
+                it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
+            }
         attachedHostCount.incrementAndGet()
 
         @OptIn(ExperimentalComposeUiApi::class)

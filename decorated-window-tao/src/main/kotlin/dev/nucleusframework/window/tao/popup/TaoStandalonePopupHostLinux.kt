@@ -1,8 +1,5 @@
 package dev.nucleusframework.window.tao.popup
 
-import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
-import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
-import dev.nucleusframework.window.tao.scene.renderGlFrame
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.InternalComposeUiApi
@@ -20,11 +17,14 @@ import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
-import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
-import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
 import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
+import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
+import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
+import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.scene.renderGlFrame
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.makeGLWithInterface

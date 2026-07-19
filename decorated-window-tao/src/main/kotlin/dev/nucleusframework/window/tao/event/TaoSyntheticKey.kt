@@ -2,13 +2,13 @@
 
 package dev.nucleusframework.window.tao.event
 
-import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.scene.ComposeScene
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import java.awt.Component
 import java.awt.event.InputEvent
 

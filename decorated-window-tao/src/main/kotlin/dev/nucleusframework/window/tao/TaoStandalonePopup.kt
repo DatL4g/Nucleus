@@ -1,6 +1,5 @@
 package dev.nucleusframework.window.tao
 
-import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -15,6 +14,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowPosition
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
 import dev.nucleusframework.window.tao.popup.StandalonePopupHost
 import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHost
 import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostLinux

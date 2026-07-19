@@ -36,8 +36,11 @@ import kotlin.math.roundToInt
  * must never be taken down by dev tooling.
  */
 internal class TaoHotReloadBridgeImpl : TaoHotReloadBridge {
-
-    override fun trackWindow(window: TaoWindow, title: String?, alwaysOnTop: Boolean) {
+    override fun trackWindow(
+        window: TaoWindow,
+        title: String?,
+        alwaysOnTop: Boolean,
+    ) {
         // [title] is unused: WindowsState.WindowState has no title field in the
         // hot-reload version bundled by Compose 1.11.x. Kept in the bridge
         // surface so the call sites don't change when a newer API gains one.
@@ -55,9 +58,12 @@ internal class TaoHotReloadBridgeImpl : TaoHotReloadBridge {
             if (broken) return
             try {
                 block()
-            } catch (t: Throwable) {
+            } catch (
+                @Suppress("TooGenericExceptionCaught") t: Throwable, // kill switch: any failure disables the bridge
+            ) {
                 broken = true
                 windowState.close()
+                hotReloadLogger.log(java.util.logging.Level.FINE, "Tao hot-reload bridge disabled after failure", t)
             }
         }
 
@@ -67,11 +73,12 @@ internal class TaoHotReloadBridgeImpl : TaoHotReloadBridge {
         orchestration.subtask {
             windowState.consumeAsFlow().conflate().collect { state ->
                 orchestration.update(WindowsState) { current ->
-                    val windows = if (state == null) {
-                        current.windows - windowId
-                    } else {
-                        current.windows + (windowId to state)
-                    }
+                    val windows =
+                        if (state == null) {
+                            current.windows - windowId
+                        } else {
+                            current.windows + (windowId to state)
+                        }
                     WindowsState(windows)
                 }
             }
@@ -83,20 +90,29 @@ internal class TaoHotReloadBridgeImpl : TaoHotReloadBridge {
         fun broadcastActiveState() {
             val bounds = window.outerBoundsPx() ?: return
             // [x, y, width, height] physical px → logical.
-            val x = toLogical(bounds[0].toInt())
-            val y = toLogical(bounds[1].toInt())
-            val w = toLogical(bounds[2].toInt())
-            val h = toLogical(bounds[3].toInt())
+            val x = toLogical(bounds[BOUNDS_X].toInt())
+            val y = toLogical(bounds[BOUNDS_Y].toInt())
+            val w = toLogical(bounds[BOUNDS_WIDTH].toInt())
+            val h = toLogical(bounds[BOUNDS_HEIGHT].toInt())
             if (w <= 0 || h <= 0) return
             windowState.trySendBlocking(
                 WindowsState.WindowState(
-                    x = x, y = y, width = w, height = h,
+                    x = x,
+                    y = y,
+                    width = w,
+                    height = h,
                     isAlwaysOnTop = alwaysOnTop,
                 ),
             )
-            OrchestrationMessage.ApplicationWindowPositioned(
-                windowId, x, y, w, h, isAlwaysOnTop = alwaysOnTop,
-            ).sendAsync()
+            OrchestrationMessage
+                .ApplicationWindowPositioned(
+                    windowId,
+                    x,
+                    y,
+                    w,
+                    h,
+                    isAlwaysOnTop = alwaysOnTop,
+                ).sendAsync()
         }
 
         fun broadcastGone() {
@@ -127,3 +143,13 @@ internal class TaoHotReloadBridgeImpl : TaoHotReloadBridge {
         window.onDestroyed { guarded { broadcastGone() } }
     }
 }
+
+private val hotReloadLogger: java.util.logging.Logger =
+    java.util.logging.Logger
+        .getLogger("dev.nucleusframework.window.tao.hotReload")
+
+// Indices into the [x, y, width, height] array returned by TaoWindow.outerBoundsPx().
+private const val BOUNDS_X = 0
+private const val BOUNDS_Y = 1
+private const val BOUNDS_WIDTH = 2
+private const val BOUNDS_HEIGHT = 3

@@ -2,16 +2,6 @@
 
 package dev.nucleusframework.window.tao.scene
 
-import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
-import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
-import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
-import dev.nucleusframework.window.tao.deco.TaoWindowShadowLinux
-import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
-import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
-import dev.nucleusframework.window.tao.event.taoKeyEvent
-import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
-import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
-import dev.nucleusframework.window.tao.popup.TaoPopupHostLinux
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,9 +26,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
@@ -46,6 +33,19 @@ import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
+import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
+import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
+import dev.nucleusframework.window.tao.deco.TaoWindowShadowLinux
+import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
+import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
+import dev.nucleusframework.window.tao.event.taoKeyEvent
+import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
+import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
+import dev.nucleusframework.window.tao.popup.TaoPopupHostLinux
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

@@ -2,13 +2,6 @@
 
 package dev.nucleusframework.window.tao.scene
 
-import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
-import dev.nucleusframework.window.tao.event.taoKeyEvent
-import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
-import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
-import dev.nucleusframework.window.tao.popup.TaoPopupHost
-import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
-import dev.nucleusframework.window.tao.render.TaoSelectionAccessibilityObserver
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,20 +25,27 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
-import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.TaoEventCode
-import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
+import dev.nucleusframework.window.tao.event.taoKeyEvent
+import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
+import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.initialMacOsScaleFactor
+import dev.nucleusframework.window.tao.popup.TaoPopupHost
+import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
+import dev.nucleusframework.window.tao.render.TaoSelectionAccessibilityObserver
 import dev.nucleusframework.window.tao.shouldApplyLargeCornerRadius
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher

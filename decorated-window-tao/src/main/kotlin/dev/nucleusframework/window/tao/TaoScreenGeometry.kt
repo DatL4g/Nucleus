@@ -1,10 +1,10 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
-import dev.nucleusframework.core.runtime.Platform
 
 /**
  * Public screen-geometry queries for the Tao backend. Gives external libraries
