@@ -499,14 +499,25 @@ internal class TaoAccessibilityController(
         if (!pendingForcedPush && !active && !needsResync) return
 
         val newMap = nodes.associateBy { it.nodeId }
-        val focusId = nodes.firstOrNull { (it.flags and TaoA11yFlag.FOCUSED) != 0 }?.nodeId ?: 0L
+        // A modal dialog that contains no focused element yet must still
+        // receive the AT focus: screen readers only announce a modal when the
+        // platform focus moves into it (AT-SPI state-changed:focused, UIA
+        // FocusChanged, NSAccessibility focused-element re-read). Compose does
+        // not focus anything inside a fresh `Dialog`, so without this the only
+        // bus traffic on open is a children-changed:add and the dialog opens
+        // silently. Owners are grafted in appearance order, so the last modal
+        // root in document order is the newest dialog.
+        val focusId =
+            nodes.firstOrNull { (it.flags and TaoA11yFlag.FOCUSED) != 0 }?.nodeId
+                ?: nodes.lastOrNull { (it.flags and TaoA11yFlag.MODAL) != 0 }?.nodeId
+                ?: 0L
         val prev = prevNodesById
 
         // Decide between full and partial:
         //  - First push, forced push, or AT-requested resync → full.
         //  - Otherwise compute the changed-node set and emit a partial.
         if (prev == null || pendingForcedPush || needsResync) {
-            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes)
+            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes, focusId)
             NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
             NativeTaoBridge.nativeA11yNotePushed()
             pendingForcedPush = false
@@ -533,7 +544,7 @@ internal class TaoAccessibilityController(
         // a full snapshot on those platforms.
         val emitPartial = TAO_PARTIAL_SUPPORTED && toEmit.size * 2 < nodes.size
         if (!emitPartial) {
-            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes)
+            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes, focusId)
             NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
         } else {
             val bytes = TaoA11ySnapshotSerializer.encodePartial(toEmit, focusId)
@@ -755,7 +766,10 @@ internal object TaoA11ySnapshotSerializer {
         return raw.copyOf(cut)
     }
 
-    fun encodeFull(nodes: List<TaoA11yNode>): ByteArray = encodeImpl(nodes, partial = false, focusId = 0L)
+    fun encodeFull(
+        nodes: List<TaoA11yNode>,
+        focusId: Long = 0L,
+    ): ByteArray = encodeImpl(nodes, partial = false, focusId = focusId)
 
     fun encodePartial(
         nodes: List<TaoA11yNode>,
