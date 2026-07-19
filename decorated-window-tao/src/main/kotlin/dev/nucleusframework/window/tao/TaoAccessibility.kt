@@ -478,9 +478,10 @@ internal class TaoAccessibilityController(
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
         if (a11yDebug && !firstPushLogged) {
             firstPushLogged = true
+            val active = if (nsView != 0L) NativeTaoBridge.nativeA11yIsActive() else false
             System.err.println(
-                "[tao-a11y] first pushSnapshot: disposed=$isDisposed handle=$nsView nodes=${nodes.size} " +
-                    "active=${if (nsView != 0L) NativeTaoBridge.nativeA11yIsActive() else false} forced=$pendingForcedPush",
+                "[tao-a11y] first pushSnapshot: disposed=$isDisposed handle=$nsView " +
+                    "nodes=${nodes.size} active=$active forced=$pendingForcedPush",
             )
         }
         if (isDisposed || nsView == 0L) return
