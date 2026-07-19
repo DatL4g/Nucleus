@@ -64,10 +64,10 @@ When creating a new module with platform-specific JNI libraries, all steps below
 2. **Build output** — scripts must place binaries in `<module>/src/main/resources/nucleus/native/{linux-x64,linux-aarch64,darwin-x64,darwin-aarch64,win32-x64,win32-aarch64}/`. Build scripts must also clear the `NativeLibraryLoader` cache (`~/.cache/nucleus/native/<arch>/`) after compilation, otherwise the loader serves the stale cached copy instead of the freshly built library.
 3. **Kotlin JNI bridge** — `internal object` using `NativeLibraryLoader.load()` with `@JvmStatic external` methods. Always provide a Kotlin fallback when native lib is unavailable.
 4. **GraalVM reachability metadata** — create `<module>/src/main/resources/META-INF/native-image/dev.nucleusframework/nucleus.<module>/reachability-metadata.json` declaring all JNI-accessible classes/methods. Without this, native-image silently eliminates the bridge.
-5. **CI build** (`build-natives.yaml`) — add build + verify + upload steps for each platform (Windows, macOS, Linux matrix x64+aarch64). Artifact naming: `<module>-<platform>`.
-6. **CI consumers** — add download step + EXPECTED verify entries (all 6 arch paths) in **every** consumer workflow: `pre-merge.yaml`, `publish-maven.yaml`, `publish-plugin.yaml`, `test-packaging.yaml`, `test-graalvm.yaml`, `release-graalvm.yaml`.
+5. **CI build** (`build-natives.yaml`) — add one build step per platform job, gated with `if: steps.natives-cache.outputs.cache-hit != 'true'`, plus the library entries in that platform's `Verify ... natives` FILES list. Native outputs are cached keyed on `hashFiles('**/src/main/native/**', ...)`, so the new sources invalidate the cache automatically. Each platform job publishes a single merged artifact (`natives-windows`, `natives-macos`, `natives-linux-{x64,aarch64}`); consumer workflows fetch them all with one `pattern: 'natives-*'` download step and need **no changes** for a new module.
+6. **CI verify lists** — add the 6 arch paths to the EXPECTED arrays of the "Verify all natives present" steps in `pre-merge.yaml` and `publish-maven.yaml`.
 
-Common pitfalls: forgetting Linux `.so` in verify arrays, missing `reachability-metadata.json`, not adding download steps in all 6 consumer workflows.
+Common pitfalls: forgetting Linux `.so` in verify lists, missing `reachability-metadata.json`, forgetting the `cache-hit` guard on new build steps in `build-natives.yaml`.
 
 ## Publishing to Maven Local
 

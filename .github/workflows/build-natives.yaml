@@ -3,6 +3,15 @@ name: Build Native Libraries
 on:
   workflow_call:
 
+# The native binaries are a pure function of the native sources, so each
+# platform job caches its whole output tree keyed on a hash of every
+# src/main/native/** file (plus this workflow, so adding a module's build
+# step invalidates the key). On a cache hit every compile/toolchain step is
+# skipped and the job only verifies the restored tree and re-publishes the
+# per-platform artifact that downstream jobs consume with a single
+# `pattern: natives-*` download. Bump the `natives-v1` prefix to force a
+# full rebuild.
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -10,377 +19,167 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      - name: Restore native output cache
+        id: natives-cache
+        uses: actions/cache@v4
+        with:
+          path: '*/src/main/resources/nucleus/native/win32-*'
+          key: natives-v1-windows-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
+
       - name: Setup JDK 21
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup MSVC
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Build darkmode-detector Windows native DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call darkmode-detector\src\main\native\windows\build.bat
 
-      - name: Verify darkmode-detector Windows natives
-        shell: bash
-        run: |
-          for f in \
-            darkmode-detector/src/main/resources/nucleus/native/win32-x64/nucleus_windows_theme.dll \
-            darkmode-detector/src/main/resources/nucleus/native/win32-aarch64/nucleus_windows_theme.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload darkmode-detector Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-natives
-          path: darkmode-detector/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build native-ssl Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call native-ssl\src\main\native\windows\build.bat
 
-      - name: Verify native-ssl Windows natives
-        shell: bash
-        run: |
-          for f in \
-            native-ssl/src/main/resources/nucleus/native/win32-x64/nucleus_ssl.dll \
-            native-ssl/src/main/resources/nucleus/native/win32-aarch64/nucleus_ssl.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload native-ssl Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: ssl-windows
-          path: native-ssl/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build decorated-window-jni Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call decorated-window-jni\src\main\native\windows\build.bat
 
-      - name: Verify decorated-window-jni Windows natives
-        shell: bash
-        run: |
-          for f in \
-            decorated-window-jni/src/main/resources/nucleus/native/win32-x64/nucleus_windows_decoration.dll \
-            decorated-window-jni/src/main/resources/nucleus/native/win32-aarch64/nucleus_windows_decoration.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload decorated-window-jni Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: decorated-window-jni-windows
-          path: decorated-window-jni/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build system-color Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call system-color\src\main\native\windows\build.bat
 
-      - name: Verify system-color Windows natives
-        shell: bash
-        run: |
-          for f in \
-            system-color/src/main/resources/nucleus/native/win32-x64/nucleus_systemcolor.dll \
-            system-color/src/main/resources/nucleus/native/win32-aarch64/nucleus_systemcolor.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload system-color Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-color-windows
-          path: system-color/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build energy-manager Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call energy-manager\src\main\native\windows\build.bat
 
-      - name: Verify energy-manager Windows natives
-        shell: bash
-        run: |
-          for f in \
-            energy-manager/src/main/resources/nucleus/native/win32-x64/nucleus_energy_manager.dll \
-            energy-manager/src/main/resources/nucleus/native/win32-aarch64/nucleus_energy_manager.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload energy-manager Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: energy-manager-windows
-          path: energy-manager/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build taskbar-progress Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call taskbar-progress\src\main\native\windows\build.bat
 
-      - name: Verify taskbar-progress Windows natives
-        shell: bash
-        run: |
-          for f in \
-            taskbar-progress/src/main/resources/nucleus/native/win32-x64/nucleus_taskbar_progress.dll \
-            taskbar-progress/src/main/resources/nucleus/native/win32-aarch64/nucleus_taskbar_progress.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload taskbar-progress Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: taskbar-progress-windows
-          path: taskbar-progress/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build notification-windows Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call notification-windows\src\main\native\windows\build.bat
 
-      - name: Verify notification-windows Windows natives
-        shell: bash
-        run: |
-          for f in \
-            notification-windows/src/main/resources/nucleus/native/win32-x64/nucleus_notification_windows.dll \
-            notification-windows/src/main/resources/nucleus/native/win32-aarch64/nucleus_notification_windows.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload notification-windows Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: notification-windows
-          path: notification-windows/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build autolaunch Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call autolaunch\src\main\native\windows\build.bat
 
-      - name: Verify autolaunch Windows natives
-        shell: bash
-        run: |
-          for f in \
-            autolaunch/src/main/resources/nucleus/native/win32-x64/nucleus_autolaunch.dll \
-            autolaunch/src/main/resources/nucleus/native/win32-aarch64/nucleus_autolaunch.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload autolaunch Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: autolaunch
-          path: autolaunch/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build launcher-windows Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call launcher-windows\src\main\native\windows\build.bat
 
-      - name: Verify launcher-windows Windows natives
-        shell: bash
-        run: |
-          for f in \
-            launcher-windows/src/main/resources/nucleus/native/win32-x64/nucleus_launcher_windows.dll \
-            launcher-windows/src/main/resources/nucleus/native/win32-aarch64/nucleus_launcher_windows.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload launcher-windows Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: launcher-windows
-          path: launcher-windows/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build global-hotkey Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call global-hotkey\src\main\native\windows\build.bat
 
-      - name: Verify global-hotkey Windows natives
-        shell: bash
-        run: |
-          for f in \
-            global-hotkey/src/main/resources/nucleus/native/win32-x64/nucleus_global_hotkey.dll \
-            global-hotkey/src/main/resources/nucleus/native/win32-aarch64/nucleus_global_hotkey.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload global-hotkey Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: global-hotkey-windows
-          path: global-hotkey/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build decorated-window-core Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call decorated-window-core\src\main\native\windows\build.bat
 
-      - name: Verify decorated-window-core Windows natives
-        shell: bash
-        run: |
-          for f in \
-            decorated-window-core/src/main/resources/nucleus/native/win32-x64/nucleus_layout_direction.dll \
-            decorated-window-core/src/main/resources/nucleus/native/win32-aarch64/nucleus_layout_direction.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload decorated-window-core Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: decorated-window-core-windows
-          path: decorated-window-core/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build system-info Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call system-info\src\main\native\windows\build.bat
 
-      - name: Verify system-info Windows natives
-        shell: bash
-        run: |
-          for f in \
-            system-info/src/main/resources/nucleus/native/win32-x64/nucleus_system_info.dll \
-            system-info/src/main/resources/nucleus/native/win32-aarch64/nucleus_system_info.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload system-info Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-info-windows
-          path: system-info/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build scheduler Windows native DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call scheduler\src\main\native\windows\build.bat
 
-      - name: Verify scheduler Windows natives
-        shell: bash
-        run: |
-          for f in \
-            scheduler/src/main/resources/nucleus/native/win32-x64/nucleus_scheduler.dll \
-            scheduler/src/main/resources/nucleus/native/win32-aarch64/nucleus_scheduler.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload scheduler Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: scheduler-windows
-          path: scheduler/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build media-control Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call media-control\src\main\native\windows\build.bat
 
-      - name: Verify media-control Windows natives
-        shell: bash
-        run: |
-          for f in \
-            media-control/src/main/resources/nucleus/native/win32-x64/nucleus_media_control_windows.dll \
-            media-control/src/main/resources/nucleus/native/win32-aarch64/nucleus_media_control_windows.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload media-control Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: media-control-windows
-          path: media-control/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Setup Rust (Windows)
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
           targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
 
       - name: Build fs-watcher Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call fs-watcher\src\main\native\windows\build.bat
 
-      - name: Verify fs-watcher Windows natives
-        shell: bash
-        run: |
-          for f in \
-            fs-watcher/src/main/resources/nucleus/native/win32-x64/nucleus_fs_watcher.dll \
-            fs-watcher/src/main/resources/nucleus/native/win32-aarch64/nucleus_fs_watcher.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload fs-watcher Windows DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: fs-watcher-windows
-          path: fs-watcher/src/main/resources/nucleus/native/win32-*/
-          retention-days: 1
-
       - name: Build decorated-window-tao Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call decorated-window-tao\src\main\native\windows\build.bat
 
       # ANGLE (libEGL + libGLESv2) backs the Tao Windows Direct3D-11 render path.
       # Fetched from a pinned Electron release with SHA-256 verification (never
-      # committed — see .gitignore). Lands in the same win32-*/ dirs so the
-      # upload step below ships it inside the decorated-window-tao-windows artifact.
+      # committed — see .gitignore). Lands in the same win32-*/ dirs so it ships
+      # (and is cached) inside the natives-windows artifact.
       - name: Fetch ANGLE runtime DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: bash
         run: bash decorated-window-tao/src/main/native/windows/fetch-angle.sh all
 
-      - name: Verify decorated-window-tao Windows natives
+      - name: Verify Windows natives
         shell: bash
         run: |
-          for f in \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_deco.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_deco.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_gl.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_gl.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_a11y.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_a11y.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_dnd.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libEGL.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libEGL.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libGLESv2.dll \
-            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libGLESv2.dll; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
+          FILES=(
+            "darkmode-detector/nucleus_windows_theme.dll"
+            "native-ssl/nucleus_ssl.dll"
+            "decorated-window-jni/nucleus_windows_decoration.dll"
+            "system-color/nucleus_systemcolor.dll"
+            "energy-manager/nucleus_energy_manager.dll"
+            "taskbar-progress/nucleus_taskbar_progress.dll"
+            "notification-windows/nucleus_notification_windows.dll"
+            "autolaunch/nucleus_autolaunch.dll"
+            "launcher-windows/nucleus_launcher_windows.dll"
+            "global-hotkey/nucleus_global_hotkey.dll"
+            "decorated-window-core/nucleus_layout_direction.dll"
+            "system-info/nucleus_system_info.dll"
+            "scheduler/nucleus_scheduler.dll"
+            "media-control/nucleus_media_control_windows.dll"
+            "fs-watcher/nucleus_fs_watcher.dll"
+            "decorated-window-tao/nucleus_tao.dll"
+            "decorated-window-tao/nucleus_tao_windows_deco.dll"
+            "decorated-window-tao/nucleus_tao_gl.dll"
+            "decorated-window-tao/nucleus_tao_a11y.dll"
+            "decorated-window-tao/nucleus_tao_dnd.dll"
+            "decorated-window-tao/nucleus_tao_windows_native_view.dll"
+            "decorated-window-tao/libEGL.dll"
+            "decorated-window-tao/libGLESv2.dll"
+          )
+          MISSING=0
+          for arch in win32-x64 win32-aarch64; do
+            for e in "${FILES[@]}"; do
+              f="${e%%/*}/src/main/resources/nucleus/native/$arch/${e#*/}"
+              if [ -f "$f" ]; then
+                echo "OK: $f ($(wc -c < "$f") bytes)"
+              else
+                echo "MISSING: $f" >&2
+                MISSING=1
+              fi
+            done
           done
+          if [ "$MISSING" = "1" ]; then exit 1; fi
 
-      - name: Upload decorated-window-tao Windows DLLs
+      - name: Upload Windows natives
         uses: actions/upload-artifact@v4
         with:
-          name: decorated-window-tao-windows
-          path: decorated-window-tao/src/main/resources/nucleus/native/win32-*/
+          name: natives-windows
+          path: '*/src/main/resources/nucleus/native/win32-*/'
           retention-days: 1
 
   macos:
@@ -389,387 +188,150 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      - name: Restore native output cache
+        id: natives-cache
+        uses: actions/cache@v4
+        with:
+          path: '*/src/main/resources/nucleus/native/darwin-*'
+          key: natives-v1-macos-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
+
       - name: Setup JDK 21
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Build darkmode-detector macOS native dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash darkmode-detector/src/main/native/macos/build.sh
 
-      - name: Verify darkmode-detector macOS natives
-        run: |
-          for f in \
-            darkmode-detector/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_darkmode.dylib \
-            darkmode-detector/src/main/resources/nucleus/native/darwin-x64/libnucleus_darkmode.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload darkmode-detector macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-natives
-          path: darkmode-detector/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build native-ssl macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash native-ssl/src/main/native/macos/build.sh
 
-      - name: Verify native-ssl macOS natives
-        run: |
-          for f in \
-            native-ssl/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_ssl.dylib \
-            native-ssl/src/main/resources/nucleus/native/darwin-x64/libnucleus_ssl.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload native-ssl macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: ssl-macos
-          path: native-ssl/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build decorated-window-jbr macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-jbr/src/main/native/macos/build.sh
 
-      - name: Verify decorated-window-jbr macOS natives
-        run: |
-          for f in \
-            decorated-window-jbr/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos.dylib \
-            decorated-window-jbr/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload decorated-window-jbr macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: decorated-window-jbr-macos
-          path: decorated-window-jbr/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build decorated-window-jni macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-jni/src/main/native/macos/build.sh
 
-      - name: Verify decorated-window-jni macOS natives
-        run: |
-          for f in \
-            decorated-window-jni/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos_jni.dylib \
-            decorated-window-jni/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos_jni.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload decorated-window-jni macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: decorated-window-jni-macos
-          path: decorated-window-jni/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build system-color macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-color/src/main/native/macos/build.sh
 
-      - name: Verify system-color macOS natives
-        run: |
-          for f in \
-            system-color/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_systemcolor.dylib \
-            system-color/src/main/resources/nucleus/native/darwin-x64/libnucleus_systemcolor.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload system-color macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-color-macos
-          path: system-color/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build energy-manager macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash energy-manager/src/main/native/macos/build.sh
 
-      - name: Verify energy-manager macOS natives
-        run: |
-          for f in \
-            energy-manager/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_energy_manager.dylib \
-            energy-manager/src/main/resources/nucleus/native/darwin-x64/libnucleus_energy_manager.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload energy-manager macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: energy-manager-macos
-          path: energy-manager/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build taskbar-progress macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash taskbar-progress/src/main/native/macos/build.sh
 
-      - name: Verify taskbar-progress macOS natives
-        run: |
-          for f in \
-            taskbar-progress/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_taskbar_progress.dylib \
-            taskbar-progress/src/main/resources/nucleus/native/darwin-x64/libnucleus_taskbar_progress.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload taskbar-progress macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: taskbar-progress-macos
-          path: taskbar-progress/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build notification-macos macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash notification-macos/src/main/native/macos/build.sh
 
-      - name: Verify notification-macos macOS natives
-        run: |
-          for f in \
-            notification-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_notification.dylib \
-            notification-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_notification.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload notification-macos macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: notification-macos
-          path: notification-macos/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build service-management-macos macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash service-management-macos/src/main/native/macos/build.sh
 
-      - name: Verify service-management-macos macOS natives
-        run: |
-          for f in \
-            service-management-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_service_management.dylib \
-            service-management-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_service_management.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload service-management-macos macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: service-management-macos
-          path: service-management-macos/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build scheduler macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash scheduler/src/main/native/macos/build.sh
 
-      - name: Verify scheduler macOS natives
-        run: |
-          for f in \
-            scheduler/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_scheduler.dylib \
-            scheduler/src/main/resources/nucleus/native/darwin-x64/libnucleus_scheduler.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload scheduler macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: scheduler-macos
-          path: scheduler/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build launcher-macos macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash launcher-macos/src/main/native/macos/build.sh
 
-      - name: Verify launcher-macos macOS natives
-        run: |
-          for f in \
-            launcher-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_launcher_macos.dylib \
-            launcher-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_launcher_macos.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload launcher-macos macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: launcher-macos
-          path: launcher-macos/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build global-hotkey macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash global-hotkey/src/main/native/macos/build.sh
 
-      - name: Verify global-hotkey macOS natives
-        run: |
-          for f in \
-            global-hotkey/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_global_hotkey.dylib \
-            global-hotkey/src/main/resources/nucleus/native/darwin-x64/libnucleus_global_hotkey.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload global-hotkey macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: global-hotkey-macos
-          path: global-hotkey/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build menu-macos macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash menu-macos/src/main/native/macos/build.sh
 
-      - name: Verify menu-macos macOS natives
-        run: |
-          for f in \
-            menu-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_menu_macos.dylib \
-            menu-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_menu_macos.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload menu-macos macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: menu-macos
-          path: menu-macos/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build decorated-window-core macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-core/src/main/native/macos/build.sh
 
-      - name: Verify decorated-window-core macOS natives
-        run: |
-          for f in \
-            decorated-window-core/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_layout_direction.dylib \
-            decorated-window-core/src/main/resources/nucleus/native/darwin-x64/libnucleus_layout_direction.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload decorated-window-core macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: decorated-window-core-macos
-          path: decorated-window-core/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build system-info macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-info/src/main/native/macos/build.sh
 
-      - name: Verify system-info macOS natives
-        run: |
-          for f in \
-            system-info/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_system_info.dylib \
-            system-info/src/main/resources/nucleus/native/darwin-x64/libnucleus_system_info.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload system-info macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-info-macos
-          path: system-info/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build media-control macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash media-control/src/main/native/macos/build.sh
 
-      - name: Verify media-control macOS natives
-        run: |
-          for f in \
-            media-control/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_media_control_macos.dylib \
-            media-control/src/main/resources/nucleus/native/darwin-x64/libnucleus_media_control_macos.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload media-control macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: media-control-macos
-          path: media-control/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Setup Rust (macOS)
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Build fs-watcher macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash fs-watcher/src/main/native/macos/build.sh
 
-      - name: Verify fs-watcher macOS natives
-        run: |
-          for f in \
-            fs-watcher/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_fs_watcher.dylib \
-            fs-watcher/src/main/resources/nucleus/native/darwin-x64/libnucleus_fs_watcher.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload fs-watcher macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: fs-watcher-macos
-          path: fs-watcher/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build decorated-window-tao macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/macos/build.sh
 
-      - name: Verify decorated-window-tao macOS natives
-        run: |
-          for f in \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_metal.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_metal.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_dnd.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_dnd.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_deco.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_deco.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_popup.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_popup.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_native_view.dylib \
-            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_native_view.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload decorated-window-tao macOS dylibs
-        uses: actions/upload-artifact@v4
-        with:
-          name: decorated-window-tao-macos
-          path: decorated-window-tao/src/main/resources/nucleus/native/darwin-*/
-          retention-days: 1
-
       - name: Build graalvm-runtime macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash graalvm-runtime/src/main/native/macos/build.sh
 
-      - name: Verify graalvm-runtime macOS natives
+      - name: Verify macOS natives
         run: |
-          for f in \
-            graalvm-runtime/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_locale.dylib \
-            graalvm-runtime/src/main/resources/nucleus/native/darwin-x64/libnucleus_locale.dylib; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
+          FILES=(
+            "darkmode-detector/libnucleus_darkmode.dylib"
+            "native-ssl/libnucleus_ssl.dylib"
+            "decorated-window-jbr/libnucleus_macos.dylib"
+            "decorated-window-jni/libnucleus_macos_jni.dylib"
+            "system-color/libnucleus_systemcolor.dylib"
+            "energy-manager/libnucleus_energy_manager.dylib"
+            "taskbar-progress/libnucleus_taskbar_progress.dylib"
+            "notification-macos/libnucleus_notification.dylib"
+            "service-management-macos/libnucleus_service_management.dylib"
+            "scheduler/libnucleus_scheduler.dylib"
+            "launcher-macos/libnucleus_launcher_macos.dylib"
+            "global-hotkey/libnucleus_global_hotkey.dylib"
+            "menu-macos/libnucleus_menu_macos.dylib"
+            "decorated-window-core/libnucleus_layout_direction.dylib"
+            "system-info/libnucleus_system_info.dylib"
+            "media-control/libnucleus_media_control_macos.dylib"
+            "fs-watcher/libnucleus_fs_watcher.dylib"
+            "decorated-window-tao/libnucleus_tao.dylib"
+            "decorated-window-tao/libnucleus_tao_metal.dylib"
+            "decorated-window-tao/libnucleus_tao_dnd.dylib"
+            "decorated-window-tao/libnucleus_tao_macos_deco.dylib"
+            "decorated-window-tao/libnucleus_tao_macos_popup.dylib"
+            "decorated-window-tao/libnucleus_tao_macos_native_view.dylib"
+            "graalvm-runtime/libnucleus_locale.dylib"
+          )
+          MISSING=0
+          for arch in darwin-aarch64 darwin-x64; do
+            for e in "${FILES[@]}"; do
+              f="${e%%/*}/src/main/resources/nucleus/native/$arch/${e#*/}"
+              if [ -f "$f" ]; then
+                echo "OK: $f ($(wc -c < "$f") bytes)"
+              else
+                echo "MISSING: $f" >&2
+                MISSING=1
+              fi
+            done
           done
+          if [ "$MISSING" = "1" ]; then exit 1; fi
 
-      - name: Upload graalvm-runtime macOS dylibs
+      - name: Upload macOS natives
         uses: actions/upload-artifact@v4
         with:
-          name: graalvm-runtime-macos
-          path: graalvm-runtime/src/main/resources/nucleus/native/darwin-*/
+          name: natives-macos
+          path: '*/src/main/resources/nucleus/native/darwin-*/'
           retention-days: 1
 
   linux:
@@ -786,264 +348,128 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      - name: Restore native output cache
+        id: natives-cache
+        uses: actions/cache@v4
+        with:
+          path: '*/src/main/resources/nucleus/native/linux-*'
+          key: natives-v1-linux-${{ matrix.arch }}-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
+
       - name: Setup JDK 21
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Install build dependencies
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libx11-dev libglib2.0-dev libgtk-3-dev
 
       - name: Build darkmode-detector Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash darkmode-detector/src/main/native/linux/build.sh
 
-      - name: Verify darkmode-detector Linux native
-        run: |
-          f="darkmode-detector/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_linux_theme.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload darkmode-detector Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-natives-${{ matrix.arch }}
-          path: darkmode-detector/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build decorated-window-jni Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-jni/src/main/native/linux/build.sh
 
-      - name: Verify decorated-window-jni Linux native
-        run: |
-          f="decorated-window-jni/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_linux_jni.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload decorated-window-jni Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: decorated-window-jni-linux-${{ matrix.arch }}
-          path: decorated-window-jni/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build linux-hidpi native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash linux-hidpi/src/main/native/linux/build.sh
 
-      - name: Verify linux-hidpi native
-        run: |
-          f="linux-hidpi/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_linux_hidpi_jni.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload linux-hidpi shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-hidpi-${{ matrix.arch }}
-          path: linux-hidpi/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build system-color Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-color/src/main/native/linux/build.sh
 
-      - name: Verify system-color Linux native
-        run: |
-          f="system-color/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_systemcolor.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload system-color Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-color-linux-${{ matrix.arch }}
-          path: system-color/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build energy-manager Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash energy-manager/src/main/native/linux/build.sh
 
-      - name: Verify energy-manager Linux native
-        run: |
-          f="energy-manager/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_energy_manager.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload energy-manager Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: energy-manager-linux-${{ matrix.arch }}
-          path: energy-manager/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build notification-linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash notification-linux/src/main/native/linux/build.sh
 
-      - name: Verify notification-linux native
-        run: |
-          f="notification-linux/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_notification_linux.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload notification-linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: notification-linux-${{ matrix.arch }}
-          path: notification-linux/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build launcher-linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash launcher-linux/src/main/native/linux/build.sh
 
-      - name: Verify launcher-linux native
-        run: |
-          f="launcher-linux/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_launcher_linux.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload launcher-linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: launcher-linux-${{ matrix.arch }}
-          path: launcher-linux/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build autolaunch Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash autolaunch/src/main/native/linux/build.sh
 
-      - name: Verify autolaunch Linux native
-        run: |
-          f="autolaunch/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_autolaunch_linux.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload autolaunch Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: autolaunch-linux-${{ matrix.arch }}
-          path: autolaunch/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build decorated-window-core Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-core/src/main/native/linux/build.sh
 
-      - name: Verify decorated-window-core Linux native
-        run: |
-          f="decorated-window-core/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_layout_direction.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload decorated-window-core Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: decorated-window-core-linux-${{ matrix.arch }}
-          path: decorated-window-core/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build system-info Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-info/src/main/native/linux/build.sh
 
-      - name: Verify system-info Linux native
-        run: |
-          f="system-info/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_system_info.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload system-info Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: system-info-linux-${{ matrix.arch }}
-          path: system-info/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build global-hotkey Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash global-hotkey/src/main/native/linux/build.sh
 
-      - name: Verify global-hotkey Linux native
-        run: |
-          f="global-hotkey/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_global_hotkey.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload global-hotkey Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: global-hotkey-linux-${{ matrix.arch }}
-          path: global-hotkey/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build scheduler Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash scheduler/src/main/native/linux/build.sh
 
-      - name: Verify scheduler Linux native
-        run: |
-          f="scheduler/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_scheduler_linux.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload scheduler Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: scheduler-linux-${{ matrix.arch }}
-          path: scheduler/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build media-control Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash media-control/src/main/native/linux/build.sh
 
-      - name: Verify media-control Linux native
-        run: |
-          f="media-control/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_media_control_linux.so"
-          if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-          echo "OK: $f ($(wc -c < "$f") bytes)"
-
-      - name: Upload media-control Linux shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: media-control-linux-${{ matrix.arch }}
-          path: media-control/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Setup Rust (Linux)
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu
 
       - name: Build fs-watcher Linux native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash fs-watcher/src/main/native/linux/build.sh
 
-      - name: Verify fs-watcher Linux natives
-        run: |
-          for f in \
-            fs-watcher/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_fs_watcher.so; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
-          done
-
-      - name: Upload fs-watcher Linux shared libraries
-        uses: actions/upload-artifact@v4
-        with:
-          name: fs-watcher-linux-${{ matrix.arch }}
-          path: fs-watcher/src/main/resources/nucleus/native/linux-*/
-          retention-days: 1
-
       - name: Build decorated-window-tao Linux native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/linux/build.sh
 
-      - name: Verify decorated-window-tao Linux natives
+      - name: Verify Linux natives
         run: |
-          for f in \
-            decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao.so \
-            decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao_egl.so \
-            decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao_linux_widget.so \
-            decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/libnucleus_tao_linux_popup.so; do
-            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
-            echo "OK: $f ($(wc -c < "$f") bytes)"
+          FILES=(
+            "darkmode-detector/libnucleus_linux_theme.so"
+            "decorated-window-jni/libnucleus_linux_jni.so"
+            "linux-hidpi/libnucleus_linux_hidpi_jni.so"
+            "system-color/libnucleus_systemcolor.so"
+            "energy-manager/libnucleus_energy_manager.so"
+            "notification-linux/libnucleus_notification_linux.so"
+            "launcher-linux/libnucleus_launcher_linux.so"
+            "autolaunch/libnucleus_autolaunch_linux.so"
+            "decorated-window-core/libnucleus_layout_direction.so"
+            "system-info/libnucleus_system_info.so"
+            "global-hotkey/libnucleus_global_hotkey.so"
+            "scheduler/libnucleus_scheduler_linux.so"
+            "media-control/libnucleus_media_control_linux.so"
+            "fs-watcher/libnucleus_fs_watcher.so"
+            "decorated-window-tao/libnucleus_tao.so"
+            "decorated-window-tao/libnucleus_tao_egl.so"
+            "decorated-window-tao/libnucleus_tao_linux_widget.so"
+            "decorated-window-tao/libnucleus_tao_linux_popup.so"
+          )
+          MISSING=0
+          for e in "${FILES[@]}"; do
+            f="${e%%/*}/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/${e#*/}"
+            if [ -f "$f" ]; then
+              echo "OK: $f ($(wc -c < "$f") bytes)"
+            else
+              echo "MISSING: $f" >&2
+              MISSING=1
+            fi
           done
+          if [ "$MISSING" = "1" ]; then exit 1; fi
 
-      - name: Upload decorated-window-tao Linux shared libraries
+      - name: Upload Linux natives
         uses: actions/upload-artifact@v4
         with:
-          name: decorated-window-tao-linux-${{ matrix.arch }}
-          path: decorated-window-tao/src/main/resources/nucleus/native/linux-*/
+          name: natives-linux-${{ matrix.arch }}
+          path: '*/src/main/resources/nucleus/native/linux-*/'
           retention-days: 1
