@@ -10,12 +10,13 @@ Requires: at-spi2-core running (registryd), org.a11y.Status.IsEnabled=true
 (the CI job sets it with busctl, mirroring scripts/a11y-linux-iter.sh), and
 python3-pyatspi. Exit 0 = all assertions hold.
 """
+import os
 import sys
 import time
 
 import pyatspi
 
-TIMEOUT_S = 120
+TIMEOUT_S = int(os.environ.get("ATSPI_TIMEOUT_S", "300"))
 EXPECTED = ["Increment", "Tri-state checkbox", "Notifications switch"]
 
 

@@ -473,6 +473,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Build tao-demo (so the probe timeout is not spent compiling)
+        run: ./gradlew :examples:tao-demo:jar
+
       - name: Install display + AT-SPI stack (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -505,7 +508,7 @@ jobs:
         shell: bash
         run: |
           NUCLEUS_DEMO_TAB=A11y ./gradlew :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
-          pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo"
+          pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo" -TimeoutSec 300
           status=$?
           taskkill //F //IM java.exe //T 2>/dev/null || true
           exit $status
