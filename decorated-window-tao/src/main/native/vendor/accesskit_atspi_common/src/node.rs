@@ -441,7 +441,9 @@ impl NodeWrapper<'_> {
     }
 
     fn supports_action(&self) -> bool {
-        self.0.is_clickable(&filter)
+        // PATCH(nucleus): nodes carrying custom actions implement the Action
+        // interface too, not just clickable ones (see n_actions below).
+        self.0.is_clickable(&filter) || !self.0.data().custom_actions().is_empty()
     }
 
     fn supports_component(&self) -> bool {
