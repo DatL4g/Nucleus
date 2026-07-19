@@ -2,10 +2,10 @@
 
 package dev.nucleusframework.window.tao
 
-import dev.nucleusframework.window.tao.ffi.NativeTaoA11yWindowsBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import androidx.compose.runtime.snapshots.Snapshot
 import dev.nucleusframework.core.runtime.NucleusApp
+import dev.nucleusframework.window.tao.ffi.NativeTaoA11yWindowsBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
@@ -343,6 +343,11 @@ internal class TaoAccessibilityController(
     var isDisposed: Boolean = false
         private set
 
+    /** Set NUCLEUS_A11Y_DEBUG=1 to trace the attach/push pipeline on stderr. */
+    private val a11yDebug: Boolean = System.getenv("NUCLEUS_A11Y_DEBUG") != null
+    private var firstPushLogged = false
+    private var firstTreePushLogged = false
+
     fun attach() {
         if (isDisposed) return
         // Resolve and cache the native window handle BEFORE entering the
@@ -377,6 +382,11 @@ internal class TaoAccessibilityController(
                     if (NativeTaoBridge.nativeLinuxHandles(windowHandle) != null) windowHandle else 0L
                 }
             }
+        if (a11yDebug) {
+            val bridgeLoaded =
+                if (os.contains("win")) NativeTaoA11yWindowsBridge.isLoaded.toString() else "n/a"
+            System.err.println("[tao-a11y] attach: os=$os bridgeLoaded=$bridgeLoaded handle=$nsView")
+        }
         if (nsView == 0L) return
         // Override AT-SPI's app name before the first Adapter spins up.
         // accesskit_unix defaults to `current_exe()` — on the JVM that's
@@ -467,6 +477,18 @@ internal class TaoAccessibilityController(
     fun shouldRunSync(): Boolean = !isDisposed && (pendingForcedPush || NativeTaoBridge.nativeA11yIsActive())
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
+        // Two trace points: the very first push (usually the 1-node seed —
+        // it fires before the first composition has produced semantics) and
+        // the first push carrying a real tree. Logging only the seed reads
+        // as "the tree is empty" when the pipeline is actually healthy.
+        if (a11yDebug && (!firstPushLogged || (!firstTreePushLogged && nodes.size > 1))) {
+            if (!firstPushLogged) firstPushLogged = true else firstTreePushLogged = true
+            val active = if (nsView != 0L) NativeTaoBridge.nativeA11yIsActive() else false
+            System.err.println(
+                "[tao-a11y] first pushSnapshot: disposed=$isDisposed handle=$nsView " +
+                    "nodes=${nodes.size} active=$active forced=$pendingForcedPush",
+            )
+        }
         if (isDisposed || nsView == 0L) return
         // Smart gating: skip when no AX client is active AND no resync was
         // requested. The initial push at attach time has
@@ -477,14 +499,25 @@ internal class TaoAccessibilityController(
         if (!pendingForcedPush && !active && !needsResync) return
 
         val newMap = nodes.associateBy { it.nodeId }
-        val focusId = nodes.firstOrNull { (it.flags and TaoA11yFlag.FOCUSED) != 0 }?.nodeId ?: 0L
+        // A modal dialog that contains no focused element yet must still
+        // receive the AT focus: screen readers only announce a modal when the
+        // platform focus moves into it (AT-SPI state-changed:focused, UIA
+        // FocusChanged, NSAccessibility focused-element re-read). Compose does
+        // not focus anything inside a fresh `Dialog`, so without this the only
+        // bus traffic on open is a children-changed:add and the dialog opens
+        // silently. Owners are grafted in appearance order, so the last modal
+        // root in document order is the newest dialog.
+        val focusId =
+            nodes.firstOrNull { (it.flags and TaoA11yFlag.FOCUSED) != 0 }?.nodeId
+                ?: nodes.lastOrNull { (it.flags and TaoA11yFlag.MODAL) != 0 }?.nodeId
+                ?: 0L
         val prev = prevNodesById
 
         // Decide between full and partial:
         //  - First push, forced push, or AT-requested resync → full.
         //  - Otherwise compute the changed-node set and emit a partial.
         if (prev == null || pendingForcedPush || needsResync) {
-            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes)
+            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes, focusId)
             NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
             NativeTaoBridge.nativeA11yNotePushed()
             pendingForcedPush = false
@@ -511,7 +544,7 @@ internal class TaoAccessibilityController(
         // a full snapshot on those platforms.
         val emitPartial = TAO_PARTIAL_SUPPORTED && toEmit.size * 2 < nodes.size
         if (!emitPartial) {
-            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes)
+            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes, focusId)
             NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
         } else {
             val bytes = TaoA11ySnapshotSerializer.encodePartial(toEmit, focusId)
@@ -733,7 +766,10 @@ internal object TaoA11ySnapshotSerializer {
         return raw.copyOf(cut)
     }
 
-    fun encodeFull(nodes: List<TaoA11yNode>): ByteArray = encodeImpl(nodes, partial = false, focusId = 0L)
+    fun encodeFull(
+        nodes: List<TaoA11yNode>,
+        focusId: Long = 0L,
+    ): ByteArray = encodeImpl(nodes, partial = false, focusId = focusId)
 
     fun encodePartial(
         nodes: List<TaoA11yNode>,

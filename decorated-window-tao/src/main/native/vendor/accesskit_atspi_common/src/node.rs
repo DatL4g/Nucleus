@@ -441,7 +441,9 @@ impl NodeWrapper<'_> {
     }
 
     fn supports_action(&self) -> bool {
-        self.0.is_clickable(&filter)
+        // PATCH(nucleus): nodes carrying custom actions implement the Action
+        // interface too, not just clickable ones (see n_actions below).
+        self.0.is_clickable(&filter) || !self.0.data().custom_actions().is_empty()
     }
 
     fn supports_component(&self) -> bool {
@@ -510,23 +512,28 @@ impl NodeWrapper<'_> {
         }
     }
 
+    // PATCH(nucleus): expose AccessKit custom actions through the AT-SPI
+    // Action interface. Upstream only surfaces the synthetic "click" action,
+    // so `CustomAccessibilityAction`s (Compose) were reachable from VoiceOver
+    // (macOS custom-actions rotor) but invisible to Orca/AT-SPI clients.
+    // Index layout: [click?][custom 0..n] — the click slot only exists for
+    // clickable nodes.
     fn n_actions(&self) -> i32 {
-        if self.0.is_clickable(&filter) {
-            1
-        } else {
-            0
-        }
+        let base = i32::from(self.0.is_clickable(&filter));
+        base + self.0.data().custom_actions().len() as i32
     }
 
     fn get_action_name(&self, index: i32) -> String {
-        if index != 0 {
-            return String::new();
+        let clickable = self.0.is_clickable(&filter);
+        if clickable && index == 0 {
+            return String::from("click");
         }
-        String::from(if self.0.is_clickable(&filter) {
-            "click"
-        } else {
-            ""
-        })
+        let base = i32::from(clickable);
+        usize::try_from(index - base)
+            .ok()
+            .and_then(|ci| self.0.data().custom_actions().get(ci))
+            .map(|a| a.description.to_string())
+            .unwrap_or_default()
     }
 
     fn raw_bounds_and_transform(&self) -> (Option<Rect>, Affine) {
@@ -1020,15 +1027,31 @@ impl PlatformNode {
         })
     }
 
+    // PATCH(nucleus): route custom-action indices (see NodeWrapper::n_actions
+    // for the index layout) as `Action::CustomAction` requests carrying the
+    // per-node custom index, matching the embedder's dispatch contract.
     pub fn do_action(&self, index: i32) -> Result<bool> {
-        if index != 0 {
+        let (clickable, custom_len) = self.resolve(|node| {
+            Ok((node.is_clickable(&filter), node.data().custom_actions().len() as i32))
+        })?;
+        let base = i32::from(clickable);
+        if index < 0 || index >= base + custom_len {
             return Ok(false);
         }
-        self.do_action_internal(|_, _| ActionRequest {
-            action: Action::Click,
-            target: self.id,
-            data: None,
-        })?;
+        if clickable && index == 0 {
+            self.do_action_internal(|_, _| ActionRequest {
+                action: Action::Click,
+                target: self.id,
+                data: None,
+            })?;
+        } else {
+            let custom_index = index - base;
+            self.do_action_internal(|_, _| ActionRequest {
+                action: Action::CustomAction,
+                target: self.id,
+                data: Some(ActionData::CustomAction(custom_index)),
+            })?;
+        }
         Ok(true)
     }
 

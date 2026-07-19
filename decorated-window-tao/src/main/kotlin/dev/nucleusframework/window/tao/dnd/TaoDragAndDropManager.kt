@@ -1,6 +1,5 @@
 package dev.nucleusframework.window.tao.dnd
 
-import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.draganddrop.DragAndDropTransferAction
@@ -11,6 +10,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.PlatformDragAndDropManager
 import androidx.compose.ui.platform.PlatformDragAndDropSource
 import androidx.compose.ui.scene.ComposeSceneDragAndDropNode
+import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
 import java.io.File

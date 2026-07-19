@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
@@ -488,9 +489,13 @@ private fun A11yButton(
                 .clickable { onClick() }
                 .semantics { role = Role.Button }
         } else {
-            baseModifier.semantics {
+            // mergeDescendants like the enabled clickable path: without it the
+            // label text stays a separate (enabled) static-text node and the
+            // disabled button projects unlabeled — screen readers would read
+            // "Cannot press" as plain active text.
+            baseModifier.semantics(mergeDescendants = true) {
                 role = Role.Button
-                this[androidx.compose.ui.semantics.SemanticsProperties.Disabled] = Unit
+                disabled()
             }
         }
     Box(modifier = finalModifier) {

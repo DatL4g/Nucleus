@@ -1,6 +1,5 @@
 package dev.nucleusframework.window.tao.deco
 
-import dev.nucleusframework.window.tao.TaoWindow
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -24,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.TitleBarScope
+import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.utils.linux.LinuxButtonLayout
 import dev.nucleusframework.window.utils.linux.LinuxTitleBarButton
 import dev.nucleusframework.window.utils.linux.linuxTitleBarIcons

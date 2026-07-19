@@ -337,7 +337,15 @@ impl<T: 'static> EventLoop<T> {
             }
           }
           WindowRequest::Focus => {
-            window.present_with_time(gdk::ffi::GDK_CURRENT_TIME as _);
+            // PATCH(nucleus): stamp the activation with a real server time on
+            // X11 — Mutter drops _NET_ACTIVE_WINDOW requests carrying
+            // GDK_CURRENT_TIME (0) and only flags DEMANDS_ATTENTION (observed
+            // on GNOME XWayland; openbox honors the 0 timestamp).
+            let time = window
+              .window()
+              .and_then(|w| util::x11_server_time(&w))
+              .unwrap_or(gdk::ffi::GDK_CURRENT_TIME as _);
+            window.present_with_time(time);
           }
           WindowRequest::Resizable(resizable) => window.set_resizable(resizable),
           WindowRequest::Closable(closable) => window.set_deletable(closable),
@@ -346,6 +354,15 @@ impl<T: 'static> EventLoop<T> {
               window.iconify();
             } else {
               window.deiconify();
+              // PATCH(nucleus): deiconify alone (XMapWindow per ICCCM) does
+              // not leave the Iconic state under Mutter — the compositor
+              // keeps the window hidden until an activation with a valid
+              // timestamp arrives, so the ICONIFIED window-state-event never
+              // clears and EVENT_MINIMIZED(false) never reaches the JVM on
+              // GNOME X11/XWayland sessions.
+              if let Some(time) = window.window().and_then(|w| util::x11_server_time(&w)) {
+                window.present_with_time(time);
+              }
             }
           }
           WindowRequest::Maximized(maximized, resizable) => {

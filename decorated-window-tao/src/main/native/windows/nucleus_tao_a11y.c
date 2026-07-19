@@ -243,12 +243,14 @@ typedef void (*A11ySetTextFn)(int64_t hwnd, uint64_t node_id, const char *utf8, 
 typedef void (*A11ySetSelectionFn)(int64_t hwnd, uint64_t node_id, int32_t start, int32_t end);
 typedef void (*A11yScrollByFn)(int64_t hwnd, uint64_t node_id, float dx, float dy);
 typedef void (*A11yCustomActionFn)(int64_t hwnd, uint64_t node_id, int32_t index);
+typedef void (*A11ySetValueFn)(int64_t hwnd, uint64_t node_id, double value);
 
 static A11yInvokeActionFn  g_invokeActionCb  = NULL;
 static A11ySetTextFn       g_setTextCb       = NULL;
 static A11ySetSelectionFn  g_setSelectionCb  = NULL;
 static A11yScrollByFn      g_scrollByCb      = NULL;
 static A11yCustomActionFn  g_customActionCb  = NULL;
+static A11ySetValueFn      g_setValueCb      = NULL;
 
 __declspec(dllexport) void nucleus_tao_a11y_register_action_callback_win(A11yInvokeActionFn cb) {
     g_invokeActionCb = cb;
@@ -264,6 +266,9 @@ __declspec(dllexport) void nucleus_tao_a11y_register_scroll_by_callback_win(A11y
 }
 __declspec(dllexport) void nucleus_tao_a11y_register_custom_action_callback_win(A11yCustomActionFn cb) {
     g_customActionCb = cb;
+}
+__declspec(dllexport) void nucleus_tao_a11y_register_set_value_callback_win(A11ySetValueFn cb) {
+    g_setValueCb = cb;
 }
 
 static void nucleus_tao_a11y_invoke_action_win(int64_t hwnd, uint64_t node_id, uint16_t action) {
@@ -1906,14 +1911,19 @@ static HRESULT STDMETHODCALLTYPE Element_RangeValue_SetValue(
     IRangeValueProvider *This, double val)
 {
     NucleusUiaElement *el = ELEMENT_FROM_RANGEVALUE(This);
-    /* Compose's SetProgress is invoked through Increment/Decrement on the
-     * Kotlin side; UIA's SetValue is exposed for screen readers but the
-     * dispatch goes through the same channel. We call Increment/Decrement
-     * relative to current value for parity with macOS (where VoiceOver also
-     * uses inc/dec). */
     if (!el->projection || !el->projection->hwnd) return S_OK;
-    uint16_t action = (val > el->numericValue) ? A11Y_ACTION_INCREMENT : A11Y_ACTION_DECREMENT;
     if (val == el->numericValue) return S_OK;
+    /* Absolute set: forward to Compose's SetProgress with the requested value
+     * (clamped to the declared range on the Kotlin side). A single
+     * Increment/Decrement step used to stand in here, but UIA's SetValue is a
+     * value setter, not a nudge — Narrator and automation clients expect the
+     * slider to land ON the requested value. */
+    if (g_setValueCb) {
+        g_setValueCb((int64_t)(uintptr_t)el->projection->hwnd, el->nodeId, val);
+        return S_OK;
+    }
+    /* Fallback (callback not registered): one relative step. */
+    uint16_t action = (val > el->numericValue) ? A11Y_ACTION_INCREMENT : A11Y_ACTION_DECREMENT;
     nucleus_tao_a11y_invoke_action_win((int64_t)(uintptr_t)el->projection->hwnd,
                                         el->nodeId, action);
     return S_OK;

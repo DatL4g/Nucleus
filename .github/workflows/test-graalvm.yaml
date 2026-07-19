@@ -3,7 +3,8 @@ name: Test GraalVM Native Image
 on:
   pull_request:
     branches:
-      - '*'
+      # '**' (not '*'): base branches with a '/' must trigger too.
+      - '**'
 
 concurrency:
   group: test-graalvm-${{ github.head_ref || github.ref }}
@@ -227,3 +228,83 @@ jobs:
           path: |
             examples/nucleus-demo/build/compose/tmp/**/graalvm/output/**
           if-no-files-found: warn
+
+  # Runs the Tao test pyramid inside a GraalVM native image on all three OSes:
+  # compiles examples/tao-native-test once per OS, then executes the binary
+  # twice — `battery` (stage-1 offscreen, headless) and `headful` (stage-2 real
+  # windows). This is the only place the produced native binaries are actually
+  # RUN in CI, so it also catches missing reachability metadata at runtime.
+  tao-native-tests:
+    needs: build-natives
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Download decorated-window-tao artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-tao/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-tao-*'
+          merge-multiple: true
+
+      - name: Download graalvm-runtime artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: graalvm-runtime/src/main/resources/nucleus/native/
+          pattern: 'graalvm-runtime-*'
+          merge-multiple: true
+
+      - name: Download linux-hidpi artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: linux-hidpi/src/main/resources/nucleus/native/
+          pattern: 'linux-hidpi-*'
+          merge-multiple: true
+
+      - name: Setup Nucleus (GraalVM)
+        uses: ./.github/actions/setup-nucleus
+        with:
+          graalvm: 'true'
+          setup-gradle: 'true'
+          setup-node: 'false'
+
+      - name: Build native test runner
+        run: ./gradlew :examples:tao-native-test:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace
+
+      - name: Install display stack (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
+
+      - name: Run native test pyramid (Linux, under Xvfb + openbox)
+        if: runner.os == 'Linux'
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1600x1200x24 &
+          for i in $(seq 1 50); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.2; done
+          openbox &
+          sleep 1
+          # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
+          # next to it, which the bare nativeCompile artifact lacks.
+          BIN=$(find examples/tao-native-test/build/compose/tmp/main/graalvm/output -type f -name 'tao-native-test' | head -1)
+          echo "binary: $BIN"
+          "$BIN" battery
+          "$BIN" headful
+
+      - name: Run native test pyramid
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
+          # next to it, which the bare nativeCompile artifact lacks.
+          BIN=$(find examples/tao-native-test/build/compose/tmp/main/graalvm/output -type f \( -name 'tao-native-test' -o -name 'tao-native-test.exe' \) | head -1)
+          echo "binary: $BIN"
+          "$BIN" battery
+          "$BIN" headful

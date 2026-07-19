@@ -41,8 +41,12 @@ class GtkSqliteInterpositionTest {
 
             val java = File(System.getProperty("java.home"), "bin/java").absolutePath
             val process =
-                ProcessBuilder(java, "-cp", System.getProperty("java.class.path"), "dev.nucleusframework.sampletao.SqliteReproMainKt")
-                    .redirectErrorStream(true)
+                ProcessBuilder(
+                    java,
+                    "-cp",
+                    System.getProperty("java.class.path"),
+                    "dev.nucleusframework.sampletao.SqliteReproMainKt",
+                ).redirectErrorStream(true)
                     .apply { environment()["LD_LIBRARY_PATH"] = shimDir.absolutePath }
                     .start()
             val output = StringBuilder()
@@ -78,8 +82,13 @@ class GtkSqliteInterpositionTest {
             .lineSequence()
             .map(String::trim)
             .filter { it.startsWith("$name ") && (!wantX64 || "x86-64" in it) }
-            .mapNotNull { line -> line.substringAfter("=> ", "").trim().takeIf(String::isNotEmpty)?.let(::File) }
-            .firstOrNull(File::exists)
+            .mapNotNull { line ->
+                line
+                    .substringAfter("=> ", "")
+                    .trim()
+                    .takeIf(String::isNotEmpty)
+                    ?.let(::File)
+            }.firstOrNull(File::exists)
     }
 
     private fun exec(vararg command: String): String {
@@ -89,5 +98,8 @@ class GtkSqliteInterpositionTest {
         return output
     }
 
-    private fun createTempDir(prefix: String): File = java.nio.file.Files.createTempDirectory(prefix).toFile()
+    private fun createTempDir(prefix: String): File =
+        java.nio.file.Files
+            .createTempDirectory(prefix)
+            .toFile()
 }

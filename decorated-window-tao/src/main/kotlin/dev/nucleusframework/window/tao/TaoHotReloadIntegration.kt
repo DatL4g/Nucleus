@@ -32,8 +32,10 @@ internal object TaoHotReloadIntegration {
     private val bridge: TaoHotReloadBridge? =
         if (active) {
             runCatching {
-                Class.forName("dev.nucleusframework.window.tao.TaoHotReloadBridgeImpl")
-                    .getDeclaredConstructor().newInstance() as TaoHotReloadBridge
+                Class
+                    .forName("dev.nucleusframework.window.tao.TaoHotReloadBridgeImpl")
+                    .getDeclaredConstructor()
+                    .newInstance() as TaoHotReloadBridge
             }.getOrNull()
         } else {
             null
@@ -63,7 +65,11 @@ internal object TaoHotReloadIntegration {
      * compiled against — a broken bridge must degrade to "no sidecar tracking",
      * never crash the app. See [TaoHotReloadBridgeImpl].
      */
-    fun trackWindow(window: TaoWindow, title: String?, alwaysOnTop: Boolean) {
+    fun trackWindow(
+        window: TaoWindow,
+        title: String?,
+        alwaysOnTop: Boolean,
+    ) {
         runCatching { bridge?.trackWindow(window, title, alwaysOnTop) }
     }
 }
@@ -75,5 +81,9 @@ internal object TaoHotReloadIntegration {
  * it can be loaded unconditionally.
  */
 internal interface TaoHotReloadBridge {
-    fun trackWindow(window: TaoWindow, title: String?, alwaysOnTop: Boolean)
+    fun trackWindow(
+        window: TaoWindow,
+        title: String?,
+        alwaysOnTop: Boolean,
+    )
 }

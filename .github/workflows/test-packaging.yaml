@@ -3,7 +3,8 @@ name: Test Packaging (All Platforms)
 on:
   pull_request:
     branches:
-      - '*'
+      # '**' (not '*'): base branches with a '/' must trigger too.
+      - '**'
 
 concurrency:
   group: test-packaging-${{ github.head_ref || github.ref }}

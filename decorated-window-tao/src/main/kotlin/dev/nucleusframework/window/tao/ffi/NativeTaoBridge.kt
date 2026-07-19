@@ -1,8 +1,8 @@
 package dev.nucleusframework.window.tao.ffi
 
+import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.window.tao.TaoAccessibilityRegistry
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
-import dev.nucleusframework.core.runtime.NativeLibraryLoader
 
 private const val LIBRARY_NAME = "nucleus_tao"
 

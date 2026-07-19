@@ -40,6 +40,9 @@ type RegisterScrollByCbFn = unsafe extern "system" fn(
 type RegisterCustomActionCbFn = unsafe extern "system" fn(
     cb: extern "system" fn(hwnd: i64, node_id: u64, index: i32),
 );
+type RegisterSetValueCbFn = unsafe extern "system" fn(
+    cb: extern "system" fn(hwnd: i64, node_id: u64, value: f64),
+);
 
 struct A11yApi {
     attach: AttachFn,
@@ -117,10 +120,11 @@ fn api() -> Option<&'static A11yApi> {
     let reg_selrng = resolve("nucleus_tao_a11y_register_set_selection_callback_win");
     let reg_scroll = resolve("nucleus_tao_a11y_register_scroll_by_callback_win");
     let reg_custom = resolve("nucleus_tao_a11y_register_custom_action_callback_win");
+    let reg_setval = resolve("nucleus_tao_a11y_register_set_value_callback_win");
     if attach.is_null() || detach.is_null() || apply.is_null() ||
        active.is_null() || resync.is_null() || pushed.is_null() ||
        reg_invoke.is_null() || reg_settxt.is_null() || reg_selrng.is_null() ||
-       reg_scroll.is_null() || reg_custom.is_null() {
+       reg_scroll.is_null() || reg_custom.is_null() || reg_setval.is_null() {
         return None;
     }
     let api = A11yApi {
@@ -137,12 +141,14 @@ fn api() -> Option<&'static A11yApi> {
     let r_selrng: RegisterSetSelectionCbFn  = unsafe { std::mem::transmute(reg_selrng) };
     let r_scroll: RegisterScrollByCbFn      = unsafe { std::mem::transmute(reg_scroll) };
     let r_custom: RegisterCustomActionCbFn  = unsafe { std::mem::transmute(reg_custom) };
+    let r_setval: RegisterSetValueCbFn      = unsafe { std::mem::transmute(reg_setval) };
     unsafe {
         r_invoke(invoke_action_trampoline);
         r_settxt(set_text_trampoline);
         r_selrng(set_selection_trampoline);
         r_scroll(scroll_by_trampoline);
         r_custom(custom_action_trampoline);
+        r_setval(set_value_trampoline);
     }
     *guard = Some(api);
     let p = guard.as_ref().unwrap() as *const A11yApi;
@@ -251,6 +257,30 @@ extern "system" fn scroll_by_trampoline(
                 JValue::Long(node_id as i64),
                 JValue::Float(dx),
                 JValue::Float(dy),
+            ],
+        );
+    }
+}
+
+extern "system" fn set_value_trampoline(
+    hwnd: i64, node_id: u64, value: f64,
+) {
+    let Some(jvm) = JAVA_VM.get() else { return };
+    if let Ok(mut env) = jvm.attach_current_thread() {
+        let class = match env.find_class(
+            "dev/nucleusframework/window/tao/ffi/NativeTaoBridge",
+        ) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let _ = env.call_static_method(
+            class,
+            "dispatchA11ySetValue",
+            "(JJD)V",
+            &[
+                JValue::Long(hwnd),
+                JValue::Long(node_id as i64),
+                JValue::Double(value),
             ],
         );
     }

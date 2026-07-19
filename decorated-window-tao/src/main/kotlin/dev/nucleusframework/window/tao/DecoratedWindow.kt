@@ -3,17 +3,6 @@
 
 package dev.nucleusframework.window.tao
 
-import dev.nucleusframework.window.tao.a11y.TaoSemanticsObserver
-import dev.nucleusframework.window.tao.deco.FullscreenOverlayHost
-import dev.nucleusframework.window.tao.deco.FullscreenTitleBarHolder
-import dev.nucleusframework.window.tao.deco.LocalFullscreenTitleBarHolder
-import dev.nucleusframework.window.tao.deco.rememberUndecoratedWindowBorder
-import dev.nucleusframework.window.tao.ffi.toRgbaIcon
-import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,11 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,6 +35,17 @@ import dev.nucleusframework.window.GlobalModalDialogCount
 import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.LocalTitleBarInfo
 import dev.nucleusframework.window.TitleBarInfo
+import dev.nucleusframework.window.tao.a11y.TaoSemanticsObserver
+import dev.nucleusframework.window.tao.deco.FullscreenOverlayHost
+import dev.nucleusframework.window.tao.deco.FullscreenTitleBarHolder
+import dev.nucleusframework.window.tao.deco.LocalFullscreenTitleBarHolder
+import dev.nucleusframework.window.tao.deco.rememberUndecoratedWindowBorder
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+import dev.nucleusframework.window.tao.ffi.toRgbaIcon
 import dev.nucleusframework.window.tao.popup.LocalTaoPopupHost
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneHost
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux
@@ -159,11 +159,13 @@ internal fun ApplicationScope.openDecoratedWindow(
     // lack it, and Mutter rejects wlr-layer-shell). It is effective only under
     // X11/XWayland. Warn so the no-op isn't silent — force XWayland with
     // NUCLEUS_TAO_LINUX_RENDERER=x11 to actually hide the window.
+    val forcesXWayland =
+        System.getenv("GDK_BACKEND").orEmpty().equals("x11", ignoreCase = true) ||
+            System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
     if (hiddenFromDock &&
         Platform.Current == Platform.Linux &&
         Platform.isWayland &&
-        !System.getenv("GDK_BACKEND").orEmpty().equals("x11", ignoreCase = true) &&
-        !System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
+        !forcesXWayland
     ) {
         hiddenFromDockLogger.warning(
             "hiddenFromDock has no effect on native Wayland: Wayland has no client-side " +
@@ -280,7 +282,9 @@ internal fun ApplicationScope.openDecoratedWindow(
         TaoSemanticsObserver(
             controller = a11yController,
             densityProvider = { host.density() },
-            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+            onScheduleSync = { obs ->
+                host.scheduleA11ySync(gate = a11yController::shouldRunSync) { obs.syncIfDirty() }
+            },
         )
     host.semanticsOwnerListener = a11yObserver
 
@@ -498,7 +502,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         TaoSemanticsObserver(
             controller = a11yController,
             densityProvider = { host.density() },
-            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+            onScheduleSync = { obs ->
+                host.scheduleA11ySync(gate = a11yController::shouldRunSync) { obs.syncIfDirty() }
+            },
         )
     host.semanticsOwnerListener = a11yObserver
 
@@ -884,7 +890,9 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         TaoSemanticsObserver(
             controller = a11yController,
             densityProvider = { host.density() },
-            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+            onScheduleSync = { obs ->
+                host.scheduleA11ySync(gate = a11yController::shouldRunSync) { obs.syncIfDirty() }
+            },
         )
     host.semanticsOwnerListener = a11yObserver
 

@@ -1,8 +1,7 @@
 package dev.nucleusframework.window.tao.event
 
-import dev.nucleusframework.window.tao.TaoCursorIcon
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import androidx.compose.ui.input.pointer.PointerIcon
+import dev.nucleusframework.window.tao.TaoCursorIcon
 import java.awt.Cursor
 
 /**

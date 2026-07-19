@@ -1,6 +1,5 @@
 package dev.nucleusframework.window.tao.deco
 
-import dev.nucleusframework.window.tao.TaoWindow
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,6 +50,7 @@ import dev.nucleusframework.window.icons.windows.RestoreDark
 import dev.nucleusframework.window.icons.windows.RestoreInactive
 import dev.nucleusframework.window.icons.windows.RestoreInactiveDark
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
+import dev.nucleusframework.window.tao.TaoWindow
 
 // Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so the visual
 // output is identical between the AWT-based backend and the Tao backend.

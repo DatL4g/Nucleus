@@ -2,10 +2,6 @@
 
 package dev.nucleusframework.window.tao
 
-import dev.nucleusframework.window.tao.ffi.toRgbaIcon
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
@@ -28,6 +24,10 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.toRgbaIcon
 import kotlin.math.roundToInt
 
 /**

@@ -2,12 +2,12 @@
 
 package dev.nucleusframework.window.tao
 
+import androidx.compose.runtime.mutableStateOf
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
-import androidx.compose.runtime.mutableStateOf
-import dev.nucleusframework.core.runtime.Platform
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 

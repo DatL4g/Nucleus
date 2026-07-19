@@ -2,9 +2,6 @@
 
 package dev.nucleusframework.window.tao
 
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
-import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
@@ -22,6 +19,9 @@ import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.DecoratedDialogState
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 
 /**
  * Tao-backed equivalent of `decorated-window-jni`'s `DecoratedDialog`.

@@ -1,7 +1,7 @@
 package dev.nucleusframework.window.tao
 
-import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 
 /**
  * Process-wide controller for the macOS Dock icon when an app opted into

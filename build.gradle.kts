@@ -215,6 +215,7 @@ tasks.register("preMerge") {
     dependsOn(":native-http-okhttp:check")
     dependsOn(":native-http-ktor:check")
     dependsOn(":decorated-window-core:check")
+    dependsOn(":decorated-window-tao:check")
     dependsOn(":decorated-window-jbr:check")
     dependsOn(":decorated-window-jni:check")
     dependsOn(":decorated-window-jewel:check")

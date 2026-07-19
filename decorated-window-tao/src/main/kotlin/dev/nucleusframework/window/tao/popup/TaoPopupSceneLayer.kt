@@ -1,9 +1,5 @@
 package dev.nucleusframework.window.tao.popup
 
-import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
-import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
-import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
-import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalContext
@@ -25,10 +21,14 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
-import dev.nucleusframework.window.tao.TaoCursorIcon
-import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
+import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
+import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import org.jetbrains.skia.DirectContext
 
 /**
