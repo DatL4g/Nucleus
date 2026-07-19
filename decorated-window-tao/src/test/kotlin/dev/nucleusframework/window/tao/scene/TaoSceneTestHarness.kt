@@ -74,21 +74,29 @@ internal fun runTaoSceneTest(
     }
 }
 
-/** Single-threaded, manually pumped dispatcher — the test thread owns the scene. */
+/**
+ * Manually pumped dispatcher — the test thread runs every task, but tasks may
+ * be ENQUEUED from other threads (coroutine resumptions can hop through
+ * Dispatchers.Default internals), so the queue must be thread-safe: an
+ * unsynchronized ArrayDeque here caused rare cross-thread corruption (NPE in
+ * pump, dropped frames, scroll residue) under load. Same model as
+ * TaoMainDispatcher's ConcurrentLinkedQueue.
+ */
 private class QueueDispatcher : CoroutineDispatcher() {
-    private val queue = ArrayDeque<Runnable>()
+    private val queue = java.util.concurrent.ConcurrentLinkedQueue<Runnable>()
 
     override fun dispatch(
         context: CoroutineContext,
         block: Runnable,
     ) {
-        queue.addLast(block)
+        queue.add(block)
     }
 
     fun pump(): Boolean {
         var ran = false
-        while (queue.isNotEmpty()) {
-            queue.removeFirst().run()
+        while (true) {
+            val task = queue.poll() ?: break
+            task.run()
             ran = true
         }
         return ran
