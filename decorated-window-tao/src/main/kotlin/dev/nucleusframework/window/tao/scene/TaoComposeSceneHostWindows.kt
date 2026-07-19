@@ -1375,25 +1375,49 @@ internal class TaoComposeSceneHostWindows(
      * render thread after changes settle. Coalesces a burst of per-frame change
      * notifications into one debounced run; see the field comment above.
      */
-    fun scheduleA11ySync(block: () -> Unit) {
+    fun scheduleA11ySync(
+        gate: () -> Boolean = { true },
+        block: () -> Unit,
+    ) {
         if (a11yScheduler.isShutdown) return
         a11yPendingBlock = block
         val now = System.nanoTime()
         if (a11yFirstRequestNs == 0L) a11yFirstRequestNs = now
         val waitedMs = (now - a11yFirstRequestNs) / 1_000_000L
         val delayMs = if (waitedMs >= A11Y_SYNC_MAX_WAIT_MS) 0L else A11Y_SYNC_DEBOUNCE_MS
+        scheduleA11yFire(gate, delayMs)
+    }
+
+    private fun scheduleA11yFire(
+        gate: () -> Boolean,
+        delayMs: Long,
+    ) {
         a11yFuture?.cancel(false)
         a11yFuture =
             try {
                 a11yScheduler.schedule(
                     {
-                        val b = a11yPendingBlock
-                        a11yPendingBlock = null
-                        a11yFirstRequestNs = 0L
-                        if (b != null) {
-                            // Hop to the render thread — the walk touches Compose state.
-                            flushingDispatcher.enqueue(Runnable { b() })
-                            window.requestRedraw()
+                        if (gate()) {
+                            val b = a11yPendingBlock
+                            a11yPendingBlock = null
+                            a11yFirstRequestNs = 0L
+                            if (b != null) {
+                                // Hop to the render thread — the walk touches Compose state.
+                                flushingDispatcher.enqueue(Runnable { b() })
+                                window.requestRedraw()
+                            }
+                        } else {
+                            // No AT client is listening: park the walk and poll the
+                            // activation gate at a slow cadence instead of dropping
+                            // it. A UIA client that connects while the scene is idle
+                            // (WM_GETOBJECT sets the native active + resync flags)
+                            // would otherwise wait for the NEXT semantics change —
+                            // which never comes on a static scene, leaving the AT
+                            // with the 1-node seed tree. The poll is one JNI flag
+                            // read per tick; the render loop is only woken once the
+                            // gate opens.
+                            a11yFirstRequestNs = 0L
+                            scheduleA11yFire(gate, A11Y_ACTIVATION_POLL_MS)
                         }
                     },
                     delayMs,
@@ -1492,6 +1516,9 @@ internal class TaoComposeSceneHostWindows(
         // tech still sees periodic refreshes during sustained scrolling.
         private const val A11Y_SYNC_DEBOUNCE_MS: Long = 120L
         private const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
+
+        /** Cadence of the parked-walk activation poll (no AT connected yet). */
+        private const val A11Y_ACTIVATION_POLL_MS: Long = 250L
 
         /**
          * Live attached-host count across the JVM. When > 1, every host

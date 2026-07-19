@@ -282,7 +282,9 @@ internal fun ApplicationScope.openDecoratedWindow(
         TaoSemanticsObserver(
             controller = a11yController,
             densityProvider = { host.density() },
-            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+            onScheduleSync = { obs ->
+                host.scheduleA11ySync(gate = a11yController::shouldRunSync) { obs.syncIfDirty() }
+            },
         )
     host.semanticsOwnerListener = a11yObserver
 
@@ -500,7 +502,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         TaoSemanticsObserver(
             controller = a11yController,
             densityProvider = { host.density() },
-            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+            onScheduleSync = { obs ->
+                host.scheduleA11ySync(gate = a11yController::shouldRunSync) { obs.syncIfDirty() }
+            },
         )
     host.semanticsOwnerListener = a11yObserver
 
@@ -886,7 +890,9 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         TaoSemanticsObserver(
             controller = a11yController,
             densityProvider = { host.density() },
-            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+            onScheduleSync = { obs ->
+                host.scheduleA11ySync(gate = a11yController::shouldRunSync) { obs.syncIfDirty() }
+            },
         )
     host.semanticsOwnerListener = a11yObserver
 

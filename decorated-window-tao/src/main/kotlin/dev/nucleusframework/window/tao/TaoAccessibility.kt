@@ -346,6 +346,7 @@ internal class TaoAccessibilityController(
     /** Set NUCLEUS_A11Y_DEBUG=1 to trace the attach/push pipeline on stderr. */
     private val a11yDebug: Boolean = System.getenv("NUCLEUS_A11Y_DEBUG") != null
     private var firstPushLogged = false
+    private var firstTreePushLogged = false
 
     fun attach() {
         if (isDisposed) return
@@ -476,8 +477,12 @@ internal class TaoAccessibilityController(
     fun shouldRunSync(): Boolean = !isDisposed && (pendingForcedPush || NativeTaoBridge.nativeA11yIsActive())
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
-        if (a11yDebug && !firstPushLogged) {
-            firstPushLogged = true
+        // Two trace points: the very first push (usually the 1-node seed —
+        // it fires before the first composition has produced semantics) and
+        // the first push carrying a real tree. Logging only the seed reads
+        // as "the tree is empty" when the pipeline is actually healthy.
+        if (a11yDebug && (!firstPushLogged || (!firstTreePushLogged && nodes.size > 1))) {
+            if (!firstPushLogged) firstPushLogged = true else firstTreePushLogged = true
             val active = if (nsView != 0L) NativeTaoBridge.nativeA11yIsActive() else false
             System.err.println(
                 "[tao-a11y] first pushSnapshot: disposed=$isDisposed handle=$nsView " +
