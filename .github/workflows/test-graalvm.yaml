@@ -3,7 +3,8 @@ name: Test GraalVM Native Image
 on:
   pull_request:
     branches:
-      - '*'
+      # '**' (not '*'): base branches with a '/' must trigger too.
+      - '**'
 
 concurrency:
   group: test-graalvm-${{ github.head_ref || github.ref }}
