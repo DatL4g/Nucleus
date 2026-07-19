@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -50,6 +51,7 @@ import dev.nucleusframework.window.icons.windows.RestoreDark
 import dev.nucleusframework.window.icons.windows.RestoreInactive
 import dev.nucleusframework.window.icons.windows.RestoreInactiveDark
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
+import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.TaoWindow
 
 // Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so the visual
@@ -93,6 +95,7 @@ private val WindowsCloseButtonPressed = Color(0xFFF1707A)
 internal fun WindowControlsWindows(
     win: TaoWindow,
     state: DecoratedWindowState,
+    style: TitleBarStyle,
     modifier: Modifier = Modifier,
     isFullscreen: Boolean = false,
     onExitFullscreen: (() -> Unit)? = null,
@@ -106,6 +109,7 @@ internal fun WindowControlsWindows(
             WindowsCaptionButton(
                 onClick = { win.minimize() },
                 isDark = isDark,
+                style = style,
                 icon =
                     if (state.isActive) {
                         if (isDark) WindowsControlButtonIcons.MinimizeDark else WindowsControlButtonIcons.Minimize
@@ -125,6 +129,7 @@ internal fun WindowControlsWindows(
                 WindowsCaptionButton(
                     onClick = onExitFullscreen,
                     isDark = isDark,
+                    style = style,
                     icon =
                         if (state.isActive) {
                             if (isDark) {
@@ -149,6 +154,7 @@ internal fun WindowControlsWindows(
                 WindowsCaptionButton(
                     onClick = { win.setMaximized(false) },
                     isDark = isDark,
+                    style = style,
                     icon =
                         if (state.isActive) {
                             if (isDark) WindowsControlButtonIcons.RestoreDark else WindowsControlButtonIcons.Restore
@@ -165,6 +171,7 @@ internal fun WindowControlsWindows(
                 WindowsCaptionButton(
                     onClick = { win.setMaximized(true) },
                     isDark = isDark,
+                    style = style,
                     icon =
                         if (state.isActive) {
                             if (isDark) WindowsControlButtonIcons.MaximizeDark else WindowsControlButtonIcons.Maximize
@@ -185,6 +192,7 @@ internal fun WindowControlsWindows(
             WindowsCaptionButton(
                 onClick = { win.requestUserClose() },
                 isDark = isDark,
+                style = style,
                 icon =
                     if (state.isActive) {
                         if (isDark) WindowsControlButtonIcons.CloseDark else WindowsControlButtonIcons.Close
@@ -209,6 +217,7 @@ internal fun WindowControlsWindows(
 private fun WindowsCaptionButton(
     onClick: () -> Unit,
     isDark: Boolean,
+    style: TitleBarStyle,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
     iconHover: androidx.compose.ui.graphics.vector.ImageVector? = null,
@@ -218,18 +227,26 @@ private fun WindowsCaptionButton(
     var pressed by remember { mutableStateOf(false) }
 
     val backgroundColor =
-        when {
-            pressed && isCloseButton -> WindowsCloseButtonPressed
-            pressed -> if (isDark) WindowsButtonPressedDark else WindowsButtonPressedLight
-            hovered && isCloseButton -> WindowsCloseButtonHovered
-            hovered -> if (isDark) WindowsButtonHoveredDark else WindowsButtonHoveredLight
-            else -> Color.Transparent
-        }
+        captionButtonBackground(
+            hovered = hovered,
+            pressed = pressed,
+            isCloseButton = isCloseButton,
+            isDark = isDark,
+            style = style,
+        )
 
     val isCloseHovered = (hovered || pressed) && isCloseButton
     val currentIcon: Painter =
         rememberVectorPainter(
             if (isCloseHovered && iconHover != null) iconHover else icon,
+        )
+
+    val colorFilter =
+        captionButtonColorFilter(
+            hovered = hovered,
+            pressed = pressed,
+            isCloseHovered = isCloseHovered,
+            style = style,
         )
 
     Box(
@@ -252,6 +269,51 @@ private fun WindowsCaptionButton(
                 ),
         contentAlignment = Alignment.Center,
     ) {
-        Image(painter = currentIcon, contentDescription = contentDescription)
+        Image(painter = currentIcon, contentDescription = contentDescription, colorFilter = colorFilter)
+    }
+}
+
+// Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so custom
+// [TitleBarStyle] colors apply identically on the Tao backend. Close-button
+// hover/pressed always use the fixed Windows red — matching AWT.
+private fun captionButtonBackground(
+    hovered: Boolean,
+    pressed: Boolean,
+    isCloseButton: Boolean,
+    isDark: Boolean,
+    style: TitleBarStyle,
+): Color {
+    val customHover = style.colors.iconButtonHoveredBackground
+    val customPressed = style.colors.iconButtonPressedBackground
+    val pressedColor =
+        customPressed.takeUnless { it == Color.Transparent }
+            ?: if (isDark) WindowsButtonPressedDark else WindowsButtonPressedLight
+    val hoveredColor =
+        customHover.takeUnless { it == Color.Transparent }
+            ?: if (isDark) WindowsButtonHoveredDark else WindowsButtonHoveredLight
+    return when {
+        pressed && isCloseButton -> WindowsCloseButtonPressed
+        pressed -> pressedColor
+        hovered && isCloseButton -> WindowsCloseButtonHovered
+        hovered -> hoveredColor
+        else -> Color.Transparent
+    }
+}
+
+private fun captionButtonColorFilter(
+    hovered: Boolean,
+    pressed: Boolean,
+    isCloseHovered: Boolean,
+    style: TitleBarStyle,
+): ColorFilter? {
+    val iconTint = style.colors.controlButtonIconColor
+    val iconHoverTint = style.colors.controlButtonIconHoverColor
+    return when {
+        // Close hover swaps to the baked-red close artwork; don't tint it.
+        isCloseHovered -> null
+        (hovered || pressed) && iconHoverTint != Color.Unspecified ->
+            ColorFilter.tint(iconHoverTint)
+        iconTint != Color.Unspecified -> ColorFilter.tint(iconTint)
+        else -> null
     }
 }

@@ -15,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.TitleBarScope
+import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.utils.linux.LinuxButtonLayout
 import dev.nucleusframework.window.utils.linux.LinuxTitleBarButton
@@ -52,6 +55,7 @@ internal fun TitleBarScope.WindowControlsLinux(
     win: TaoWindow,
     state: DecoratedWindowState,
     isResizable: Boolean,
+    style: TitleBarStyle,
     layout: LinuxButtonLayout = rememberLinuxButtonLayout(),
     isFullscreen: Boolean = false,
     onExitFullscreen: (() -> Unit)? = null,
@@ -75,6 +79,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                     iconHover = closeHover,
                     iconPressed = closePressed,
                     contentDescription = "Close",
+                    style = style,
                     alignment = buttonAlignment,
                     isCloseButton = true,
                 )
@@ -87,6 +92,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                         iconHover = icons.maximizeHover,
                         iconPressed = icons.maximizePressed,
                         contentDescription = "Exit fullscreen",
+                        style = style,
                         alignment = buttonAlignment,
                     )
                     continue
@@ -99,6 +105,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                         iconHover = icons.restoreHover,
                         iconPressed = icons.restorePressed,
                         contentDescription = "Restore",
+                        style = style,
                         alignment = buttonAlignment,
                     )
                 } else {
@@ -108,6 +115,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                         iconHover = icons.maximizeHover,
                         iconPressed = icons.maximizePressed,
                         contentDescription = "Maximize",
+                        style = style,
                         alignment = buttonAlignment,
                     )
                 }
@@ -119,6 +127,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                     iconHover = icons.minimizeHover,
                     iconPressed = icons.minimizePressed,
                     contentDescription = "Minimize",
+                    style = style,
                     alignment = buttonAlignment,
                 )
             }
@@ -135,8 +144,9 @@ private fun TitleBarScope.LinuxControlButton(
     iconHover: Painter,
     iconPressed: Painter,
     contentDescription: String,
+    style: TitleBarStyle,
     alignment: Alignment.Horizontal,
-    @Suppress("UnusedParameter") isCloseButton: Boolean = false,
+    isCloseButton: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -169,9 +179,24 @@ private fun TitleBarScope.LinuxControlButton(
                 else -> icon
             }
 
+        // Apply the custom icon tint when set, but skip the close button while
+        // hovered/pressed — its artwork has baked-in colors. Mirrors
+        // `decorated-window-core/WindowControlArea.kt`.
+        val isCloseInteracted = isCloseButton && (hovered || pressed)
+        val iconTint = style.colors.controlButtonIconColor
+        val iconHoverTint = style.colors.controlButtonIconHoverColor
+        val colorFilter =
+            when {
+                isCloseInteracted -> null
+                (hovered || pressed) && iconHoverTint != Color.Unspecified -> ColorFilter.tint(iconHoverTint)
+                iconTint != Color.Unspecified -> ColorFilter.tint(iconTint)
+                else -> null
+            }
+
         Image(
             painter = currentIcon,
             contentDescription = contentDescription,
+            colorFilter = colorFilter,
             modifier =
                 Modifier
                     .onPointerEvent(PointerEventType.Enter) { hovered = true }

@@ -371,6 +371,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                                 win = taoWindow,
                                 state = titleBarState,
                                 isResizable = taoWindow.isResizable,
+                                style = style,
                                 layout = linuxLayout,
                                 isFullscreen = titleBarState.isFullscreen,
                                 onExitFullscreen = { taoWindow.setFullscreen(false) },
@@ -380,6 +381,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                         WindowControlsWindows(
                             win = taoWindow,
                             state = titleBarState,
+                            style = style,
                             modifier = Modifier.align(Alignment.End),
                             isFullscreen = titleBarState.isFullscreen,
                             onExitFullscreen = { taoWindow.setFullscreen(false) },
