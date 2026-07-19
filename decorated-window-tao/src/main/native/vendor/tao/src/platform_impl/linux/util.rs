@@ -74,6 +74,27 @@ pub fn set_size_constraints<W: GtkWindowExt + WidgetExt>(
   )
 }
 
+// PATCH(nucleus): fetch a real X server timestamp for activation requests.
+// gtk_window_present with GDK_CURRENT_TIME (0) is dropped by Mutter's
+// focus-stealing prevention (X11 and XWayland): the window is neither raised,
+// restored, nor focused — it only gets _NET_WM_STATE_DEMANDS_ATTENTION.
+// gdk_x11_get_server_time round-trips a zero-length property change to obtain
+// a fresh timestamp, which Mutter accepts. Returns None on Wayland (GTK
+// handles activation there) or when the window is not yet realized.
+#[cfg(feature = "x11")]
+pub fn x11_server_time(gdk_window: &gdk::Window) -> Option<u32> {
+  use gtk::prelude::{DisplayExtManual, ObjectType};
+  if !gdk_window.display().backend().is_x11() {
+    return None;
+  }
+  Some(unsafe { gdk_x11_sys::gdk_x11_get_server_time(gdk_window.as_ptr() as *mut _) })
+}
+
+#[cfg(not(feature = "x11"))]
+pub fn x11_server_time(_gdk_window: &gdk::Window) -> Option<u32> {
+  None
+}
+
 pub struct WindowMaximizeProcess<W: GtkWindowExt + WidgetExt> {
   window: W,
   resizable: bool,

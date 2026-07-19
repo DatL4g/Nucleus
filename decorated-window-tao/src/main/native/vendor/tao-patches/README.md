@@ -18,6 +18,7 @@ of an external workaround in the parent module — see `../../../../VENDORING_PL
 | 0002  | `0002-linux-cursor-preserve-on-motion.patch` | 2 | Linux    | Only override the cursor on edge-zone entry / exit. Outside resize zones the application-level cursor (text I-beam, hand, custom icon) is preserved across motion events. |
 | 0003  | `0003-linux-realize-on-build.patch`       | 3     | Linux    | Realise the GtkApplicationWindow at the end of `Window::new` so the underlying GdkWindow (X11 XID / Wayland wl_surface) is valid synchronously when the constructor returns. |
 | 0004  | `0004-linux-drain-draw-queue.patch`       | 4     | Linux    | `run_return`: treat pending redraws like pending events (don't park in the blocking `gtk_main_iteration` while `draws` is non-empty) and drain the whole draw channel per cycle instead of one redraw per wakeup. Fixes multi-window frame starvation (each window rendered at ~refresh/N). |
+| 0005  | `0005-linux-restore-activation-timestamp.patch` | 5 | Linux | Stamp `Focus` and `Minimized(false)` activations with a real X server timestamp (`gdk_x11_get_server_time`). Mutter's focus-stealing prevention drops `_NET_ACTIVE_WINDOW` requests carrying `GDK_CURRENT_TIME` (0) and keeps a deiconified window Iconic with `_NET_WM_STATE_DEMANDS_ATTENTION`, so restore/focus silently no-op and `EVENT_MINIMIZED(false)` never fires on GNOME X11/XWayland (openbox honors the 0 timestamp, which is why CI never saw it). No-op on Wayland. |
 
 ## Bump procedure (e.g. 0.35 → 0.36)
 
