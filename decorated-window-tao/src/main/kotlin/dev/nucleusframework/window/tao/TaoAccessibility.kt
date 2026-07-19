@@ -343,6 +343,10 @@ internal class TaoAccessibilityController(
     var isDisposed: Boolean = false
         private set
 
+    /** Set NUCLEUS_A11Y_DEBUG=1 to trace the attach/push pipeline on stderr. */
+    private val a11yDebug: Boolean = System.getenv("NUCLEUS_A11Y_DEBUG") != null
+    private var firstPushLogged = false
+
     fun attach() {
         if (isDisposed) return
         // Resolve and cache the native window handle BEFORE entering the
@@ -377,6 +381,11 @@ internal class TaoAccessibilityController(
                     if (NativeTaoBridge.nativeLinuxHandles(windowHandle) != null) windowHandle else 0L
                 }
             }
+        if (a11yDebug) {
+            val bridgeLoaded =
+                if (os.contains("win")) NativeTaoA11yWindowsBridge.isLoaded.toString() else "n/a"
+            System.err.println("[tao-a11y] attach: os=$os bridgeLoaded=$bridgeLoaded handle=$nsView")
+        }
         if (nsView == 0L) return
         // Override AT-SPI's app name before the first Adapter spins up.
         // accesskit_unix defaults to `current_exe()` — on the JVM that's
@@ -467,6 +476,13 @@ internal class TaoAccessibilityController(
     fun shouldRunSync(): Boolean = !isDisposed && (pendingForcedPush || NativeTaoBridge.nativeA11yIsActive())
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
+        if (a11yDebug && !firstPushLogged) {
+            firstPushLogged = true
+            System.err.println(
+                "[tao-a11y] first pushSnapshot: disposed=$isDisposed handle=$nsView nodes=${nodes.size} " +
+                    "active=${if (nsView != 0L) NativeTaoBridge.nativeA11yIsActive() else false} forced=$pendingForcedPush",
+            )
+        }
         if (isDisposed || nsView == 0L) return
         // Smart gating: skip when no AX client is active AND no resync was
         // requested. The initial push at attach time has

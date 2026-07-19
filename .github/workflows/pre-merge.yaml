@@ -565,7 +565,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          NUCLEUS_DEMO_TAB=A11y NUCLEUS_A11Y=trace RUST_LOG=info,nucleus_tao=debug \
+          NUCLEUS_DEMO_TAB=A11y NUCLEUS_A11Y_DEBUG=1 \
             ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
           status=0
           pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo" -TimeoutSec 300 || status=$?
