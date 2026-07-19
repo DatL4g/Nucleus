@@ -1093,9 +1093,25 @@ impl UnownedWindow {
   #[inline]
   pub fn set_maximized(&self, maximized: bool) {
     let is_zoomed = self.is_zoomed();
-    if is_zoomed == maximized {
+    // PATCH(nucleus): dedup against the TRACKED state as well as the live
+    // frame. `is_zoomed()` compares the current frame to visibleFrame, but
+    // set_maximized_async animates via the NSWindow animator — so during the
+    // ~300ms zoom animation the frame matches neither end state. A
+    // `set_maximized(false)` issued while the maximize animation is still
+    // running would see `is_zoomed == false == maximized` and silently
+    // no-op, leaving the window stuck maximized (surfaced by the headful
+    // test suite). The tracked flag flips synchronously in
+    // set_maximized_async, so it disambiguates mid-animation calls; keeping
+    // the frame check preserves the manual-unzoom path (user drags a zoomed
+    // window: tracked says maximized, frame says floating → proceed).
+    let tracked = self.shared_state.lock().unwrap().maximized;
+    if is_zoomed == maximized && tracked == maximized {
       return;
     };
+    // Flip the tracked state synchronously so a second call issued before the
+    // main-queue block has run still sees the new intent (the async block
+    // re-assigns the same value).
+    self.shared_state.lock().unwrap().maximized = maximized;
     unsafe {
       util::set_maximized_async(
         &self.ns_window,

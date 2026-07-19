@@ -11,7 +11,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.DecoratedWindow
 import dev.nucleusframework.window.tao.taoApplication
 import java.util.concurrent.atomic.AtomicBoolean
@@ -22,9 +21,10 @@ import kotlin.system.exitProcess
 
 /**
  * Stage-2 headful suite entry point. Launched by the `taoHeadfulTest` Gradle
- * task (JavaExec; `-XstartOnFirstThread` on macOS so the Tao/AppKit loop owns
- * thread 0). All cases share one Tao event loop and run sequentially, each in
- * a fresh real window. Exit code = number of failures.
+ * task (plain JavaExec — `taoApplication` marshals to the AppKit main thread
+ * itself, and `-XstartOnFirstThread` would deadlock the AWT classes the
+ * Compose host touches). All cases share one Tao event loop and run
+ * sequentially, each in a fresh real window. Exit code = number of failures.
  */
 internal object TaoHeadfulTestSuiteMain {
     private val cases: List<TaoWindowTestCase> =
@@ -54,10 +54,8 @@ internal object TaoHeadfulTestSuiteMain {
                 }
             },
             TaoWindowTestCase(
+                // openbox (the CI WM) is floating, so client move requests apply.
                 "setOuterPosition moves the window and fires onMoved",
-                // Tiling WMs (i3 on the Linux CI display) own window geometry and
-                // ignore client move requests — X11 floating hints are unreliable.
-                skip = { if (Platform.Current == Platform.Linux) "tiling WM owns geometry on Linux CI" else null },
             ) {
                 val moved = AtomicBoolean(false)
                 awaitUntil("window mapped") { bounds() != null }
@@ -71,7 +69,6 @@ internal object TaoHeadfulTestSuiteMain {
             },
             TaoWindowTestCase(
                 "maximize grows the window and restore shrinks it back",
-                skip = { if (Platform.Current == Platform.Linux) "tiling WM owns geometry on Linux CI" else null },
             ) {
                 awaitUntil("window mapped") { bounds() != null }
                 settle()
@@ -81,28 +78,19 @@ internal object TaoHeadfulTestSuiteMain {
                     val b = bounds() ?: return@awaitUntil false
                     b[2] > before[2] && b[3] >= before[3]
                 }
-                if (Platform.Current != Platform.MacOS) {
-                    window.setMaximized(false)
-                    awaitUntil("outer bounds restored after unmaximize") {
-                        val b = bounds() ?: return@awaitUntil false
-                        abs(b[2] - before[2]) <= RESTORE_TOLERANCE_PX
-                    }
+                // Deliberately issued while the zoom animation may still be
+                // in flight: regression test for the mid-animation
+                // set_maximized(false) no-op fixed in the vendored tao
+                // (PATCH(nucleus) in macos/window.rs::set_maximized).
+                window.setMaximized(false)
+                awaitUntil("outer bounds restored after unmaximize") {
+                    val b = bounds() ?: return@awaitUntil false
+                    abs(b[2] - before[2]) <= RESTORE_TOLERANCE_PX
                 }
-                // KNOWN QUIRK (macOS): setMaximized(false) never restores a
-                // zoomed borderless NSWindow — tao's is_zoomed() compares the
-                // frame against screen.visibleFrame and our custom-decorated
-                // window doesn't match, so set_maximized early-returns.
-                // Surfaced by this suite; tracked for a native-side fix.
             },
             TaoWindowTestCase(
+                // openbox supports iconify, so this runs on Linux CI too.
                 "minimize and restore fire onMinimizedChanged both ways",
-                skip = {
-                    when (Platform.Current) {
-                        // i3 has no minimize; headless sway neither.
-                        Platform.Linux -> "no minimize concept under the Linux CI WM"
-                        else -> null
-                    }
-                },
             ) {
                 val minimized = AtomicBoolean(false)
                 val restored = AtomicBoolean(false)

@@ -170,8 +170,13 @@ pub unsafe fn set_maximized_async(
       trace!("Locked shared state in `set_maximized`");
       let mut shared_state_lock = shared_state.lock().unwrap();
 
-      // Save the standard frame sized if it is not zoomed
-      if !is_zoomed {
+      // Save the standard frame sized if it is not zoomed.
+      // PATCH(nucleus): only when actually maximizing — an unmaximize issued
+      // while the zoom animation is still running arrives with
+      // `is_zoomed == false` (frame mid-flight), and saving here would
+      // overwrite the real pre-zoom frame with a half-grown one, making the
+      // restore target wrong.
+      if !is_zoomed && maximized {
         shared_state_lock.standard_frame = Some(NSWindow::frame(&ns_window));
       }
 
