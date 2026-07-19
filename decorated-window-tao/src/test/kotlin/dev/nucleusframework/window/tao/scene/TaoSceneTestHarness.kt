@@ -189,11 +189,24 @@ internal class TaoSceneTestScope(
         return recordSceneToPicture(scene, width, height, timeNanos).also { lastPicture = it }
     }
 
-    /** Renders frames until the scene stops self-invalidating (animations settle). */
-    fun frameUntilIdle(maxFrames: Int = 120): Picture {
+    /**
+     * Renders frames until the scene stops self-invalidating (animations
+     * settle). Requires [quietFrames] CONSECUTIVE frames without an
+     * invalidation before declaring idle: a single quiet frame can race the
+     * scrollable/animation pipeline re-arming itself one dispatch later
+     * (observed as a rare 8px residue in the wheel-scroll symmetry test).
+     */
+    fun frameUntilIdle(
+        maxFrames: Int = 240,
+        quietFrames: Int = 3,
+    ): Picture {
         var picture = frame()
+        var quiet = if (invalidated) 0 else 1
         var remaining = maxFrames
-        while (invalidated && remaining-- > 0) picture = frame()
+        while (quiet < quietFrames && remaining-- > 0) {
+            picture = frame()
+            quiet = if (invalidated) 0 else quiet + 1
+        }
         return picture
     }
 
