@@ -81,15 +81,97 @@ internal fun runTaoSceneTest(
  * unsynchronized ArrayDeque here caused rare cross-thread corruption (NPE in
  * pump, dropped frames, scroll residue) under load. Same model as
  * TaoMainDispatcher's ConcurrentLinkedQueue.
+ *
+ * Also implements [Delay] against the harness's VIRTUAL clock. Without it,
+ * every `delay` / `withTimeout` inside scene code (most notably Compose's
+ * MouseWheelScrollingLogic) falls back to kotlinx's DefaultExecutor — REAL
+ * time on another thread — while [TaoSceneTestScope.frame] advances a
+ * synthetic clock with no wall-time in between. On a loaded runner the
+ * pending real-time resumption fires after `frameUntilIdle` has already
+ * declared the scene quiet, leaving a scroll animation half-applied (the
+ * rare 8px residue in the wheel-scroll symmetry test). Timers keyed on the
+ * virtual clock make those paths deterministic: [advanceTo] releases due
+ * timers into the ordinary queue, where the test thread pumps them.
  */
-private class QueueDispatcher : CoroutineDispatcher() {
+@OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
+private class QueueDispatcher :
+    CoroutineDispatcher(),
+    kotlinx.coroutines.Delay {
     private val queue = java.util.concurrent.ConcurrentLinkedQueue<Runnable>()
+
+    private class TimedTask(
+        val deadlineNanos: Long,
+        val sequence: Long,
+        val task: Runnable,
+    ) : Comparable<TimedTask> {
+        override fun compareTo(other: TimedTask): Int {
+            val byDeadline = deadlineNanos.compareTo(other.deadlineNanos)
+            return if (byDeadline != 0) byDeadline else sequence.compareTo(other.sequence)
+        }
+    }
+
+    private val timers = java.util.concurrent.PriorityBlockingQueue<TimedTask>()
+    private val timerSequence =
+        java.util.concurrent.atomic
+            .AtomicLong()
+
+    @Volatile
+    private var nowNanos = 0L
 
     override fun dispatch(
         context: CoroutineContext,
         block: Runnable,
     ) {
         queue.add(block)
+    }
+
+    override fun scheduleResumeAfterDelay(
+        timeMillis: Long,
+        continuation: kotlinx.coroutines.CancellableContinuation<Unit>,
+    ) {
+        val timed =
+            TimedTask(
+                deadlineNanos = nowNanos + timeMillis * 1_000_000L,
+                sequence = timerSequence.incrementAndGet(),
+                task =
+                    Runnable {
+                        with(continuation) { resumeUndispatched(Unit) }
+                    },
+            )
+        timers.add(timed)
+        continuation.invokeOnCancellation { timers.remove(timed) }
+    }
+
+    override fun invokeOnTimeout(
+        timeMillis: Long,
+        block: Runnable,
+        context: CoroutineContext,
+    ): kotlinx.coroutines.DisposableHandle {
+        val timed =
+            TimedTask(
+                deadlineNanos = nowNanos + timeMillis * 1_000_000L,
+                sequence = timerSequence.incrementAndGet(),
+                task = block,
+            )
+        timers.add(timed)
+        return kotlinx.coroutines.DisposableHandle { timers.remove(timed) }
+    }
+
+    /** Releases every timer due at [timeNanos] into the pump queue. */
+    fun advanceTo(timeNanos: Long) {
+        nowNanos = timeNanos
+        var head = timers.peek()
+        while (head != null && head.deadlineNanos <= timeNanos) {
+            timers.remove(head)
+            queue.add(head.task)
+            head = timers.peek()
+        }
+    }
+
+    /** True when a timer is due within [horizonNanos] of the current virtual time. */
+    fun hasTimerWithin(horizonNanos: Long): Boolean {
+        val head = timers.peek() ?: return false
+        return head.deadlineNanos - nowNanos <= horizonNanos
     }
 
     fun pump(): Boolean {
@@ -187,6 +269,9 @@ internal class TaoSceneTestScope(
      */
     fun frame(deltaMillis: Long = FRAME_DELTA_MILLIS): Picture {
         timeNanos += deltaMillis * NANOS_PER_MILLI
+        // Release virtual-clock timers (delay / withTimeout) due at the new
+        // time BEFORE pumping, so their continuations run in this frame.
+        dispatcher.advanceTo(timeNanos)
         // Cleared before delivering the frame: anything that re-invalidates
         // during or after it (a running animation awaiting the next
         // withFrameNanos) marks the scene dirty for frameUntilIdle.
@@ -203,17 +288,27 @@ internal class TaoSceneTestScope(
      * invalidation before declaring idle: a single quiet frame can race the
      * scrollable/animation pipeline re-arming itself one dispatch later
      * (observed as a rare 8px residue in the wheel-scroll symmetry test).
+     *
+     * A frame also counts as busy while a virtual-clock timer (delay /
+     * withTimeout inside scene code, e.g. the wheel-scroll gesture's
+     * coalescing timeout) is due within the next few frames — its
+     * continuation may re-invalidate, so idling before it fires would
+     * observe a half-settled scene. Far-out timers (caret blink and other
+     * periodic housekeeping) don't hold up idle.
      */
     fun frameUntilIdle(
         maxFrames: Int = 240,
         quietFrames: Int = 3,
     ): Picture {
+        val timerHorizonNanos = TIMER_HORIZON_FRAMES * FRAME_DELTA_MILLIS * NANOS_PER_MILLI
+
+        fun busy() = invalidated || dispatcher.hasTimerWithin(timerHorizonNanos)
         var picture = frame()
-        var quiet = if (invalidated) 0 else 1
+        var quiet = if (busy()) 0 else 1
         var remaining = maxFrames
         while (quiet < quietFrames && remaining-- > 0) {
             picture = frame()
-            quiet = if (invalidated) 0 else quiet + 1
+            quiet = if (busy()) 0 else quiet + 1
         }
         return picture
     }
@@ -464,5 +559,13 @@ internal class TaoSceneTestScope(
         const val FRAME_DELTA_MILLIS = 16L
         const val NANOS_PER_MILLI = 1_000_000L
         const val COLOR_WHITE = 0xFFFFFFFF.toInt()
+
+        /**
+         * How many frames ahead a pending virtual timer keeps
+         * [frameUntilIdle] framing. Covers the wheel-scroll gesture's
+         * coalescing timeout (~100 ms) with margin, while staying far below
+         * periodic housekeeping timers (caret blink at 500 ms).
+         */
+        const val TIMER_HORIZON_FRAMES = 12L
     }
 }
