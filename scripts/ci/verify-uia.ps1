@@ -49,10 +49,42 @@ function Assert($cond, [string]$what) {
     else { Write-Host "  [FAIL] $what"; $script:failures++ }
 }
 
+function Dump-Names($window) {
+    $all = $window.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)
+    Write-Host "diagnostic: $($all.Count) descendants"
+    $i = 0
+    foreach ($el in $all) {
+        if ($el.Current.Name) {
+            Write-Host "  - '$($el.Current.Name)' [$($el.Current.ControlType.ProgrammaticName)]"
+            if (++$i -ge 80) { Write-Host "  ... (truncated)"; break }
+        }
+    }
+}
+
 $failures = 0
 Write-Host "── UIA a11y verification ──"
 $win = Find-Window $Title $TimeoutSec
 Write-Host "window: '$($win.Current.Name)'"
+
+# The demo should start on the A11y tab (NUCLEUS_DEMO_TAB). Belt-and-braces:
+# if the tab content isn't there, click the 'A11y' tab through UIA itself.
+if ($null -eq (Find-ByName $win "Increment" 20)) {
+    Write-Host "A11y content not visible yet — trying to invoke the 'A11y' tab"
+    Dump-Names $win
+    $tab = Find-ByName $win "A11y" 10
+    if ($null -ne $tab) {
+        try {
+            $tab.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        } catch {
+            try {
+                $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+            } catch { Write-Host "tab invoke failed: $_" }
+        }
+        Start-Sleep -Seconds 3
+    }
+}
 
 # 1. Expected elements exposed through UIA.
 foreach ($name in @("Increment", "Tri-state checkbox", "Notifications switch", "Volume")) {

@@ -291,7 +291,10 @@ jobs:
           for i in $(seq 1 50); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.2; done
           openbox &
           sleep 1
-          BIN=examples/tao-native-test/build/compose/tmp/main/graalvm/nativeCompile/tao-native-test
+          # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
+          # next to it, which the bare nativeCompile artifact lacks.
+          BIN=$(find examples/tao-native-test/build/compose/tmp/main/graalvm/output -type f -name 'tao-native-test' | head -1)
+          echo "binary: $BIN"
           "$BIN" battery
           "$BIN" headful
 
@@ -299,6 +302,9 @@ jobs:
         if: runner.os != 'Linux'
         shell: bash
         run: |
-          BIN=$(find examples/tao-native-test/build/compose/tmp/main/graalvm/nativeCompile -maxdepth 1 -type f -name 'tao-native-test*' | head -1)
+          # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
+          # next to it, which the bare nativeCompile artifact lacks.
+          BIN=$(find examples/tao-native-test/build/compose/tmp/main/graalvm/output -type f \( -name 'tao-native-test' -o -name 'tao-native-test.exe' \) | head -1)
+          echo "binary: $BIN"
           "$BIN" battery
           "$BIN" headful
