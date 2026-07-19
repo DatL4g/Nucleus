@@ -315,7 +315,7 @@ static GtkStyleContext *shadow_make_decoration_context(int backdrop, int tiled) 
  * in _NET_SUPPORTED. kind: 1 = X11, 2 = Wayland.
  */
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoLinuxShadowBridge_nativeShadowSupported(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxShadowBridge_nativeShadowSupported(
     JNIEnv *env, jclass clazz, jint kind) {
     (void) env; (void) clazz;
     if (!shadow_ensure_loaded()) return JNI_FALSE;
@@ -343,7 +343,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoLinuxShadowBridge_nativeShadowSupp
  * little-endian), or NULL on failure.
  */
 JNIEXPORT jintArray JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoLinuxShadowBridge_nativeShadowRender(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxShadowBridge_nativeShadowRender(
     JNIEnv *env, jclass clazz, jboolean backdrop, jboolean tiled,
     jint visibleW, jint visibleH,
     jint marginL, jint marginT, jint marginR, jint marginB,
@@ -474,7 +474,7 @@ static gboolean shadow_on_window_state_event(GtkWidget *widget, void *event, voi
  * (see shadow_on_window_state_event above).
  */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoLinuxShadowBridge_nativeShadowApply(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxShadowBridge_nativeShadowApply(
     JNIEnv *env, jclass clazz, jlong gtkWindowPtr,
     jint marginL, jint marginT, jint marginR, jint marginB) {
     (void) env; (void) clazz;
@@ -507,7 +507,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoLinuxShadowBridge_nativeShadowAppl
  * whatever is below. Pass width < 0 to reset to the full surface.
  */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoLinuxShadowBridge_nativeShadowSetInputShape(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxShadowBridge_nativeShadowSetInputShape(
     JNIEnv *env, jclass clazz, jlong gtkWindowPtr,
     jint x, jint y, jint width, jint height) {
     (void) env; (void) clazz;
@@ -530,7 +530,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoLinuxShadowBridge_nativeShadowSetI
  * stamp; the Kotlin side then re-renders its cached shadow images.
  */
 JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoLinuxShadowBridge_nativeShadowThemeStamp(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxShadowBridge_nativeShadowThemeStamp(
     JNIEnv *env, jclass clazz) {
     (void) clazz;
     if (!shadow_ensure_loaded()) return NULL;

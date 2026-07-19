@@ -2146,7 +2146,7 @@
       ]
     },
     {
-      "type": "dev.nucleusframework.window.tao.TaoMainDispatcherFactory",
+      "type": "dev.nucleusframework.window.tao.dispatch.TaoMainDispatcherFactory",
       "methods": [
         {
           "name": "<init>",
@@ -2171,7 +2171,7 @@
       ]
     },
     {
-      "type": "dev.nucleusframework.window.tao.render.TaoComposeSceneHost$InboundDnDCallback",
+      "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHost$InboundDnDCallback",
       "jniAccessible": true,
       "methods": [
         {
@@ -3267,7 +3267,7 @@
       ]
     },
     {
-      "type": "dev.nucleusframework.window.tao.NativeMetalBridge",
+      "type": "dev.nucleusframework.window.tao.ffi.NativeMetalBridge",
       "jniAccessible": true,
       "methods": [
         {

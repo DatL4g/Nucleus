@@ -496,7 +496,7 @@ static GlAttachment *attachEgl(HWND hwnd) {
 /* ================================================================== */
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeAttach(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeAttach(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)env; (void)clazz;
@@ -508,7 +508,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeAttach(
 /* Address of the GrGLGetProc trampoline for ANGLE (see nucleus_tao_egl_get_proc).
  * Passed to GLAssembledInterface.createFromNativePointers as the fPtr. */
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeEglGetProcFn(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeEglGetProcFn(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -516,7 +516,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeEglGetProcFn(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeDetach(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeDetach(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -539,7 +539,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeDetach(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeMakeCurrent(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeMakeCurrent(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -549,7 +549,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeMakeCurrent(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeResize(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeResize(
     JNIEnv *env, jclass clazz, jlong handle, jint widthPx, jint heightPx, jfloat scale)
 {
     (void)env; (void)clazz;
@@ -572,7 +572,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeResize(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativePresent(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativePresent(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -588,7 +588,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativePresent(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeSetVSyncEnabled(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeSetVSyncEnabled(
     JNIEnv *env, jclass clazz, jlong handle, jboolean enabled)
 {
     (void)env; (void)clazz;
@@ -605,7 +605,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeSetVSyncEnabled(
 }
 
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeWidth(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeWidth(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -614,7 +614,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeWidth(
 }
 
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeHeight(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeHeight(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -630,7 +630,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeHeight(
  * from the Tao main thread, like every entry point touching the process
  * EGL context. */
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeEnsureHeadlessContext(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeEnsureHeadlessContext(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

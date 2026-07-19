@@ -2,6 +2,8 @@
 
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeTaoA11yWindowsBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import androidx.compose.runtime.snapshots.Snapshot
 import dev.nucleusframework.core.runtime.NucleusApp
 import java.nio.ByteBuffer
@@ -44,7 +46,7 @@ private val TAO_PARTIAL_SUPPORTED: Boolean =
  * read, so window drags / display moves don't require re-pushing the
  * snapshot.
  */
-data class TaoA11yNode(
+public data class TaoA11yNode(
     val nodeId: Long,
     val parentId: Long,
     val role: TaoA11yRole,
@@ -92,8 +94,8 @@ data class TaoA11yNode(
 )
 
 @Suppress("MagicNumber")
-enum class TaoA11yRole(
-    val code: Int,
+public enum class TaoA11yRole(
+    public val code: Int,
 ) {
     Unknown(0),
     Group(1),
@@ -121,25 +123,25 @@ enum class TaoA11yRole(
 }
 
 @Suppress("MagicNumber")
-object TaoA11yFlag {
-    const val IS_ELEMENT = 1 shl 0
-    const val ENABLED = 1 shl 1
-    const val FOCUSED = 1 shl 2
-    const val SELECTED = 1 shl 3
-    const val CHECKED = 1 shl 4
-    const val MIXED = 1 shl 5
-    const val HEADING = 1 shl 6
-    const val PASSWORD = 1 shl 7
-    const val MULTILINE = 1 shl 8
-    const val MODAL = 1 shl 9
-    const val LIVE_REGION_POLITE = 1 shl 10
-    const val LIVE_REGION_ASSERTIVE = 1 shl 11
+public object TaoA11yFlag {
+    public const val IS_ELEMENT: Int = 1 shl 0
+    public const val ENABLED: Int = 1 shl 1
+    public const val FOCUSED: Int = 1 shl 2
+    public const val SELECTED: Int = 1 shl 3
+    public const val CHECKED: Int = 1 shl 4
+    public const val MIXED: Int = 1 shl 5
+    public const val HEADING: Int = 1 shl 6
+    public const val PASSWORD: Int = 1 shl 7
+    public const val MULTILINE: Int = 1 shl 8
+    public const val MODAL: Int = 1 shl 9
+    public const val LIVE_REGION_POLITE: Int = 1 shl 10
+    public const val LIVE_REGION_ASSERTIVE: Int = 1 shl 11
 
     // Linux/AT-SPI-only bits — macOS and Windows ignore them. Wire format kept
     // at v4 because flags ride in a u16 we already had spare bits in.
-    const val MULTI_SELECTABLE = 1 shl 12
-    const val EXPANDED_TRUE = 1 shl 13
-    const val EXPANDED_FALSE = 1 shl 14
+    public const val MULTI_SELECTABLE: Int = 1 shl 12
+    public const val EXPANDED_TRUE: Int = 1 shl 13
+    public const val EXPANDED_FALSE: Int = 1 shl 14
 
     /**
      * Reserved. The observer prunes invisible nodes (`InvisibleToUser` /
@@ -147,7 +149,7 @@ object TaoA11yFlag {
      * never set by Compose. Kept available for future "projected but hidden"
      * cases (off-viewport scrollable items, aria-hidden mirroring).
      */
-    const val HIDDEN = 1 shl 15
+    public const val HIDDEN: Int = 1 shl 15
 }
 
 /**
@@ -156,30 +158,30 @@ object TaoA11yFlag {
  * that don't have macOS / Windows equivalents.
  */
 @Suppress("MagicNumber")
-object TaoA11yExtraFlag {
+public object TaoA11yExtraFlag {
     /** Compose `BasicTextField(readOnly = true)` — drops `SetText` action. */
-    const val READ_ONLY = 1 shl 0
+    public const val READ_ONLY: Int = 1 shl 0
 
     /**
      * Compose `SemanticsProperties.Error` — invalid form-field value. Linux
      * exposes this as AT-SPI `STATE_INVALID_ENTRY` so screen readers announce
      * "invalid" / form validators stop on the field.
      */
-    const val INVALID = 1 shl 1
+    public const val INVALID: Int = 1 shl 1
 }
 
 @Suppress("MagicNumber")
-object TaoA11yAction {
-    const val CLICK = 1 shl 0
-    const val INCREMENT = 1 shl 1
-    const val DECREMENT = 1 shl 2
-    const val SET_TEXT = 1 shl 3
-    const val REQUEST_FOCUS = 1 shl 4
-    const val SCROLL_UP = 1 shl 5
-    const val SCROLL_DOWN = 1 shl 6
-    const val SCROLL_LEFT = 1 shl 7
-    const val SCROLL_RIGHT = 1 shl 8
-    const val DISMISS = 1 shl 9
+public object TaoA11yAction {
+    public const val CLICK: Int = 1 shl 0
+    public const val INCREMENT: Int = 1 shl 1
+    public const val DECREMENT: Int = 1 shl 2
+    public const val SET_TEXT: Int = 1 shl 3
+    public const val REQUEST_FOCUS: Int = 1 shl 4
+    public const val SCROLL_UP: Int = 1 shl 5
+    public const val SCROLL_DOWN: Int = 1 shl 6
+    public const val SCROLL_LEFT: Int = 1 shl 7
+    public const val SCROLL_RIGHT: Int = 1 shl 8
+    public const val DISMISS: Int = 1 shl 9
 }
 
 /**

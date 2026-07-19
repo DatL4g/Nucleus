@@ -70,7 +70,7 @@ fun main() {
                     val stamp =
                         runCatching {
                             Class
-                                .forName("dev.nucleusframework.window.tao.NativeTaoLinuxShadowBridge")
+                                .forName("dev.nucleusframework.window.tao.ffi.NativeTaoLinuxShadowBridge")
                                 .getMethod("nativeShadowThemeStamp")
                                 .invoke(null)
                         }.getOrElse { "error: $it" }

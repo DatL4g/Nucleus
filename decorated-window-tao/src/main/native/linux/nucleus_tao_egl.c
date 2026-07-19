@@ -614,7 +614,7 @@ typedef struct {
  * Returns an opaque attachment handle, or 0 on failure.
  */
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeAttachX11(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     JNIEnv *env, jclass clazz,
     jlong xdisplayPtr, jlong xidLong,
     jint widthPx, jint heightPx)
@@ -983,7 +983,7 @@ static void wl_set_buffer_scale(EglAttachment *att, int scale) {
  * just expressed through Wayland protocol primitives.
  */
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeAttachWayland(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     JNIEnv *env, jclass clazz,
     jlong wlDisplayPtr, jlong wlSurfacePtr,
     jint widthPx, jint heightPx, jint bufferScale, jint swapInterval)
@@ -1318,7 +1318,7 @@ fail_after_subsurface:
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeDetach(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeDetach(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void) env; (void) clazz;
@@ -1363,7 +1363,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeDetach(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeMakeCurrent(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeMakeCurrent(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void) env; (void) clazz;
@@ -1380,7 +1380,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeMakeCurrent(
  * only be current on one thread at a time.
  */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeReleaseCurrent(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeReleaseCurrent(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void) env; (void) clazz;
@@ -1390,7 +1390,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeReleaseCurrent(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeResize(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeResize(
     JNIEnv *env, jclass clazz, jlong handle, jint widthPx, jint heightPx, jfloat scale)
 {
     (void) env; (void) clazz;
@@ -1425,7 +1425,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeResize(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativePresent(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativePresent(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void) env; (void) clazz;
@@ -1435,7 +1435,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativePresent(
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeSetSwapInterval(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetSwapInterval(
     JNIEnv *env, jclass clazz, jlong handle, jint interval)
 {
     (void) env; (void) clazz;
@@ -1448,7 +1448,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeSetSwapInterval(
 }
 
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeWidth(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeWidth(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void) env; (void) clazz;
@@ -1457,7 +1457,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeWidth(
 }
 
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeHeight(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeHeight(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void) env; (void) clazz;
@@ -1492,7 +1492,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeHeight(
  * X11-default support would require always materialising a child window
  * for Compose, which is left as a follow-up. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeSetInputRegion(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetInputRegion(
     JNIEnv *env, jclass clazz, jlong handle, jfloatArray rectsPx, jint count)
 {
     (void) clazz;
@@ -1619,7 +1619,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeSetInputRegion(
  * Skia starts asking for entry points.
  */
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoEglBridge_nativeGetProcAddrFunctionPointer(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeGetProcAddrFunctionPointer(
     JNIEnv *env, jclass clazz)
 {
     (void) env; (void) clazz;

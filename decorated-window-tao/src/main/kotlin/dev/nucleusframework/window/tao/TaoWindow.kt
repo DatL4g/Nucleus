@@ -2,6 +2,10 @@
 
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import androidx.compose.runtime.mutableStateOf
 import dev.nucleusframework.core.runtime.Platform
 import java.util.concurrent.CopyOnWriteArrayList
@@ -15,8 +19,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * registration is also safe to call across threads.
  */
 @Suppress("TooManyFunctions")
-class TaoWindow internal constructor(
-    val handle: Long,
+public class TaoWindow internal constructor(
+    public val handle: Long,
     isResizable: Boolean = true,
     /**
      * `true` when the window was created as a popup overlay of another window
@@ -28,7 +32,7 @@ class TaoWindow internal constructor(
      * `set_timestamp` then kills the client with a fatal
      * "Commit already has timestamp" protocol error.
      */
-    val isPopup: Boolean = false,
+    public val isPopup: Boolean = false,
 ) {
     // Snapshot-backed so Compose consumers (WindowControls*, resize hit-test
     // gating) recompose when resizability changes at runtime — the AWT
@@ -42,11 +46,11 @@ class TaoWindow internal constructor(
      * [WindowControlsWindows] can hide the maximize button on non-resizable
      * windows (matches the `decorated-window-jni` behaviour).
      */
-    val isResizable: Boolean
+    public val isResizable: Boolean
         get() = resizableState.value
 
     /** Enables/disables user resizing (borders, maximize) at runtime. */
-    fun setResizable(resizable: Boolean) {
+    public fun setResizable(resizable: Boolean) {
         if (resizableState.value == resizable) return
         resizableState.value = resizable
         NativeTaoBridge.nativeSetResizable(handle, resizable)
@@ -63,7 +67,7 @@ class TaoWindow internal constructor(
     private val minimizedListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
 
     @Volatile
-    var isMinimized: Boolean = false
+    public var isMinimized: Boolean = false
         private set
 
     @Volatile
@@ -135,8 +139,8 @@ class TaoWindow internal constructor(
      * smart-magnify deltas already reshaped by the Rust bridge — see
      * [NativeTaoBridge.EventCallback.onTrackpadGesture] for the wire format.
      */
-    fun interface TrackpadGestureListener {
-        fun onGesture(
+    public fun interface TrackpadGestureListener {
+        public fun onGesture(
             kind: Int, // TaoTrackpadGesture.MAGNIFY | ROTATE | SMART_MAGNIFY
             phase: Int, // TaoTrackpadPhase.BEGAN | CHANGED | ENDED | CANCELLED
             xFixed: Int, // physical pixels × 1024, view-relative, top-left
@@ -154,8 +158,8 @@ class TaoWindow internal constructor(
      * Linux uses a separate per-window bridge ([NativeTaoLinuxTouchBridge])
      * because GTK 3 doesn't surface touch through Tao's event stream.
      */
-    fun interface TouchInputListener {
-        fun onTouch(
+    public fun interface TouchInputListener {
+        public fun onTouch(
             phase: Int, // TaoTouchEvent.PRESS | MOVE | RELEASE | CANCEL
             id: Long, // OS-assigned finger id
             xFixed: Int, // physical pixels × 1024
@@ -165,8 +169,8 @@ class TaoWindow internal constructor(
     }
 
     /** Receives keyboard events shaped like AWT for direct consumption by Compose. */
-    fun interface KeyEventListener {
-        fun onKey(
+    public fun interface KeyEventListener {
+        public fun onKey(
             type: Int, // TaoEventCode.KEY_DOWN | KEY_UP
             vkCode: Int, // AWT KeyEvent.VK_*
             keyLocation: Int, // AWT KeyEvent.KEY_LOCATION_*
@@ -175,16 +179,16 @@ class TaoWindow internal constructor(
         )
     }
 
-    fun setTitle(title: String) {
+    public fun setTitle(title: String) {
         NativeTaoBridge.nativeSetTitle(handle, title)
     }
 
-    fun requestRedraw() {
+    public fun requestRedraw() {
         if (!redrawPending.compareAndSet(false, true)) return
         NativeTaoBridge.nativeRequestRedraw(handle)
     }
 
-    fun requestClose() {
+    public fun requestClose() {
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
@@ -195,12 +199,12 @@ class TaoWindow internal constructor(
      * and gets a chance to call `exitApplication()` — bypassing it via
      * [requestClose] destroys the window but leaves the event loop running.
      */
-    fun requestUserClose() {
+    public fun requestUserClose() {
         closeRequestedListener?.invoke()
     }
 
     /** Starts a native window drag — call synchronously during a mouse press. */
-    fun dragWindow() {
+    public fun dragWindow() {
         // Notify listeners BEFORE the grab: the compositor swallows the button
         // release once the interactive move starts, so the host needs to reset
         // its Compose pointer state to avoid getting stuck "pressed".
@@ -209,7 +213,7 @@ class TaoWindow internal constructor(
     }
 
     /** Fires synchronously when [dragWindow] is invoked (compositor move grab). */
-    fun onDragWindow(block: () -> Unit) {
+    public fun onDragWindow(block: () -> Unit) {
         dragWindowListener = block
     }
 
@@ -349,7 +353,7 @@ class TaoWindow internal constructor(
      * Intended for cross-module integration (e.g. taskbar, notifications) that
      * need to address the OS window directly without going through Tao APIs.
      */
-    val nativeHandle: Long
+    public val nativeHandle: Long
         get() =
             when (Platform.Current) {
                 Platform.Windows -> NativeTaoBridge.nativeHwndHandle(handle)
@@ -357,7 +361,7 @@ class TaoWindow internal constructor(
                 else -> 0L
             }
 
-    val isMaximized: Boolean
+    public val isMaximized: Boolean
         get() = NativeTaoBridge.nativeIsMaximized(handle)
 
     /**
@@ -366,7 +370,7 @@ class TaoWindow internal constructor(
      * window isn't realized / the platform bridge is unavailable. All three
      * platform bridges share the Win32 `GetWindowRect` convention.
      */
-    fun outerBoundsPx(): LongArray? =
+    public fun outerBoundsPx(): LongArray? =
         when (Platform.Current) {
             Platform.Windows -> {
                 if (!NativeTaoWindowsDecoBridge.isLoaded) {
@@ -392,7 +396,7 @@ class TaoWindow internal constructor(
         }
 
     /** The window's current monitor scale factor (1.0 on non-HiDPI displays). */
-    val scaleFactor: Float
+    public val scaleFactor: Float
         get() = NativeTaoBridge.nativeScaleFactor(handle).coerceAtLeast(1) / 1000f
 
     /**
@@ -401,10 +405,10 @@ class TaoWindow internal constructor(
      * returns `false` outside the GTK backend). Used to drop the Compose-drawn
      * rounded corners when snapped, matching native client-side decorations.
      */
-    val isTiled: Boolean
+    public val isTiled: Boolean
         get() = NativeTaoBridge.nativeIsTiled(handle)
 
-    val isFullscreen: Boolean
+    public val isFullscreen: Boolean
         get() {
             // On Windows, fullscreen is owned by the WndProc subclass so its
             // `isFullscreen` flag stays in sync with WM_NCCALCSIZE / hit-test
@@ -416,15 +420,15 @@ class TaoWindow internal constructor(
             return NativeTaoBridge.nativeIsFullscreen(handle)
         }
 
-    fun setMaximized(maximized: Boolean) {
+    public fun setMaximized(maximized: Boolean) {
         NativeTaoBridge.nativeSetMaximized(handle, maximized)
     }
 
-    fun minimize() {
+    public fun minimize() {
         NativeTaoBridge.nativeSetMinimized(handle, true)
     }
 
-    fun setMinimized(minimized: Boolean) {
+    public fun setMinimized(minimized: Boolean) {
         NativeTaoBridge.nativeSetMinimized(handle, minimized)
     }
 
@@ -435,7 +439,7 @@ class TaoWindow internal constructor(
      * own `set_fullscreen` doesn't coordinate with our custom WM_NCCALCSIZE
      * and leaves the maximize button + window position desynced after exit.
      * Other platforms use Tao's native path. */
-    fun setFullscreen(fullscreen: Boolean) {
+    public fun setFullscreen(fullscreen: Boolean) {
         if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
             val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
             if (hwnd != 0L) {
@@ -446,16 +450,16 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetFullscreen(handle, fullscreen)
     }
 
-    fun setAlwaysOnTop(alwaysOnTop: Boolean) {
+    public fun setAlwaysOnTop(alwaysOnTop: Boolean) {
         NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
     }
 
-    fun setFocusable(focusable: Boolean) {
+    public fun setFocusable(focusable: Boolean) {
         NativeTaoBridge.nativeSetFocusable(handle, focusable)
     }
 
     /** Logical pixels. Pass `null` to clear the minimum. */
-    fun setMinimumSize(
+    public fun setMinimumSize(
         widthDp: Double?,
         heightDp: Double?,
     ) {
@@ -465,7 +469,7 @@ class TaoWindow internal constructor(
     }
 
     /** [pixels] must be row-major premultiplied RGBA. Empty array clears. */
-    fun setIcon(
+    public fun setIcon(
         width: Int,
         height: Int,
         pixels: ByteArray,
@@ -474,7 +478,7 @@ class TaoWindow internal constructor(
     }
 
     /** Logical pixels (matches [TaoApplication.openWindow]'s `width`/`height`). */
-    fun setInnerSize(
+    public fun setInnerSize(
         widthDp: Double,
         heightDp: Double,
     ) {
@@ -482,7 +486,7 @@ class TaoWindow internal constructor(
     }
 
     /** Logical pixels. Top-left of the outer (decoration-inclusive) window. */
-    fun setOuterPosition(
+    public fun setOuterPosition(
         xDp: Double,
         yDp: Double,
     ) {
@@ -490,7 +494,7 @@ class TaoWindow internal constructor(
     }
 
     /** Multi-cast: fires on every native window move. [xPx]/[yPx] are physical pixels. */
-    fun onMoved(block: (xPx: Int, yPx: Int) -> Unit) {
+    public fun onMoved(block: (xPx: Int, yPx: Int) -> Unit) {
         movedListeners += block
     }
 
@@ -510,18 +514,18 @@ class TaoWindow internal constructor(
         if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeSetStartupBackgroundEraseEnabled(hwnd, enabled)
     }
 
-    fun show() {
+    public fun show() {
         startupEraseActive = true
         setStartupBackgroundEraseEnabled(true)
         NativeTaoBridge.nativeSetVisible(handle, true)
     }
 
-    fun hide() {
+    public fun hide() {
         NativeTaoBridge.nativeSetVisible(handle, false)
     }
 
     /** Raises the window, restores it if minimized, and gives it keyboard focus. */
-    fun focus() {
+    public fun focus() {
         NativeTaoBridge.nativeFocus(handle)
     }
 
@@ -532,34 +536,34 @@ class TaoWindow internal constructor(
      * the first frame **before** calling [show], so the window appears with
      * content already drawn.
      */
-    fun onWindowReady(block: (width: Int, height: Int) -> Unit) {
+    public fun onWindowReady(block: (width: Int, height: Int) -> Unit) {
         readyListener = block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire on each resize. */
-    fun onResized(block: (width: Int, height: Int) -> Unit) {
+    public fun onResized(block: (width: Int, height: Int) -> Unit) {
         resizedListeners += block
     }
 
-    fun onScaleFactorChanged(block: (scale: Float) -> Unit) {
+    public fun onScaleFactorChanged(block: (scale: Float) -> Unit) {
         scaleFactorListener = block
     }
 
-    fun onCloseRequested(block: () -> Unit) {
+    public fun onCloseRequested(block: () -> Unit) {
         closeRequestedListener = block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */
-    fun onDestroyed(block: () -> Unit) {
+    public fun onDestroyed(block: () -> Unit) {
         destroyedListeners += block
     }
 
-    fun onRedrawRequested(block: () -> Unit) {
+    public fun onRedrawRequested(block: () -> Unit) {
         redrawListener = block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire on each focus change. */
-    fun onFocusChanged(block: (focused: Boolean) -> Unit) {
+    public fun onFocusChanged(block: (focused: Boolean) -> Unit) {
         focusListeners += block
     }
 
@@ -573,7 +577,7 @@ class TaoWindow internal constructor(
      * Wayland via an app-driven synthesis hack (our minimize button /
      * programmatic only; the protocol reports no iconified state).
      */
-    fun onMinimizedChanged(block: (minimized: Boolean) -> Unit) {
+    public fun onMinimizedChanged(block: (minimized: Boolean) -> Unit) {
         minimizedListeners += block
     }
 
@@ -582,7 +586,7 @@ class TaoWindow internal constructor(
      * the GTK window is hidden — the host must suspend EGL rendering before
      * Wayland's parent `wl_surface` is destroyed (see [TaoEventCode.WILL_HIDE]).
      */
-    fun onWillHide(block: () -> Unit) {
+    public fun onWillHide(block: () -> Unit) {
         willHideListener = block
     }
 
@@ -590,7 +594,7 @@ class TaoWindow internal constructor(
      * Linux only. Fires synchronously right after the GTK window is shown
      * again, once the GDK surface exists — the host may re-attach EGL.
      */
-    fun onShown(block: () -> Unit) {
+    public fun onShown(block: () -> Unit) {
         shownListener = block
     }
 
@@ -600,19 +604,19 @@ class TaoWindow internal constructor(
      * WM_EXITSIZEMOVE). The host drops VSync while active so a border drag
      * isn't throttled to the display refresh. No source on macOS / Linux.
      */
-    fun onSizeMoveChanged(block: (active: Boolean) -> Unit) {
+    public fun onSizeMoveChanged(block: (active: Boolean) -> Unit) {
         sizeMoveListener = block
     }
 
-    fun onPointerMoved(block: (xFixed: Int, yFixed: Int) -> Unit) {
+    public fun onPointerMoved(block: (xFixed: Int, yFixed: Int) -> Unit) {
         pointerMoveListener = block
     }
 
-    fun onPointerExited(block: () -> Unit) {
+    public fun onPointerExited(block: () -> Unit) {
         pointerExitedListener = block
     }
 
-    fun onPointerButton(block: (button: Int, pressed: Boolean) -> Unit) {
+    public fun onPointerButton(block: (button: Int, pressed: Boolean) -> Unit) {
         pointerButtonListener = block
     }
 
@@ -626,7 +630,7 @@ class TaoWindow internal constructor(
         pointerScrollListener = block
     }
 
-    fun onKeyEvent(listener: KeyEventListener) {
+    public fun onKeyEvent(listener: KeyEventListener) {
         keyListener = listener
     }
 
@@ -635,12 +639,12 @@ class TaoWindow internal constructor(
      * magnify/rotate/smart-magnify; Windows emits magnify only (Ctrl+wheel /
      * precision-touchpad pinch). No native source on other configurations.
      */
-    fun onTrackpadGesture(listener: TrackpadGestureListener) {
+    public fun onTrackpadGesture(listener: TrackpadGestureListener) {
         trackpadGestureListener = listener
     }
 
     /** Windows only — see [TouchInputListener]. No-op on Linux / macOS. */
-    fun onTouchInput(listener: TouchInputListener) {
+    public fun onTouchInput(listener: TouchInputListener) {
         touchInputListener = listener
     }
 

@@ -1,5 +1,7 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Applier
 import androidx.compose.runtime.Composable
@@ -40,7 +42,7 @@ import kotlin.system.exitProcess
  * `application { … }` (which also force-exits the process).
  */
 @OptIn(ExperimentalFoundationApi::class)
-fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
+public fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
     check(NativeTaoBridge.isLoaded) {
         "nucleus_tao native library is not available — supported targets: " +
             "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."

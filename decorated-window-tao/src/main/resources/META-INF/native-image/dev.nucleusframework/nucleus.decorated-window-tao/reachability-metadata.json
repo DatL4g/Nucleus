@@ -4,7 +4,7 @@
             "type": "dev.nucleusframework.window.tao.TaoApplication"
         },
         {
-            "type": "dev.nucleusframework.window.tao.TaoMainDispatcherFactory",
+            "type": "dev.nucleusframework.window.tao.dispatch.TaoMainDispatcherFactory",
             "methods": [
                 {
                     "name": "<init>",
@@ -13,7 +13,7 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoBridge",
             "jniAccessible": true,
             "methods": [
                 { "name": "dispatchDeepLink", "parameterTypes": ["java.lang.String"] },
@@ -31,7 +31,7 @@
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoBridge$EventCallback",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoBridge$EventCallback",
             "jniAccessible": true,
             "methods": [
                 {
@@ -128,7 +128,7 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeMetalBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeMetalBridge",
             "jniAccessible": true,
             "methods": [
                 {
@@ -164,23 +164,23 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoGlBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoWindowsNativeViewBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoWindowsOverlayBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoWindowsOverlayBridge$OverlayEventCallback",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge$OverlayEventCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -188,7 +188,7 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeViewOverlayControllerWindows$OverlayCallback",
+            "type": "dev.nucleusframework.window.tao.deco.NativeViewOverlayControllerWindows$OverlayCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -196,18 +196,18 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoWindowsOverlayBridge$OverlayKeyCallback",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge$OverlayKeyCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onKeyEvent", "parameterTypes": ["int","int","int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.PopupNativeBridgeWindows",
+            "type": "dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.PopupNativeBridgeWindows$EventCallback",
+            "type": "dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows$EventCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -216,14 +216,14 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.PopupNativeBridgeWindows$OutsideClickListener",
+            "type": "dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows$OutsideClickListener",
             "jniAccessible": true,
             "methods": [
                 { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoPopupSceneLayerWindows$PopupEventCallback",
+            "type": "dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows$PopupEventCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -232,14 +232,14 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoPopupSceneLayerWindows$PopupOutsideListener",
+            "type": "dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows$PopupOutsideListener",
             "jniAccessible": true,
             "methods": [
                 { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoStandalonePopupHost$PanelEventCallback",
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHost$PanelEventCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -248,14 +248,14 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoStandalonePopupHost$PanelOutsideClickListener",
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHost$PanelOutsideClickListener",
             "jniAccessible": true,
             "methods": [
                 { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoStandalonePopupHostMac$PanelEventCallback",
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostMac$PanelEventCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -264,18 +264,18 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoStandalonePopupHostMac$PanelOutsideClickListener",
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostMac$PanelOutsideClickListener",
             "jniAccessible": true,
             "methods": [
                 { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.PopupNativeBridgeLinux",
+            "type": "dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoStandalonePopupHostLinux$PanelEventCallback",
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostLinux$PanelEventCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -284,14 +284,14 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoStandalonePopupHostLinux$PanelOutsideClickListener",
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostLinux$PanelOutsideClickListener",
             "jniAccessible": true,
             "methods": [
                 { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoPopupSceneLayer$PopupEventCallback",
+            "type": "dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer$PopupEventCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -300,14 +300,14 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoPopupSceneLayer$PopupOutsideListener",
+            "type": "dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer$PopupOutsideListener",
             "jniAccessible": true,
             "methods": [
                 { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeViewOverlayController$OverlayCallback",
+            "type": "dev.nucleusframework.window.tao.deco.NativeViewOverlayController$OverlayCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent",         "parameterTypes": ["int","float","float","int","int"] },
@@ -317,41 +317,41 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoLinuxOverlayControllerImpl$InputCallback",
+            "type": "dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl$InputCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onEvent", "parameterTypes": ["int","int","int","int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoMacOsDecoBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoEglBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoLinuxWidgetBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoLinuxShadowBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxShadowBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoLinuxWidgetBridge$OverlayInputCallback",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge$OverlayInputCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onEvent", "parameterTypes": ["int","int","int","int","int"] }
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoWindowsDndBridge$Callback",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
@@ -361,7 +361,7 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoComposeSceneHostWindows$InboundDnDCallback",
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
@@ -371,11 +371,11 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoMacOsDndBridge$Callback",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
@@ -385,7 +385,7 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoComposeSceneHost$InboundDnDCallback",
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHost$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
@@ -395,11 +395,11 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoLinuxDndBridge$Callback",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
@@ -409,7 +409,7 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoComposeSceneHostLinux$InboundDnDCallback",
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
@@ -419,11 +419,11 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoLinuxTouchBridge",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge",
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.window.tao.NativeTaoLinuxTouchBridge$Callback",
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge$Callback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
@@ -431,7 +431,7 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.render.TaoComposeSceneHostLinux$InboundTouchCallback",
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$InboundTouchCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },

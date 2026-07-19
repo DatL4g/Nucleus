@@ -77,7 +77,7 @@ static jlongArray make_rect_array(JNIEnv *env, NSRect r, CGFloat scale) {
 /* ================================================================== */
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeSetOwner(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeSetOwner(
     JNIEnv *env, jclass clazz, jlong childViewLong, jlong ownerViewLong, jboolean centerOnOwner)
 {
     (void)env; (void)clazz;
@@ -136,7 +136,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeSetOwner(
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeGetWindowRect(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeGetWindowRect(
     JNIEnv *env, jclass clazz, jlong nsViewLong)
 {
     (void)clazz;
@@ -150,7 +150,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeGetWindowRec
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeGetPrimaryMonitorWorkArea(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeGetPrimaryMonitorWorkArea(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
@@ -162,7 +162,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeGetPrimaryMo
 }
 
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeGetPrimaryMonitorScaleMilli(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeGetPrimaryMonitorScaleMilli(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -188,7 +188,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeGetPrimaryMo
  * Sizes are in **points** (logical pixels). Pass non-positive values to
  * leave the corresponding dimension unchanged. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeApplyContentMinSize(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeApplyContentMinSize(
     JNIEnv *env, jclass clazz, jlong nsViewLong, jdouble widthPts, jdouble heightPts)
 {
     (void)env; (void)clazz;
@@ -247,7 +247,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeApplyContent
  * Accessory can drop the app out of the active state, so re-activate to keep
  * the visible window key. */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoMacOsDecoBridge_nativeSetHiddenFromDock(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeSetHiddenFromDock(
     JNIEnv *env, jclass clazz, jboolean hidden)
 {
     (void)env; (void)clazz;

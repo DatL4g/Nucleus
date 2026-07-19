@@ -3,6 +3,17 @@
 
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.a11y.TaoSemanticsObserver
+import dev.nucleusframework.window.tao.deco.FullscreenOverlayHost
+import dev.nucleusframework.window.tao.deco.FullscreenTitleBarHolder
+import dev.nucleusframework.window.tao.deco.LocalFullscreenTitleBarHolder
+import dev.nucleusframework.window.tao.deco.rememberUndecoratedWindowBorder
+import dev.nucleusframework.window.tao.ffi.toRgbaIcon
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,10 +46,10 @@ import dev.nucleusframework.window.GlobalModalDialogCount
 import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.LocalTitleBarInfo
 import dev.nucleusframework.window.TitleBarInfo
-import dev.nucleusframework.window.tao.render.LocalTaoPopupHost
-import dev.nucleusframework.window.tao.render.TaoComposeSceneHost
-import dev.nucleusframework.window.tao.render.TaoComposeSceneHostLinux
-import dev.nucleusframework.window.tao.render.TaoComposeSceneHostWindows
+import dev.nucleusframework.window.tao.popup.LocalTaoPopupHost
+import dev.nucleusframework.window.tao.scene.TaoComposeSceneHost
+import dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux
+import dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows
 import kotlin.math.roundToInt
 
 /**
@@ -76,7 +88,7 @@ internal val LocalRequestedClearColor =
  * `DecoratedWindow` content lambda — call sites should fail loudly or no-op
  * when absent.
  */
-val LocalTaoWindow = staticCompositionLocalOf<TaoWindow?> { null }
+public val LocalTaoWindow: ProvidableCompositionLocal<TaoWindow?> = staticCompositionLocalOf { null }
 
 /**
  * Translucent black scrim painted over the parent window's content while a
@@ -525,7 +537,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
-                dev.nucleusframework.window.tao.render.LocalTaoLinuxOverlayController
+                dev.nucleusframework.window.tao.deco.LocalTaoLinuxOverlayController
                     provides host.overlayController(),
                 // Override the default Skiko `URIManager` (calls
                 // `Desktop.browse` → initialises XAWT → deadlocks our GLX
@@ -901,7 +913,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
-                dev.nucleusframework.window.tao.render.LocalTaoPopupHostWindows
+                dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows
                     provides host.popupHost(),
             ) {
                 val border =

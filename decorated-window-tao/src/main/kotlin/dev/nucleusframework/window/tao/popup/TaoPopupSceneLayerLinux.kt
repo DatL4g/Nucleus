@@ -1,0 +1,488 @@
+package dev.nucleusframework.window.tao.popup
+
+import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
+import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
+import dev.nucleusframework.window.tao.scene.renderGlFrame
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionContext
+import androidx.compose.runtime.CompositionLocalContext
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeCanvas
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.scene.CanvasLayersComposeScene
+import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.scene.ComposeSceneLayer
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
+import dev.nucleusframework.window.tao.TaoApplication
+import dev.nucleusframework.window.tao.TaoMouseButton
+import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
+import org.jetbrains.skia.DirectContext
+import org.jetbrains.skia.GLAssembledInterface
+import org.jetbrains.skia.makeGLWithInterface
+import kotlin.math.roundToInt
+
+/**
+ * Linux popup layer backed by a real Tao popup window
+ * (`openWindow(popupOf = parent)`): GTK_WINDOW_POPUP, i.e. an
+ * override-redirect ARGB toplevel on X11 and a `wl_subsurface` of the
+ * parent on Wayland — the only client-positionable window kinds on each
+ * backend. Popup content can therefore extend beyond the owner window
+ * bounds on both display servers.
+ *
+ * The coordinate model mirrors [TaoPopupSceneLayerWindows]: `boundsInWindow`
+ * is the content rect in parent-window physical pixels, the inner scene is
+ * laid out at screen work-area size (see the "measurement chicken-and-egg"
+ * note on [TaoPopupSceneLayer]), and rendering translates by
+ * `-bounds.topLeft` into a window sized exactly to the content.
+ *
+ * Differences from Windows/macOS driven by platform reality:
+ *  - Window creation is asynchronous (Tao posts a CreateWindow user event);
+ *    EGL attaches on WINDOW_READY and everything set before that
+ *    (bounds, content) is applied then. Until ready the layer simply skips
+ *    its render callback — the popup appears one event-loop tick later.
+ *  - Rendering uses a private EGL context per attachment (the Linux
+ *    convention, see `nucleus_tao_egl.c`) with swap interval 0: presents
+ *    must never block the event-loop thread, and on Wayland the popup's
+ *    EGL child hangs off GDK's synchronized subsurface where FIFO frame
+ *    pacing is a fatal protocol error (see [TaoWindow.isPopup]).
+ *  - Popup windows never own keyboard focus (override-redirect / subsurface),
+ *    so key events keep arriving on the parent and are forwarded through
+ *    [TaoPopupHostLinux.registerKeyHandler] — the macOS piggy-back model.
+ *  - Outside-click detection has no global-hook equivalent (especially on
+ *    Wayland); presses reaching the *parent* scene are outside every popup
+ *    by construction and are forwarded via
+ *    [TaoPopupHostLinux.registerOutsidePressListener].
+ *
+ * Threading: every method must run on the Tao event-loop thread.
+ */
+@OptIn(InternalComposeUiApi::class)
+@Suppress("TooManyFunctions")
+internal class TaoPopupSceneLayerLinux(
+    private val host: TaoPopupHostLinux,
+    initialDensity: Density,
+    initialLayoutDirection: LayoutDirection,
+    initialFocusable: Boolean,
+    @Suppress("UNUSED_PARAMETER") parentCompositionContext: CompositionContext,
+) : ComposeSceneLayer {
+    private var _density = initialDensity
+    private var _layoutDirection = initialLayoutDirection
+    private var _focusable = initialFocusable
+    private var _bounds: IntRect = IntRect.Zero
+    private var _scrimColor: Color? = null
+    private var _compositionLocalContext: CompositionLocalContext? = null
+
+    private val rendererToken: Any = Any()
+    private val moveListenerToken: Any = Any()
+    private val keyHandlerToken: Any = Any()
+    private val outsidePressToken: Any = Any()
+
+    /**
+     * Set in [close] before the popup window is destroyed. Guards the
+     * render callback (the host drains a snapshot of its renderer map, so
+     * a layer closed by a sibling's recomposition can still see one late
+     * call) and the async WINDOW_READY attach.
+     */
+    private var released = false
+
+    /** EGL attachment ready — flips on WINDOW_READY once the GPU side is up. */
+    private var attachment: Long = 0
+    private var directContext: DirectContext? = null
+    private var shown = false
+
+    private val scale: Float = if (host.scale > 0f) host.scale else 1f
+
+    // Work-area sized (not parent-window sized) so a popup larger than its
+    // owner window lays out at full size — same contract as macOS/Windows.
+    private val sceneLayoutSize: IntSize =
+        host.workAreaSize.let {
+            IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
+        }
+    private var widthPx: Int = 1
+    private var heightPx: Int = 1
+
+    /**
+     * The popup's Tao window. Created hidden at 1×1; the real frame is
+     * pushed by the first `boundsInWindow` write and the window is shown
+     * then. `popupOf` makes it override-redirect on X11 and a
+     * `wl_subsurface` on Wayland.
+     */
+    private val popupWindow: TaoWindow =
+        TaoApplication.openWindow(
+            title = "",
+            width = 1.0,
+            height = 1.0,
+            decorations = false,
+            resizable = false,
+            visible = false,
+            popupOf = host.parentWindow,
+        )
+
+    private val popupWindowInfo: androidx.compose.ui.platform.WindowInfo =
+        object : androidx.compose.ui.platform.WindowInfo {
+            override val isWindowFocused: Boolean = true
+            override val containerSize: IntSize get() = sceneLayoutSize
+        }
+
+    private val innerScene: ComposeScene =
+        CanvasLayersComposeScene(
+            density = _density,
+            layoutDirection = _layoutDirection,
+            size = sceneLayoutSize,
+            coroutineContext = host.sceneCoroutineContext,
+            platformContext =
+                object : PlatformContext.Empty() {
+                    override val windowInfo: androidx.compose.ui.platform.WindowInfo
+                        get() = popupWindowInfo
+
+                    override fun setPointerIcon(pointerIcon: PointerIcon) {
+                        if (released) return
+                        NativeTaoBridge.nativeSetCursorIcon(
+                            popupWindow.handle,
+                            pointerIcon.toTaoCursorIconCode(),
+                        )
+                    }
+                },
+            invalidate = { host.requestRedraw() },
+        )
+
+    private var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
+    private var onKeyEvent: ((KeyEvent) -> Boolean)? = null
+    private var onOutsidePointerEvent: ((PointerEventType, PointerButton?) -> Unit)? = null
+
+    init {
+        popupWindow.onWindowReady { _, _ -> attachGpu() }
+        // Compositor expose (X11) / re-map: repaint through the host pump.
+        popupWindow.onRedrawRequested { host.requestRedraw() }
+        registerInput()
+        host.registerRenderer(rendererToken) { renderFrame() }
+        host.registerKeyHandler(keyHandlerToken) { dispatchKey(it) }
+        host.registerOwnerMoveListener(moveListenerToken) {
+            if (_bounds != IntRect.Zero) updateNativeFrame()
+        }
+    }
+
+    /**
+     * EGL + Skia bring-up, deferred to WINDOW_READY (window creation is a
+     * posted user event). Mirrors [TaoComposeSceneHostLinux.attachGpu] with
+     * the popup-specific swap interval 0 on both backends.
+     */
+    private fun attachGpu() {
+        if (released) return
+        if (!NativeTaoEglBridge.isLoaded) return
+        val handles = NativeTaoBridge.nativeLinuxHandles(popupWindow.handle) ?: return
+        if (handles.size != HANDLE_TRIPLE_SIZE || handles[0].toInt() == 0) return
+        val kind = handles[0].toInt()
+        val display = handles[1]
+        val nativeWin = handles[2]
+        val w = widthPx.coerceAtLeast(1)
+        val h = heightPx.coerceAtLeast(1)
+        val handle =
+            when (kind) {
+                KIND_X11 ->
+                    NativeTaoEglBridge
+                        .nativeAttachX11(display, nativeWin, w, h)
+                        .also { if (it != 0L) NativeTaoEglBridge.nativeSetSwapInterval(it, 0) }
+                KIND_WAYLAND ->
+                    NativeTaoEglBridge.nativeAttachWayland(
+                        display,
+                        nativeWin,
+                        w,
+                        h,
+                        scale.roundToInt().coerceAtLeast(1),
+                        0,
+                    )
+                else -> 0L
+            }
+        if (handle == 0L) return
+        val fnPtr = NativeTaoEglBridge.nativeGetProcAddrFunctionPointer()
+        val ctx =
+            runCatching {
+                val iface = GLAssembledInterface.createFromNativePointers(0L, fnPtr)
+                DirectContext.makeGLWithInterface(iface)
+            }.getOrNull()
+        if (ctx == null) {
+            NativeTaoEglBridge.nativeDetach(handle)
+            return
+        }
+        NativeTaoEglBridge.nativeReleaseCurrent(handle)
+        attachment = handle
+        directContext = ctx
+        // Re-push any frame set before the window was ready, and paint.
+        if (_bounds != IntRect.Zero) updateNativeFrame()
+        host.requestRedraw()
+    }
+
+    // ── ComposeSceneLayer surface ──────────────────────────────────────
+
+    override var density: Density
+        get() = _density
+        set(value) {
+            _density = value
+            innerScene.density = value
+        }
+
+    override var layoutDirection: LayoutDirection
+        get() = _layoutDirection
+        set(value) {
+            _layoutDirection = value
+            innerScene.layoutDirection = value
+        }
+
+    override var boundsInWindow: IntRect
+        get() = _bounds
+        set(value) {
+            _bounds = value
+            updateNativeFrame()
+            host.requestRedraw()
+        }
+
+    override var compositionLocalContext: CompositionLocalContext?
+        get() = _compositionLocalContext
+        set(value) {
+            _compositionLocalContext = value
+        }
+
+    override var scrimColor: Color?
+        get() = _scrimColor
+        set(value) {
+            _scrimColor = value
+        }
+
+    override var focusable: Boolean
+        get() = _focusable
+        set(value) {
+            _focusable = value
+        }
+
+    override fun close() {
+        if (released) return
+        released = true
+        host.unregisterRenderer(rendererToken)
+        host.unregisterKeyHandler(keyHandlerToken)
+        host.unregisterOwnerMoveListener(moveListenerToken)
+        host.unregisterOutsidePressListener(outsidePressToken)
+        innerScene.close()
+        if (attachment != 0L) {
+            // The DirectContext must die on its own (thread-bound) EGL
+            // context — same protocol as the standalone popup host.
+            NativeTaoEglBridge.nativeMakeCurrent(attachment)
+            directContext?.close()
+            directContext = null
+            NativeTaoEglBridge.nativeReleaseCurrent(attachment)
+            NativeTaoEglBridge.nativeDetach(attachment)
+            attachment = 0
+        }
+        popupWindow.requestClose()
+    }
+
+    override fun setContent(content: @Composable () -> Unit) {
+        innerScene.setContent {
+            val locals = _compositionLocalContext
+            if (locals != null) {
+                CompositionLocalProvider(locals) { content() }
+            } else {
+                content()
+            }
+        }
+        host.requestRedraw()
+    }
+
+    override fun setKeyEventListener(
+        onPreviewKeyEvent: ((KeyEvent) -> Boolean)?,
+        onKeyEvent: ((KeyEvent) -> Boolean)?,
+    ) {
+        this.onPreviewKeyEvent = onPreviewKeyEvent
+        this.onKeyEvent = onKeyEvent
+    }
+
+    override fun setOutsidePointerEventListener(
+        onOutsidePointerEvent: ((eventType: PointerEventType, button: PointerButton?) -> Unit)?,
+    ) {
+        this.onOutsidePointerEvent = onOutsidePointerEvent
+        if (onOutsidePointerEvent != null) {
+            host.registerOutsidePressListener(outsidePressToken) { button ->
+                this.onOutsidePointerEvent?.invoke(PointerEventType.Press, button)
+            }
+        } else {
+            host.unregisterOutsidePressListener(outsidePressToken)
+        }
+    }
+
+    override fun calculateLocalPosition(positionInWindow: IntOffset): IntOffset = positionInWindow
+
+    // ── Native frame ───────────────────────────────────────────────────
+
+    /**
+     * Pushes `boundsInWindow` to the popup window. GTK positions in
+     * *logical* pixels: X11 popups in root coordinates (parent screen
+     * origin + window-relative bounds), Wayland subsurfaces relative to
+     * the parent surface ([TaoPopupHostLinux.parentScreenOriginPx] is
+     * zero there).
+     */
+    private fun updateNativeFrame() {
+        if (_bounds == IntRect.Zero || released) return
+        val origin = host.parentScreenOriginPx
+        val offset = host.coordinateOffset
+        val xPx = _bounds.left + offset.x + origin.x
+        val yPx = _bounds.top + offset.y + origin.y
+        val w = _bounds.width.coerceAtLeast(1)
+        val h = _bounds.height.coerceAtLeast(1)
+        popupWindow.setOuterPosition((xPx / scale).toDouble(), (yPx / scale).toDouble())
+        popupWindow.setInnerSize((w / scale).toDouble(), (h / scale).toDouble())
+        if (w != widthPx || h != heightPx) {
+            widthPx = w
+            heightPx = h
+            if (attachment != 0L) {
+                NativeTaoEglBridge.nativeResize(attachment, w, h, scale)
+            }
+        }
+        if (!shown) {
+            shown = true
+            popupWindow.show()
+        }
+    }
+
+    // ── Per-frame render — driven by the host's redraw pump ───────────────
+
+    private fun renderFrame() {
+        if (released || attachment == 0L) return
+        if (widthPx <= 0 || heightPx <= 0) return
+        val ctx = directContext ?: return
+        // Render even while `boundsInWindow` is still Zero (surface is 1×1
+        // and the window unmapped): the first `innerScene.render` is what
+        // drives Compose's measure pass, and that measure is what writes
+        // `boundsInWindow` in the first place — skipping it would deadlock
+        // the popup at zero bounds forever. Same bootstrap as the Windows
+        // layer's 1×1 initial drawBounds. The present is skipped until the
+        // frame is real; nothing is on screen yet anyway.
+        val frame = _bounds
+        NativeTaoEglBridge.nativeMakeCurrent(attachment)
+        // Private EGL context — no resetGLAll needed (unlike the Windows
+        // shared-process-context path).
+        renderGlFrame(
+            widthPx = widthPx,
+            heightPx = heightPx,
+            directContext = ctx,
+            clearColorArgb = 0x00000000,
+            present = {
+                if (frame != IntRect.Zero) NativeTaoEglBridge.nativePresent(attachment)
+            },
+        ) { canvas, nanoTime ->
+            canvas.save()
+            try {
+                canvas.translate(-frame.left.toFloat(), -frame.top.toFloat())
+                innerScene.render(canvas.asComposeCanvas(), nanoTime)
+            } finally {
+                canvas.restore()
+            }
+        }
+        NativeTaoEglBridge.nativeReleaseCurrent(attachment)
+    }
+
+    // ── Input — the popup window receives its own pointer events ──────────
+
+    private fun registerInput() {
+        popupWindow.onPointerMoved { xFixed, yFixed ->
+            sendPointer(PointerEventType.Move, xFixed / POSITION_SCALE, yFixed / POSITION_SCALE, null)
+        }
+        popupWindow.onPointerButton { code, pressed ->
+            sendPointer(
+                if (pressed) PointerEventType.Press else PointerEventType.Release,
+                lastX,
+                lastY,
+                mapButton(code),
+            )
+        }
+        popupWindow.onPointerScroll { event ->
+            if (released) return@onPointerScroll
+            val modifiers = taoKeyboardModifiers(host.parentWindow.modifierState)
+            innerScene.sendPointerEvent(
+                eventType = PointerEventType.Scroll,
+                position = scenePosition(lastX, lastY),
+                scrollDelta = Offset(event.dxAwt, event.dyAwt),
+                type = PointerType.Mouse,
+                keyboardModifiers = modifiers,
+                nativeEvent =
+                    TaoSyntheticMouseWheelEvent.create(
+                        event = event,
+                        x = lastX,
+                        y = lastY,
+                        keyboardModifiers = modifiers,
+                    ),
+            )
+        }
+    }
+
+    private var lastX = 0f
+    private var lastY = 0f
+
+    private fun sendPointer(
+        eventType: PointerEventType,
+        xPx: Float,
+        yPx: Float,
+        button: PointerButton?,
+    ) {
+        if (released) return
+        lastX = xPx
+        lastY = yPx
+        innerScene.sendPointerEvent(
+            eventType = eventType,
+            position = scenePosition(xPx, yPx),
+            type = PointerType.Mouse,
+            keyboardModifiers = taoKeyboardModifiers(host.parentWindow.modifierState),
+            button = button,
+        )
+    }
+
+    /** Popup-window-local physical px → inner-scene (parent-window) coords. */
+    private fun scenePosition(
+        x: Float,
+        y: Float,
+    ): Offset = Offset(x + _bounds.left, y + _bounds.top)
+
+    private fun mapButton(code: Int): PointerButton =
+        when (code) {
+            TaoMouseButton.RIGHT -> PointerButton.Secondary
+            TaoMouseButton.MIDDLE -> PointerButton.Tertiary
+            else -> PointerButton.Primary
+        }
+
+    /**
+     * Key events forwarded by the host (the parent window keeps keyboard
+     * focus — see the class doc). Preview/scene/post ordering mirrors
+     * `ComposeScene.dispatchNativeKeyEvent`; the scene only sees keys when
+     * the popup is focusable, so tooltips never swallow typing.
+     */
+    private fun dispatchKey(event: KeyEvent): Boolean {
+        if (released) return false
+        if (onPreviewKeyEvent?.invoke(event) == true) return true
+        if (_focusable && innerScene.sendKeyEvent(event)) return true
+        return onKeyEvent?.invoke(event) == true
+    }
+
+    private companion object {
+        // Wire scale — must match Rust `CURSOR_FIXED_SCALE`.
+        private const val POSITION_SCALE: Float = 1024f
+
+        // Backend kinds from NativeTaoBridge.nativeLinuxHandles — the
+        // bridge returns a (kind, display, native_window) triple.
+        private const val HANDLE_TRIPLE_SIZE: Int = 3
+        private const val KIND_X11: Int = 1
+        private const val KIND_WAYLAND: Int = 2
+    }
+}

@@ -1,5 +1,7 @@
 package dev.nucleusframework.window.tao
 
+import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 
@@ -8,14 +10,14 @@ import androidx.compose.runtime.mutableStateOf
  * the sample so we can verify the Compose DnD plumbing without relying on
  * stdout (which gradle's run task buffers and IDEs filter).
  */
-object TaoDnDDiagnostics {
-    val constructed = mutableIntStateOf(0)
-    val isRequiredQueries = mutableIntStateOf(0)
-    val requests = mutableIntStateOf(0)
-    val transfers = mutableIntStateOf(0)
-    val lastMessage = mutableStateOf<String?>(null)
+public object TaoDnDDiagnostics {
+    public val constructed: MutableIntState = mutableIntStateOf(0)
+    public val isRequiredQueries: MutableIntState = mutableIntStateOf(0)
+    public val requests: MutableIntState = mutableIntStateOf(0)
+    public val transfers: MutableIntState = mutableIntStateOf(0)
+    public val lastMessage: MutableState<String?> = mutableStateOf(null)
 
-    fun log(msg: String) {
+    public fun log(msg: String) {
         lastMessage.value = msg
     }
 }

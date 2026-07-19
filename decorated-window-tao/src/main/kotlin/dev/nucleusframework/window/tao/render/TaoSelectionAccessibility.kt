@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  * that theme's menu as the observer's delegate so cut/copy/paste icons and
  * shortcuts survive. `null` outside a Tao window content lambda.
  */
-val LocalTaoTextSelectionA11yPublisher:
+public val LocalTaoTextSelectionA11yPublisher:
     ProvidableCompositionLocal<((text: String, editable: Boolean, sourceId: Int) -> Unit)?> =
     staticCompositionLocalOf { null }
 
@@ -35,7 +35,7 @@ val LocalTaoTextSelectionA11yPublisher:
  * menu is preserved). No-op when [LocalTaoTextSelectionA11yPublisher] is unset.
  */
 @Composable
-fun TaoTextSelectionAccessibility(content: @Composable () -> Unit) {
+public fun TaoTextSelectionAccessibility(content: @Composable () -> Unit) {
     val publisher = LocalTaoTextSelectionA11yPublisher.current
     if (publisher != null) {
         TaoSelectionAccessibilityObserver(onSelection = publisher, content = content)

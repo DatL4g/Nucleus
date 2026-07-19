@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -14,10 +15,10 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowPosition
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.render.StandalonePopupHost
-import dev.nucleusframework.window.tao.render.TaoStandalonePopupHost
-import dev.nucleusframework.window.tao.render.TaoStandalonePopupHostLinux
-import dev.nucleusframework.window.tao.render.TaoStandalonePopupHostMac
+import dev.nucleusframework.window.tao.popup.StandalonePopupHost
+import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHost
+import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostLinux
+import dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostMac
 
 /**
  * Whether [TaoStandalonePopup] can actually show a panel on this system.
@@ -28,7 +29,7 @@ import dev.nucleusframework.window.tao.render.TaoStandalonePopupHostMac
  * desktops). Returns false on the rare Wayland-only setups; callers should
  * then fall back to a regular window.
  */
-fun isTaoStandalonePopupAvailable(): Boolean =
+public fun isTaoStandalonePopupAvailable(): Boolean =
     when (Platform.Current) {
         Platform.Windows, Platform.MacOS -> true
         Platform.Linux ->
@@ -64,7 +65,7 @@ fun isTaoStandalonePopupAvailable(): Boolean =
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun TaoStandalonePopup(
+public fun TaoStandalonePopup(
     visible: Boolean,
     position: WindowPosition.Absolute,
     size: DpSize,

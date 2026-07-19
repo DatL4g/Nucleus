@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.net.URI
 import java.net.URISyntaxException
 
@@ -13,7 +14,7 @@ import java.net.URISyntaxException
  * application scope. Any URI received before the sink is wired is buffered
  * (one slot) and replayed.
  */
-object TaoDeepLinkBridge {
+public object TaoDeepLinkBridge {
     @Volatile
     private var sink: ((URI) -> Unit)? = null
 
@@ -24,7 +25,7 @@ object TaoDeepLinkBridge {
      * Registers [onUri] as the deep-link sink and replays any URI that
      * arrived before the sink was wired.
      */
-    fun setSink(onUri: (URI) -> Unit) {
+    public fun setSink(onUri: (URI) -> Unit) {
         sink = onUri
         pending?.let { uri ->
             pending = null

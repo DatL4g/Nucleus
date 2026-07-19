@@ -2,6 +2,9 @@
 
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
@@ -40,7 +43,7 @@ import dev.nucleusframework.window.DecoratedDialogState
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
-fun ApplicationScope.DecoratedDialog(
+public fun ApplicationScope.DecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,

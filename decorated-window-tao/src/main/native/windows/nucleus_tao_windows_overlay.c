@@ -441,7 +441,7 @@ static void ensureClassRegistered(void) {
 /* ============================================================ */
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeCreateOverlay(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeCreateOverlay(
     JNIEnv *env, jclass clazz, jlong ownerHwnd) {
     (void)clazz;
     if (sJVM == NULL) (*env)->GetJavaVM(env, &sJVM);
@@ -511,7 +511,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeCreateO
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOverlayFrame(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeSetOverlayFrame(
     JNIEnv *env, jclass clazz, jlong overlay,
     jint xPx, jint yPx, jint widthPx, jint heightPx) {
     (void)env; (void)clazz;
@@ -535,7 +535,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOver
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOverlayRegions(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeSetOverlayRegions(
     JNIEnv *env, jclass clazz, jlong overlay, jfloatArray rectsXYWHPx, jint count) {
     (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;
@@ -596,7 +596,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOver
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOverlayCallback(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeSetOverlayCallback(
     JNIEnv *env, jclass clazz, jlong overlay, jobject callback) {
     (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;
@@ -609,7 +609,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOver
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOverlayKeyCallback(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeSetOverlayKeyCallback(
     JNIEnv *env, jclass clazz, jlong overlay, jobject callback) {
     (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;
@@ -621,7 +621,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetOver
 }
 
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeMakeCurrent(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeMakeCurrent(
     JNIEnv *env, jclass clazz, jlong overlay) {
     (void)env; (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;
@@ -630,7 +630,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeMakeCur
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSwapBuffers(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeSwapBuffers(
     JNIEnv *env, jclass clazz, jlong overlay) {
     (void)env; (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;
@@ -639,7 +639,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSwapBuf
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetCursor(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeSetCursor(
     JNIEnv *env, jclass clazz, jlong overlay, jint cursorCode) {
     (void)env; (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;
@@ -661,7 +661,7 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeSetCurs
 }
 
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeReleaseOverlay(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeReleaseOverlay(
     JNIEnv *env, jclass clazz, jlong overlay) {
     (void)clazz;
     OverlayState *s = (OverlayState *)(uintptr_t)overlay;

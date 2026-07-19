@@ -40,16 +40,16 @@ import dev.nucleusframework.window.hasMacOSLargeCornerRadius
 import dev.nucleusframework.window.hasNewFullscreenControls
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
-import dev.nucleusframework.window.tao.LocalFullscreenTitleBarHolder
+import dev.nucleusframework.window.tao.deco.LocalFullscreenTitleBarHolder
 import dev.nucleusframework.window.tao.LocalRequestedClearColor
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
-import dev.nucleusframework.window.tao.NativeMetalBridge
-import dev.nucleusframework.window.tao.NativeTaoBridge
-import dev.nucleusframework.window.tao.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
-import dev.nucleusframework.window.tao.WindowControlsLinux
-import dev.nucleusframework.window.tao.WindowControlsWindows
+import dev.nucleusframework.window.tao.deco.WindowControlsLinux
+import dev.nucleusframework.window.tao.deco.WindowControlsWindows
 import dev.nucleusframework.window.utils.linux.rememberLinuxButtonLayout
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -87,7 +87,7 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
  */
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedWindowScope.TitleBar(
+public fun DecoratedWindowScope.TitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
@@ -108,7 +108,7 @@ fun DecoratedWindowScope.TitleBar(
 
 @Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
-fun DecoratedWindowScope.BasicTitleBar(
+public fun DecoratedWindowScope.BasicTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
@@ -526,7 +526,7 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
                                     // `SetWindowPos` directly so the window still follows the
                                     // finger even when the OS-driven path is unavailable.
                                     val hwnd =
-                                        dev.nucleusframework.window.tao.NativeTaoBridge
+                                        dev.nucleusframework.window.tao.ffi.NativeTaoBridge
                                             .nativeHwndHandle(window.handle)
                                     val rect =
                                         if (hwnd != 0L) {
