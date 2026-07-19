@@ -1,3 +1,5 @@
+@file:Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+
 package dev.nucleusframework.window.material
 
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +16,7 @@ import dev.nucleusframework.window.AwtDecoratedWindowScope
 import dev.nucleusframework.window.DecoratedWindow
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.styling.TitleBarStyle
+import kotlin.internal.LowPriorityInOverloadResolution
 import dev.nucleusframework.application.DecoratedWindow as NucleusDecoratedWindow
 
 /**
@@ -26,6 +29,9 @@ import dev.nucleusframework.application.DecoratedWindow as NucleusDecoratedWindo
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+// Low priority: NucleusApplicationScope implements ApplicationScope, so inside
+// nucleusApplication both overloads are applicable — the Nucleus one must win.
+@LowPriorityInOverloadResolution
 fun ApplicationScope.MaterialDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),

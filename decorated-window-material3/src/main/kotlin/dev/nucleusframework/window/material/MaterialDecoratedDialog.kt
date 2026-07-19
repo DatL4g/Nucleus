@@ -1,3 +1,5 @@
+@file:Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+
 package dev.nucleusframework.window.material
 
 import androidx.compose.material3.MaterialTheme
@@ -12,10 +14,14 @@ import dev.nucleusframework.application.NucleusDecoratedDialogScope
 import dev.nucleusframework.window.AwtDecoratedDialogScope
 import dev.nucleusframework.window.DecoratedDialog
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
+import kotlin.internal.LowPriorityInOverloadResolution
 import dev.nucleusframework.application.DecoratedDialog as NucleusDecoratedDialog
 
 /** AWT-backed (JBR / JNI) Material 3 wrapper for [DecoratedDialog]. */
 @Suppress("FunctionNaming", "LongParameterList")
+// Low priority: NucleusApplicationScope implements ApplicationScope, so inside
+// nucleusApplication both overloads are applicable — the Nucleus one must win.
+@LowPriorityInOverloadResolution
 @Composable
 fun ApplicationScope.MaterialDecoratedDialog(
     onCloseRequest: () -> Unit,

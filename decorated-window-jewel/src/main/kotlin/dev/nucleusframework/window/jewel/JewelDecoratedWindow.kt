@@ -1,3 +1,5 @@
+@file:Suppress("INVISIBLE_REFERENCE", "INVISIBLE_MEMBER")
+
 package dev.nucleusframework.window.jewel
 
 import androidx.compose.runtime.Composable
@@ -16,12 +18,16 @@ import dev.nucleusframework.window.DecoratedWindow
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.styling.TitleBarStyle
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import kotlin.internal.LowPriorityInOverloadResolution
 import dev.nucleusframework.application.DecoratedWindow as NucleusDecoratedWindowFn
 
 private const val LUMINANCE_THRESHOLD = 0.5f
 
 /** AWT-backed (JBR / JNI) Jewel-styled wrapper for [DecoratedWindow]. */
 @Suppress("FunctionNaming", "LongParameterList")
+// Low priority: NucleusApplicationScope implements ApplicationScope, so inside
+// nucleusApplication both overloads are applicable — the Nucleus one must win.
+@LowPriorityInOverloadResolution
 @Composable
 fun ApplicationScope.JewelDecoratedWindow(
     onCloseRequest: () -> Unit,
