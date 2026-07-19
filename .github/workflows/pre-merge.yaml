@@ -6,7 +6,9 @@ on:
       - main
   pull_request:
     branches:
-      - '*'
+      # '**' (not '*'): base branches with a '/' (e.g. refactor/…) must
+      # trigger too — the single-star glob does not cross path separators.
+      - '**'
 
 jobs:
   build-natives:
