@@ -529,8 +529,8 @@ jobs:
             /org/a11y/bus org.freedesktop.DBus.Properties.Set \
             string:org.a11y.Status string:IsEnabled variant:boolean:true
           NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
-          python3 scripts/ci/verify-atspi.py
-          status=$?
+          status=0
+          python3 scripts/ci/verify-atspi.py || status=$?
           pkill -f dev.nucleusframework.sampletao.MainKt || true
           exit $status
 
@@ -540,10 +540,10 @@ jobs:
         run: |
           NUCLEUS_DEMO_TAB=A11y NUCLEUS_A11Y=trace RUST_LOG=info,nucleus_tao=debug \
             ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
-          pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo" -TimeoutSec 300
-          status=$?
+          status=0
+          pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo" -TimeoutSec 300 || status=$?
           echo "── tao-demo log tail ──"
-          tail -120 /tmp/tao-demo.log || true
+          tail -150 /tmp/tao-demo.log || true
           taskkill //F //IM java.exe //T 2>/dev/null || true
           exit $status
 
@@ -557,7 +557,7 @@ jobs:
             sleep 2
           done
           if [ -z "$APP_PID" ]; then echo "tao-demo never started"; tail -50 /tmp/tao-demo.log; exit 1; fi
-          swift scripts/ci/verify-ax.swift "$APP_PID"
-          status=$?
+          status=0
+          swift scripts/ci/verify-ax.swift "$APP_PID" || status=$?
           pkill -f dev.nucleusframework.sampletao.MainKt || true
           exit $status
