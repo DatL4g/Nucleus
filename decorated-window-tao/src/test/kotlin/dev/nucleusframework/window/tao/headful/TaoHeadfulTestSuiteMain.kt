@@ -56,6 +56,22 @@ public object TaoHeadfulTestSuiteMain {
             TaoWindowTestCase(
                 // openbox (the CI WM) is floating, so client move requests apply.
                 "setOuterPosition moves the window and fires onMoved",
+                skip = {
+                    // xdg-shell has no client-side positioning: setOuterPosition
+                    // is a documented no-op on native Wayland and onMoved never
+                    // fires. GDK picks the wayland backend whenever
+                    // WAYLAND_DISPLAY is set unless GDK_BACKEND forces x11 —
+                    // mirror that selection here, including the
+                    // NUCLEUS_TAO_LINUX_RENDERER=x11 escape hatch (the native
+                    // loop setenvs GDK_BACKEND=x11 for it, but too late for
+                    // the JVM's env snapshot to notice).
+                    val backend = System.getenv("GDK_BACKEND")?.split(',')?.firstOrNull()
+                    val forcedX11 =
+                        backend == "x11" ||
+                            System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
+                    val wayland = System.getenv("WAYLAND_DISPLAY") != null && !forcedX11
+                    if (isLinux && wayland) "no client positioning on Wayland (xdg-shell)" else null
+                },
             ) {
                 val moved = AtomicBoolean(false)
                 awaitUntil("window mapped") { bounds() != null }
@@ -232,6 +248,11 @@ public object TaoHeadfulTestSuiteMain {
         }
         exitProcess(if (failures > 0) 1 else 0)
     }
+
+    private val isLinux: Boolean =
+        System.getProperty("os.name", "").lowercase().let { os ->
+            !os.contains("win") && !os.contains("mac") && !os.contains("darwin")
+        }
 
     private const val WINDOW_PUBLISH_TIMEOUT_MILLIS = 15_000L
     private const val WINDOW_PUBLISH_POLL_MILLIS = 25L
