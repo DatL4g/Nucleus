@@ -463,13 +463,20 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # All three legs are gating. The Windows probe self-skips (exit 0, loud
-    # SKIPPED banner) only when the UIA provider is completely unreachable —
-    # the hosted-runner limitation (software display adapter, no WGL context,
-    # the scene never attaches so there is nothing to project). Any partial
-    # exposure with failing assertions is a real regression and fails hard.
-    # macOS (AX client — hosted runners are TCC-trusted) and Linux (AT-SPI)
-    # verify the full round-trips in CI.
+    # All three legs are gating. The Windows protocol has been validated
+    # end-to-end on real hardware (physical GPU, Windows 11): all probe
+    # assertions pass, no SKIPPED. The historical hosted-runner self-skips
+    # were NOT a display-adapter/WGL limitation — the Windows host renders
+    # through ANGLE/D3D11 (WARP-capable on VMs), so the scene attaches and
+    # composes fine on runners. The empty UIA tree was an idle-activation
+    # race: a UIA client connecting while the scene was idle set the native
+    # resync flag, but nothing re-armed the semantics walk, so the provider
+    # kept serving the 1-node seed tree. The walk scheduler now polls the
+    # activation gate while a walk is parked, so the tree is projected within
+    # ~250 ms of the first WM_GETOBJECT. The probe's self-skip remains as a
+    # safety valve, but any partial exposure with failing assertions is a
+    # real regression and fails hard. macOS (AX client — hosted runners are
+    # TCC-trusted) and Linux (AT-SPI) verify the full round-trips in CI.
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
@@ -521,16 +528,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Install Mesa software OpenGL (Windows)
-        if: runner.os == 'Windows'
-        # Hosted runners' display adapter exposes no usable WGL context, so
-        # the Tao scene host cannot attach. Mesa's llvmpipe opengl32.dll,
-        # dropped next to java.exe (first directory in the DLL search order),
-        # gives every JVM-launched window a real software GL context.
-        uses: f3d-app/install-mesa-windows-action@v1
-        with:
-          path: C:\hostedtoolcache\windows\Java_Temurin-Hotspot_jdk\*\x64\bin
-
+      # NOTE: a Mesa/llvmpipe opengl32.dll install step used to sit here. It
+      # was a red herring: the Windows host renders through ANGLE/D3D11 (WARP
+      # on runners), never through WGL/opengl32, so Mesa had no effect. The
+      # real cause of the empty UIA tree (idle-activation race) is fixed in
+      # the a11y sync scheduler — see the job comment above.
       - name: Build tao-demo (so the probe timeout is not spent compiling)
         run: ./gradlew :examples:tao-demo:jar
 
