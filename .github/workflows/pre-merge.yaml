@@ -464,6 +464,37 @@ jobs:
           pattern: 'decorated-window-tao-*'
           merge-multiple: true
 
+      # tao-demo's build graph pulls these modules' native-build tasks in too;
+      # providing the prebuilt artifacts keeps CI from compiling them (the
+      # runner lacks the X11 dev headers decorated-window-jni needs).
+      - name: Download decorated-window-jni artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-jni/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-jni-*'
+          merge-multiple: true
+
+      - name: Download decorated-window-core artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-core/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-core-*'
+          merge-multiple: true
+
+      - name: Download linux-hidpi artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: linux-hidpi/src/main/resources/nucleus/native/
+          pattern: 'linux-hidpi-*'
+          merge-multiple: true
+
+      - name: Download graalvm-runtime artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: graalvm-runtime/src/main/resources/nucleus/native/
+          pattern: 'graalvm-runtime-*'
+          merge-multiple: true
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
