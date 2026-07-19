@@ -7,8 +7,9 @@
 #   3. TogglePattern flips the tri-state checkbox,
 #   4. RangeValuePattern sets the Volume slider.
 #
-# Exit 0 = all assertions hold. Derived from scripts/dump-uia-tree.ps1 and
-# scripts/uia-action.ps1 (the manual iteration tools).
+# Traversal uses TreeWalker.RawViewWalker, exactly like the proven manual
+# tool scripts/dump-uia-tree.ps1 — the filtered control view may not descend
+# into the custom provider. Exit 0 = all assertions hold.
 param(
     [string]$Title = "Tao Backend Demo",
     [int]$TimeoutSec = 120
@@ -32,35 +33,49 @@ function Find-Window([string]$titleSub, [int]$timeoutSec) {
     throw "window '*$titleSub*' not found within ${timeoutSec}s"
 }
 
+# Raw-view collection (same walker as scripts/dump-uia-tree.ps1).
+function Collect-Raw($el, [int]$depth, $list) {
+    if ($null -eq $el -or $depth -gt 12 -or $list.Count -gt 2000) { return }
+    [void]$list.Add($el)
+    $walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+    try { $child = $walker.GetFirstChild($el) } catch { return }
+    while ($null -ne $child) {
+        Collect-Raw $child ($depth + 1) $list
+        try { $child = $walker.GetNextSibling($child) } catch { break }
+    }
+}
+
 function Find-ByName($window, [string]$name, [int]$timeoutSec = 30) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition(
-        [System.Windows.Automation.AutomationElement]::NameProperty, $name)
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
-        $el = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
-        if ($null -ne $el) { return $el }
+        $list = New-Object System.Collections.ArrayList
+        Collect-Raw $window 0 $list
+        foreach ($el in $list) {
+            try { if ($el.Current.Name -eq $name) { return $el } } catch {}
+        }
         Start-Sleep -Milliseconds 500
     }
     return $null
 }
 
+function Dump-Names($window) {
+    $list = New-Object System.Collections.ArrayList
+    Collect-Raw $window 0 $list
+    Write-Host "diagnostic: $($list.Count) raw-view elements"
+    $i = 0
+    foreach ($el in $list) {
+        try {
+            if ($el.Current.Name) {
+                Write-Host "  - '$($el.Current.Name)' [$($el.Current.ControlType.ProgrammaticName)]"
+                if (++$i -ge 100) { Write-Host "  ... (truncated)"; break }
+            }
+        } catch {}
+    }
+}
+
 function Assert($cond, [string]$what) {
     if ($cond) { Write-Host "  [PASS] $what" }
     else { Write-Host "  [FAIL] $what"; $script:failures++ }
-}
-
-function Dump-Names($window) {
-    $all = $window.FindAll(
-        [System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.Condition]::TrueCondition)
-    Write-Host "diagnostic: $($all.Count) descendants"
-    $i = 0
-    foreach ($el in $all) {
-        if ($el.Current.Name) {
-            Write-Host "  - '$($el.Current.Name)' [$($el.Current.ControlType.ProgrammaticName)]"
-            if (++$i -ge 80) { Write-Host "  ... (truncated)"; break }
-        }
-    }
 }
 
 $failures = 0
@@ -70,8 +85,8 @@ Write-Host "window: '$($win.Current.Name)'"
 
 # The demo should start on the A11y tab (NUCLEUS_DEMO_TAB). Belt-and-braces:
 # if the tab content isn't there, click the 'A11y' tab through UIA itself.
-if ($null -eq (Find-ByName $win "Increment" 20)) {
-    Write-Host "A11y content not visible yet — trying to invoke the 'A11y' tab"
+if ($null -eq (Find-ByName $win "Increment" 30)) {
+    Write-Host "A11y content not visible yet — dumping tree and trying the 'A11y' tab"
     Dump-Names $win
     $tab = Find-ByName $win "A11y" 10
     if ($null -ne $tab) {
@@ -88,7 +103,7 @@ if ($null -eq (Find-ByName $win "Increment" 20)) {
 
 # 1. Expected elements exposed through UIA.
 foreach ($name in @("Increment", "Tri-state checkbox", "Notifications switch", "Volume")) {
-    Assert ($null -ne (Find-ByName $win $name)) "element '$name' exposed"
+    Assert ($null -ne (Find-ByName $win $name 20)) "element '$name' exposed"
 }
 
 # 2. InvokePattern round-trip: Increment -> click counter updates.
@@ -121,5 +136,6 @@ if ($null -ne $vol) {
     Assert ([math]::Abs($newVal - 0.7) -lt 0.05) "RangeValue.SetValue(0.7) -> $newVal"
 } else { Assert $false "RangeValue skipped: element missing" }
 
+if ($failures -gt 0) { Dump-Names $win }
 Write-Host "── $failures failure(s) ──"
 exit $(if ($failures -gt 0) { 1 } else { 0 })
