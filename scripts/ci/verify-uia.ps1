@@ -61,27 +61,33 @@ foreach ($name in @("Increment", "Tri-state checkbox", "Notifications switch", "
 
 # 2. InvokePattern round-trip: Increment -> click counter updates.
 $inc = Find-ByName $win "Increment"
-$inc.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-Assert ($null -ne (Find-ByName $win "click counter 1")) "Invoke(Increment) -> 'click counter 1'"
+if ($null -ne $inc) {
+    $inc.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Assert ($null -ne (Find-ByName $win "click counter 1")) "Invoke(Increment) -> 'click counter 1'"
+} else { Assert $false "Invoke(Increment) skipped: element missing" }
 
 # 3. TogglePattern on the tri-state checkbox.
 $cb = Find-ByName $win "Tri-state checkbox"
-$togglePattern = $cb.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
-$before = $togglePattern.Current.ToggleState
-$togglePattern.Toggle()
-Start-Sleep -Milliseconds 800
-$cb2 = Find-ByName $win "Tri-state checkbox"
-$after = $cb2.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState
-Assert ($before -ne $after) "Toggle(Tri-state checkbox): $before -> $after"
+if ($null -ne $cb) {
+    $togglePattern = $cb.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+    $before = $togglePattern.Current.ToggleState
+    $togglePattern.Toggle()
+    Start-Sleep -Milliseconds 800
+    $cb2 = Find-ByName $win "Tri-state checkbox"
+    $after = $cb2.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState
+    Assert ($before -ne $after) "Toggle(Tri-state checkbox): $before -> $after"
+} else { Assert $false "Toggle skipped: element missing" }
 
 # 4. RangeValuePattern on the Volume slider.
 $vol = Find-ByName $win "Volume"
-$range = $vol.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
-$range.SetValue(0.7)
-Start-Sleep -Milliseconds 800
-$vol2 = Find-ByName $win "Volume"
-$newVal = $vol2.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern).Current.Value
-Assert ([math]::Abs($newVal - 0.7) -lt 0.05) "RangeValue.SetValue(0.7) -> $newVal"
+if ($null -ne $vol) {
+    $range = $vol.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
+    $range.SetValue(0.7)
+    Start-Sleep -Milliseconds 800
+    $vol2 = Find-ByName $win "Volume"
+    $newVal = $vol2.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern).Current.Value
+    Assert ([math]::Abs($newVal - 0.7) -lt 0.05) "RangeValue.SetValue(0.7) -> $newVal"
+} else { Assert $false "RangeValue skipped: element missing" }
 
 Write-Host "── $failures failure(s) ──"
 exit $(if ($failures -gt 0) { 1 } else { 0 })

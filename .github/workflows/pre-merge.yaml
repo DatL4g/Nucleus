@@ -528,7 +528,7 @@ jobs:
           dbus-send --session --dest=org.a11y.Bus --type=method_call --print-reply \
             /org/a11y/bus org.freedesktop.DBus.Properties.Set \
             string:org.a11y.Status string:IsEnabled variant:boolean:true
-          NUCLEUS_DEMO_TAB=A11y ./gradlew :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
           python3 scripts/ci/verify-atspi.py
           status=$?
           pkill -f dev.nucleusframework.sampletao.MainKt || true
@@ -538,7 +538,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          NUCLEUS_DEMO_TAB=A11y ./gradlew :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
           pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo" -TimeoutSec 300
           status=$?
           taskkill //F //IM java.exe //T 2>/dev/null || true
@@ -547,7 +547,7 @@ jobs:
       - name: Verify AX projection (macOS, self-skips without TCC trust)
         if: runner.os == 'macOS'
         run: |
-          NUCLEUS_DEMO_TAB=A11y ./gradlew :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
           for i in $(seq 1 90); do
             APP_PID=$(pgrep -f dev.nucleusframework.sampletao.MainKt || true)
             [ -n "$APP_PID" ] && break
