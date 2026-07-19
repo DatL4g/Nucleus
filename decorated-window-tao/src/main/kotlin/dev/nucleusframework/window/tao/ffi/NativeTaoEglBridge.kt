@@ -10,12 +10,12 @@ private const val LIBRARY_NAME = "nucleus_tao_egl"
  * from Skiko via [org.jetbrains.skia.GLAssembledInterface] +
  * [org.jetbrains.skia.DirectContext.makeGLWithInterface].
  *
- * Replaces [NativeTaoGlxBridge] on the path selected by the JVM system
- * property `nucleus.tao.linux.renderer = glx | egl` (see
+ * EGL is the only Linux renderer: the legacy GLX helper
+ * (`nucleus_tao_glx.c` / `NativeTaoGlxBridge`) has been removed, and both
+ * backends go through this bridge — `nativeAttachX11` on X11/XWayland
+ * sessions, `nativeAttachWayland` on native Wayland (selection follows GDK's
+ * backend; `NUCLEUS_TAO_LINUX_RENDERER=x11` forces XWayland, see
  * [dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux]).
- *
- * Phase 1 (this commit): X11 only. Wayland (`nativeAttachWayland`) and the
- * `wp_fractional_scale_v1` / `wp_viewporter` plumbing land in follow-ups.
  *
  * All methods must run on the thread that owns the EGL context — `eglMakeCurrent`
  * is per-thread. In our usage that's the Tao event-loop thread, same model
