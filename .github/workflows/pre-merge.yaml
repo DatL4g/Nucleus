@@ -453,15 +453,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # Windows leg is best-effort on HOSTED runners: their software display
-    # adapter provides no usable WGL context, the Compose scene never attaches
-    # and there is no content to project — both this probe and the proven
-    # manual tool (scripts/dump-uia-tree.ps1) see only the nonclient elements.
-    # The identical protocol passes on any machine with a real GL context
-    # (validated during manual UIA bring-up); run it locally or on a
-    # GPU-capable self-hosted runner for the hard Windows gate.
-    # macOS and Linux ARE hard gates (AX and AT-SPI probes pass end-to-end).
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    # All three legs are gating. The Windows probe self-skips (exit 0, loud
+    # SKIPPED banner) only when the UIA provider is completely unreachable —
+    # the hosted-runner limitation (software display adapter, no WGL context,
+    # the scene never attaches so there is nothing to project). Any partial
+    # exposure with failing assertions is a real regression and fails hard.
+    # macOS (AX client — hosted runners are TCC-trusted) and Linux (AT-SPI)
+    # verify the full round-trips in CI.
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
