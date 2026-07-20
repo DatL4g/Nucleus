@@ -319,8 +319,24 @@ internal class TaoComposeSceneHostLinux(
     /** True while the EGL attachment is torn down because the window is hidden. */
     private var gpuSuspended: Boolean = false
 
+    /**
+     * Opt-in GTK-style CSD drop shadow (approach B — dedicated wl_subsurface,
+     * Wayland only). Set by [dev.nucleusframework.window.tao.DecoratedWindow]
+     * before [attach]. No-op on X11 / popups.
+     */
+    var decorationShadowEnabled: Boolean = false
+
+    /**
+     * Drop-shadow controller: measures theme margins, tracks the focus
+     * cross-fade, and produces the nine-slice shadow tile that
+     * [commitShadow] uploads into the native shadow subsurface. Inactive
+     * (all calls no-op) until [initShadow] succeeds on Wayland.
+     */
+    val windowShadow = dev.nucleusframework.window.tao.deco.TaoWindowShadowLinux(::requestRedrawCoalesced)
+
     fun attach() {
         attachGpu()
+        initShadow()
 
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val dndManager =
@@ -1117,6 +1133,10 @@ internal class TaoComposeSceneHostLinux(
     fun onFocusChanged(focused: Boolean) {
         if (focused) compositorDragActive = false
         windowInfo.isWindowFocused = focused
+        // Kick the 200ms normal↔backdrop shadow cross-fade (no-op when the
+        // shadow is inactive). Focus loss during a compositor resize/move grab
+        // keeps the focused shadow, like native GTK CSD windows.
+        windowShadow.onFocusChanged(focused || compositorDragActive)
     }
 
     private fun updateWindowInfoSize() {
@@ -1225,6 +1245,10 @@ internal class TaoComposeSceneHostLinux(
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
 
+        // Push the drop shadow (independent wl_shm subsurface) after the content
+        // swap was requested — no-op unless the shadow is active.
+        commitShadow()
+
         // Drain popup-layer renderers after the host context was released.
         // Each layer binds its own private EGL context on this thread (the
         // swap thread holds the *host* context on its own thread — EGL allows
@@ -1235,6 +1259,73 @@ internal class TaoComposeSceneHostLinux(
             val snapshot = popupRenderers.values.toList()
             for (render in snapshot) render()
         }
+    }
+
+    /**
+     * Arms the drop-shadow controller once the window is attached (Wayland
+     * only). Declares the invisible margin to the WM and offsets the content
+     * subsurface into the shadow ring; the shadow pixels themselves are pushed
+     * per-frame by [commitShadow]. No-op on X11, popups, or when disabled.
+     */
+    private fun initShadow() {
+        if (!decorationShadowEnabled || window.isPopup || attachedKind != 2) return
+        val gtkPtr = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+        if (gtkPtr == 0L) return
+        val radius = cornerRadiusPx.toFloat()
+        val armed =
+            windowShadow.initialize(
+                gtkWindowPtr = gtkPtr,
+                kind = attachedKind,
+                radiusTopLeft = radius,
+                radiusTopRight = radius,
+                radiusBottomRight = radius,
+                radiusBottomLeft = radius,
+            )
+        if (!armed) return
+        // Declare margins to the WM (grows the GDK surface + window geometry),
+        // then slide the content subsurface into the ring.
+        windowShadow.reconcile(suspended = false)
+        val insets = windowShadow.effectiveInsets
+        NativeTaoEglBridge.nativeShadowSetContentOffset(attachmentHandle, insets.left, insets.top)
+        requestRedrawCoalesced()
+    }
+
+    /**
+     * Uploads the current shadow to the native shadow subsurface. Called each
+     * rendered frame after the content swap; cheap when nothing changed (the
+     * controller reuses its cached tile and the native buffer is only
+     * reallocated on a size change). Hides the shadow while
+     * maximized/fullscreen/tiled.
+     */
+    private fun commitShadow() {
+        if (!windowShadow.isActive || attachmentHandle == 0L) return
+        val suspended = window.isMaximized || window.isFullscreen || window.isTiled
+        windowShadow.reconcile(suspended)
+        val insets = windowShadow.effectiveInsets
+        if (insets.isZero) {
+            NativeTaoEglBridge.nativeShadowSetContentOffset(attachmentHandle, 0, 0)
+            NativeTaoEglBridge.nativeShadowHide(attachmentHandle)
+            return
+        }
+        NativeTaoEglBridge.nativeShadowSetContentOffset(attachmentHandle, insets.left, insets.top)
+        val s = if (scale > 0f) scale else 1f
+        val tile = windowShadow.currentTile(s, System.nanoTime()) ?: return
+        // Shadow-inclusive surface size = visible content + margins (logical px).
+        val contentLogicalW = (widthPx / s).roundToInt()
+        val contentLogicalH = (heightPx / s).roundToInt()
+        NativeTaoEglBridge.nativeShadowCommit(
+            attachmentHandle,
+            tile.pixels,
+            tile.width,
+            tile.height,
+            tile.sliceLeft,
+            tile.sliceTop,
+            tile.sliceRight,
+            tile.sliceBottom,
+            contentLogicalW + insets.left + insets.right,
+            contentLogicalH + insets.top + insets.bottom,
+            s.roundToInt().coerceAtLeast(1),
+        )
     }
 
     /**
@@ -1817,6 +1908,7 @@ internal class TaoComposeSceneHostLinux(
 
     fun detach() {
         shutdownA11yScheduler()
+        windowShadow.dispose()
         textToolbar.hide()
         if (dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded &&
             window.handle != 0L
