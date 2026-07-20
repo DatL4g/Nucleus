@@ -58,6 +58,16 @@ abstract class GraalvmSettings
         // Defaults to `true` to match Oracle GraalVM's out-of-the-box behavior.
         val mlProfileInference: Property<Boolean> = objects.notNullProperty(true)
 
+        // Automatically register the project's own resources (its source-set resource directories
+        // and those of `project(...)` module dependencies) for inclusion in the native image.
+        // native-image only embeds resources it is told about, and dynamic
+        // `getResourceAsStream(path)` calls cannot be resolved statically — so without this, assets
+        // loaded by a computed path (e.g. markdown files listed in an index) are silently dropped
+        // from the binary. This mirrors the JVM distribution, where every resource ships in the uber
+        // JAR. Third-party JAR resources are NOT included (they are covered by the L1/L2 metadata and
+        // static analysis). Defaults to `true`; set to `false` to manage resource globs manually.
+        val autoIncludeResources: Property<Boolean> = objects.notNullProperty(true)
+
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val toolchain: GraalvmToolchainSettings = objects.new()
