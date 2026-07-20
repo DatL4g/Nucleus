@@ -98,6 +98,7 @@ typedef void       (*PFN_gtk_widget_show)(GtkWidget *w);
 typedef void       (*PFN_gtk_widget_queue_resize)(GtkWidget *w);
 typedef gboolean   (*PFN_g_type_check_instance_is_a)(void *instance, gulong type);
 typedef gulong     (*PFN_gtk_box_get_type)(void);
+typedef gulong     (*PFN_gtk_widget_get_type)(void);
 typedef void       (*PFN_g_object_set_data)(void *obj, const char *key, void *data);
 typedef void       (*PFN_g_object_set_data_full)(
     void *obj, const char *key, void *data, void (*destroy)(void *));
@@ -137,6 +138,7 @@ static struct {
     PFN_gtk_widget_destroy        gtk_widget_destroy;
     PFN_g_type_check_instance_is_a g_type_check_instance_is_a;
     PFN_gtk_box_get_type          gtk_box_get_type;
+    PFN_gtk_widget_get_type       gtk_widget_get_type;
     PFN_g_object_set_data         g_object_set_data;
     PFN_g_object_set_data_full    g_object_set_data_full;
     PFN_g_object_get_data         g_object_get_data;
@@ -186,6 +188,7 @@ static int ensure_gtk_loaded(void) {
     g.gtk_widget_grab_focus       = (PFN_gtk_widget_grab_focus)       dlsym(libgtk, "gtk_widget_grab_focus");
     g.gtk_widget_destroy          = (PFN_gtk_widget_destroy)          dlsym(libgtk, "gtk_widget_destroy");
     g.gtk_box_get_type            = (PFN_gtk_box_get_type)            dlsym(libgtk, "gtk_box_get_type");
+    g.gtk_widget_get_type         = (PFN_gtk_widget_get_type)         dlsym(libgtk, "gtk_widget_get_type");
 
     g.g_type_check_instance_is_a  = (PFN_g_type_check_instance_is_a)  dlsym(libgobj, "g_type_check_instance_is_a");
     g.g_object_set_data           = (PFN_g_object_set_data)           dlsym(libgobj, "g_object_set_data");
@@ -206,7 +209,8 @@ static int ensure_gtk_loaded(void) {
         !g.gtk_widget_add_events ||
         !g.gtk_widget_set_can_focus || !g.gtk_widget_set_app_paintable ||
         !g.gtk_widget_grab_focus || !g.gtk_widget_destroy ||
-        !g.gtk_box_get_type || !g.g_type_check_instance_is_a ||
+        !g.gtk_box_get_type || !g.gtk_widget_get_type ||
+        !g.g_type_check_instance_is_a ||
         !g.g_object_set_data || !g.g_object_set_data_full ||
         !g.g_object_get_data || !g.g_signal_connect_data) {
         return 0;
@@ -243,6 +247,18 @@ static JNIEnv *attach_jvm_thread(void) {
         return NULL;
     }
     return env;
+}
+
+/* GObject destroy-notify owning the input-box callback global ref. Fires
+ * when the data is replaced/cleared and when GTK finalises the EventBox
+ * (e.g. toplevel teardown racing the Compose onDispose), so the ref cannot
+ * leak whichever side wins. Runs on the GTK thread; attach-as-daemon covers
+ * the finalise-from-a-non-JVM-thread case. */
+static void overlay_cb_destroy_notify(void *data) {
+    jobject ref = (jobject) data;
+    if (ref == NULL) return;
+    JNIEnv *env = attach_jvm_thread();
+    if (env != NULL) (*env)->DeleteGlobalRef(env, ref);
 }
 
 #define EVT_OVERLAY_MOVE      0
@@ -710,16 +726,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeSetInp
     if (!ensure_gtk_loaded()) return;
     if (box_ptr == 0) return;
     GtkWidget *box = (GtkWidget *) (uintptr_t) box_ptr;
-    /* Drop any previous callback global ref. */
-    jobject prev = (jobject) g.g_object_get_data(box, "nucleus_tao_overlay_cb");
-    if (prev != NULL) {
-        (*env)->DeleteGlobalRef(env, prev);
+    if (callback == NULL) {
+        /* Clearing the data fires overlay_cb_destroy_notify on the previous
+         * ref, if any — GObject owns the release in every path. */
         g.g_object_set_data(box, "nucleus_tao_overlay_cb", NULL);
+        return;
     }
-    if (callback == NULL) return;
     ensure_callback_cache(env, callback);
     jobject globalRef = (*env)->NewGlobalRef(env, callback);
-    g.g_object_set_data(box, "nucleus_tao_overlay_cb", globalRef);
+    g.g_object_set_data_full(box, "nucleus_tao_overlay_cb", globalRef,
+                             overlay_cb_destroy_notify);
 }
 
 EXPORT void JNICALL
@@ -730,32 +746,19 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeRemove
     if (!ensure_gtk_loaded()) return;
     if (box_ptr == 0) return;
     GtkWidget *box = (GtkWidget *) (uintptr_t) box_ptr;
-    /* Release callback global ref before destroying. */
-    jobject cb = (jobject) g.g_object_get_data(box, "nucleus_tao_overlay_cb");
-    if (cb != NULL) {
-        (*env)->DeleteGlobalRef(env, cb);
-        g.g_object_set_data(box, "nucleus_tao_overlay_cb", NULL);
-    }
     /* During app shutdown, GTK destroys the toplevel which transitively
      * destroys our EventBox before our DisposableEffect onDispose runs.
      * Calling gtk_widget_destroy on a stale pointer crashes with
      * `assertion 'GTK_IS_WIDGET (widget)' failed`. Validate the type
      * tag first via the GObject ABI so we silently skip in that case
-     * instead of polluting the logs. */
-    static gulong (*p_gtk_widget_get_type)(void) = NULL;
-    if (p_gtk_widget_get_type == NULL) {
-        void *libgtk = dlopen("libgtk-3.so.0", RTLD_NOW | RTLD_LOCAL);
-        if (libgtk != NULL) {
-            p_gtk_widget_get_type = (gulong (*)(void)) dlsym(libgtk, "gtk_widget_get_type");
-        }
-    }
-    if (p_gtk_widget_get_type != NULL && g.g_type_check_instance_is_a != NULL) {
-        if (!g.g_type_check_instance_is_a(box, p_gtk_widget_get_type())) {
-            return;
-        }
+     * instead of polluting the logs. (In that case GObject finalisation
+     * already fired overlay_cb_destroy_notify for the callback ref.) */
+    if (!g.g_type_check_instance_is_a(box, g.gtk_widget_get_type())) {
+        return;
     }
     /* gtk_widget_destroy unparents from the GtkOverlay and releases
-     * the GdkWindow + signal handlers; the rect cache attached via
-     * g_object_set_data_full is freed by the destroy notify. */
+     * the GdkWindow + signal handlers; the rect cache and the callback
+     * global ref attached via g_object_set_data_full are freed by their
+     * destroy notifies. */
     g.gtk_widget_destroy(box);
 }

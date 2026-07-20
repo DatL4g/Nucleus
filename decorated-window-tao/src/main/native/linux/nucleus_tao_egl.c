@@ -876,6 +876,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     if (!att) {
         p_eglMakeCurrent(edpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         p_eglDestroySurface(edpy, surf);
+        if (child_xid && p_XDestroyWindow)  p_XDestroyWindow(xdpy, child_xid);
+        if (child_cmap && p_XFreeColormap)  p_XFreeColormap(xdpy, child_cmap);
         p_eglDestroyContext(edpy, ctx);
         return 0;
     }

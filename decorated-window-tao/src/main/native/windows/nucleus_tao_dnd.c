@@ -141,6 +141,7 @@ static jobjectArray extract_files(JNIEnv *env, IDataObject *pDataObj) {
                 }
             }
         }
+        if (strClass) (*env)->DeleteLocalRef(env, strClass);
         GlobalUnlock(stg.hGlobal);
     }
     ReleaseStgMedium(&stg);

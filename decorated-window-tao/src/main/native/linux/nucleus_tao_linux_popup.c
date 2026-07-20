@@ -311,6 +311,17 @@ static JNIEnv *attach_jvm_thread(void) {
     return env;
 }
 
+/* Balances attach_jvm_thread on native-owned threads. Event threads are
+ * created by pthread_create, so a JNI_OK GetEnv here can only mean we
+ * attached earlier on this same thread — detaching is always correct. */
+static void detach_jvm_thread(void) {
+    if (g_jvm == NULL) return;
+    JNIEnv *env = NULL;
+    if ((*g_jvm)->GetEnv(g_jvm, (void **) &env, JNI_VERSION_1_8) == JNI_OK) {
+        (*g_jvm)->DetachCurrentThread(g_jvm);
+    }
+}
+
 static void cache_event_callback_ids(JNIEnv *env, jobject callback) {
     if (g_on_pointer_event != NULL) return;
     jclass cls = (*env)->GetObjectClass(env, callback);
@@ -610,6 +621,7 @@ static void *event_thread_main(void *arg) {
     }
 
     fn.XCloseDisplay(dpy);
+    detach_jvm_thread();
     return NULL;
 }
 
