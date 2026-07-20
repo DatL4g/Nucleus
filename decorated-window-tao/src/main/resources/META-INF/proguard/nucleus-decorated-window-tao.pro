@@ -21,3 +21,17 @@
 -dontwarn dev.nucleusframework.window.tao.TaoHotReloadBridgeImpl*
 -dontwarn org.jetbrains.compose.reload.**
 -dontwarn org.jetbrains.compose.devtools.**
+
+# ── JNI surface ──────────────────────────────────────────────────────────────
+# The native library (libnucleus_tao) both exposes native methods to the JVM and calls back
+# into ~20 callback interfaces (event, key, DnD, touch, popup, overlay) by method name across
+# the tao packages. ProGuard cannot see these native call sites, so shrinking/optimization
+# strips the callback methods and the app dies at runtime with NoSuchMethodError (e.g.
+# `onEvent` from nativeRunBlocking) or UnsatisfiedLinkError. Keep the whole JNI surface,
+# mirroring the module's native-image reachability metadata.
+-keepclasseswithmembernames,includedescriptorclasses class dev.nucleusframework.window.tao.** {
+    native <methods>;
+}
+-keep class dev.nucleusframework.window.tao.**Callback { *; }
+-keep class dev.nucleusframework.window.tao.**Listener { *; }
+-keep class dev.nucleusframework.window.tao.**Dispatcher { *; }
