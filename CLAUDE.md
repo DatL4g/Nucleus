@@ -20,8 +20,9 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 - `linux-hidpi` - Native HiDPI scale detection on Linux
 - `graalvm-runtime` - GraalVM native-image bootstrap
 - `decorated-window-core` - Shared types, layout, styling (design-system agnostic)
-- `decorated-window-jbr` - JBR-based implementation (requires JetBrains Runtime)
-- `decorated-window-jni` - JNI-based implementation (any JVM, GraalVM compatible)
+- `decorated-window-tao` - **Default/recommended backend** — no-AWT window shell over the Rust `tao` crate via JNI (Metal on macOS, EGL on Linux, ANGLE/GLES on Windows), single native event-loop thread as `Dispatchers.Main`
+- `decorated-window-jbr` - JBR-based implementation (requires JetBrains Runtime) — **legacy/maintenance-only**
+- `decorated-window-jni` - JNI-based implementation (any JVM, GraalVM compatible) — **legacy/maintenance-only**
 - `decorated-window-jewel` - Jewel (IntelliJ theme) integration
 - `decorated-window-material2` - Material 2 color mapping
 - `decorated-window-material3` - Material 3 color mapping
@@ -53,7 +54,7 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 - Native modules use platform-specific JNI implementations — test on each OS
 - Plugin is published via included build in `plugin-build/`
 - Version catalog is the source of truth for all dependency versions
-- `decorated-window-jni` is the recommended backend for new projects (true Windows fullscreen, GraalVM compatible)
+- `decorated-window-tao` is the recommended backend for new projects (no AWT, native event-loop-driven, true Windows fullscreen, GraalVM native-image first-class). `decorated-window-jni` and `decorated-window-jbr` (the AWT-based backends) are legacy/maintenance-only
 - macOS Liquid Glass enabled by default via `macOsSdkVersion = "26.0"` (vtool SDK patching)
 
 ## Adding a Native JNI Module
