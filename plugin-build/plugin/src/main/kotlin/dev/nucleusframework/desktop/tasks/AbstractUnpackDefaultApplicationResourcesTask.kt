@@ -18,6 +18,13 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 
 private const val DEFAULT_COMPOSE_PROGUARD_RULES_FILE_NAME = "default-compose-desktop-rules.pro"
+
+// The plugin classpath also carries the upstream JetBrains Compose Gradle plugin, which bundles
+// a resource of the exact same name (`default-compose-desktop-rules.pro`). getResourceAsStream
+// returns whichever comes first on the classpath — the upstream one — so Nucleus's enriched rules
+// (JNI keeps for every native module, -dontwarn dev.nucleusframework.**, GraalVM, JBR, JNA, …)
+// were silently shadowed and never applied. Load Nucleus's copy under a unique name to win.
+private const val NUCLEUS_COMPOSE_PROGUARD_RULES_RESOURCE = "nucleus-default-compose-desktop-rules.pro"
 private const val DEFAULT_ENTITLEMENTS_FILE_NAME = "default-entitlements.plist"
 private const val DEFAULT_SANDBOX_ENTITLEMENTS_FILE_NAME = "default-sandbox-entitlements.plist"
 private const val DEFAULT_SANDBOX_RUNTIME_ENTITLEMENTS_FILE_NAME = "default-sandbox-runtime-entitlements.plist"
@@ -54,7 +61,7 @@ abstract class AbstractUnpackDefaultApplicationResourcesTask : AbstractNucleusTa
         unpack(iconSourcePath("mac", "icns"), resources.macIcon)
         unpack(iconSourcePath("windows", "ico"), resources.windowsIcon)
         unpack(iconSourcePath("linux", "png"), resources.linuxIcon)
-        unpack(DEFAULT_COMPOSE_PROGUARD_RULES_FILE_NAME, resources.defaultComposeProguardRules)
+        unpack(NUCLEUS_COMPOSE_PROGUARD_RULES_RESOURCE, resources.defaultComposeProguardRules)
         unpack(DEFAULT_ENTITLEMENTS_FILE_NAME, resources.defaultEntitlements)
         unpack(DEFAULT_SANDBOX_ENTITLEMENTS_FILE_NAME, resources.defaultSandboxEntitlements)
         unpack(DEFAULT_SANDBOX_RUNTIME_ENTITLEMENTS_FILE_NAME, resources.defaultSandboxRuntimeEntitlements)
