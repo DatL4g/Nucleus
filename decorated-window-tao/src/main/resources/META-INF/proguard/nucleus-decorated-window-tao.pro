@@ -13,3 +13,11 @@
 # kotlinx-coroutines' MainDispatcherLoader resolves the factory via the
 # service file — keep it from being renamed or removed.
 -keep class kotlinx.coroutines.internal.MainDispatcherFactory
+
+# The Compose Hot Reload integration (org.jetbrains.compose.reload.*, .devtools.*) is a
+# dev-only, compileOnly dependency: it is present when running under hot reload, never in a
+# packaged release. TaoHotReloadBridgeImpl references it unconditionally, so suppress the
+# unresolved-class warnings for release (ProGuard) builds.
+-dontwarn dev.nucleusframework.window.tao.TaoHotReloadBridgeImpl*
+-dontwarn org.jetbrains.compose.reload.**
+-dontwarn org.jetbrains.compose.devtools.**
