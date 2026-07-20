@@ -160,6 +160,46 @@ internal object NativeTaoEglBridge {
     )
 
     /**
+     * Drop-shadow (approach B): uploads a canonical nine-slice shadow [pixels]
+     * tile (`tileW × tileH` premultiplied ARGB, centre slice `[sl,st,sr,sb]`)
+     * into a dedicated wl_shm subsurface placed *below* the content one, sized
+     * to the whole shadow-inclusive surface (`dwLogical × dhLogical` logical px,
+     * buffer = logical × [scale]), and commits it. Lazily creates the shadow
+     * subsurface + shm buffer. No-op unless the attachment is Wayland with a
+     * bound `wl_shm`. See `docs/linux-csd-shadow-subsurface.md`.
+     */
+    @JvmStatic
+    @Suppress("LongParameterList")
+    external fun nativeShadowCommit(
+        handle: Long,
+        pixels: IntArray,
+        tileW: Int,
+        tileH: Int,
+        sliceLeft: Int,
+        sliceTop: Int,
+        sliceRight: Int,
+        sliceBottom: Int,
+        dwLogical: Int,
+        dhLogical: Int,
+        scale: Int,
+    )
+
+    /** Hides the shadow subsurface (maximize/fullscreen/tile). */
+    @JvmStatic
+    external fun nativeShadowHide(handle: Long)
+
+    /**
+     * Positions the content subsurface at ([xLogical], [yLogical]) inside the
+     * shadow ring (logical surface coords). (0,0) = flush (shadow inactive).
+     */
+    @JvmStatic
+    external fun nativeShadowSetContentOffset(
+        handle: Long,
+        xLogical: Int,
+        yLogical: Int,
+    )
+
+    /**
      * Returns the address of a C function `void* fn(void* ctx, const char*
      * name)` matching Skia's `GrGLGetProc` signature. Pass to
      * [org.jetbrains.skia.GLAssembledInterface.createFromNativePointers] with

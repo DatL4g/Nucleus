@@ -66,6 +66,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dlfcn.h>
+#include <unistd.h>       /* ftruncate, close — shadow wl_shm pool */
+#include <sys/mman.h>     /* mmap, munmap — shadow wl_shm pool */
+#include <sys/syscall.h>  /* SYS_memfd_create — anonymous shadow pool fd */
 
 #define NUCLEUS_TAO_EGL_DEBUG 0
 #if NUCLEUS_TAO_EGL_DEBUG
@@ -271,6 +274,7 @@ typedef int             (*PFN_wl_display_roundtrip_queue)(wl_display *, wl_event
 typedef int             (*PFN_wl_display_dispatch_queue)(wl_display *, wl_event_queue *);
 typedef int             (*PFN_wl_display_dispatch_queue_pending)(wl_display *, wl_event_queue *);
 typedef void            (*PFN_wl_event_queue_destroy)(wl_event_queue *);
+typedef int             (*PFN_wl_display_flush)(wl_display *);
 
 /* Wayland protocol opcodes (from wayland.xml; stable since the protocol
  * was frozen in 2014, won't change). Re-declared instead of imported so
@@ -285,12 +289,24 @@ typedef void            (*PFN_wl_event_queue_destroy)(wl_event_queue *);
 #define WL_SUBCOMPOSITOR_GET_SUBSURFACE    1
 #define WL_SUBSURFACE_DESTROY              0
 #define WL_SUBSURFACE_SET_POSITION         1
+#define WL_SUBSURFACE_PLACE_BELOW          3
+#define WL_SUBSURFACE_SET_SYNC             4
 #define WL_SUBSURFACE_SET_DESYNC           5
 #define WL_SURFACE_DESTROY                 0
+#define WL_SURFACE_ATTACH                  1
+#define WL_SURFACE_DAMAGE                  2
 #define WL_SURFACE_FRAME                   3
 #define WL_SURFACE_SET_INPUT_REGION        5
 #define WL_SURFACE_COMMIT                  6
 #define WL_SURFACE_SET_BUFFER_SCALE        8
+#define WL_SHM_CREATE_POOL                 0
+#define WL_SHM_POOL_CREATE_BUFFER          0
+#define WL_SHM_POOL_DESTROY                1
+#define WL_SHM_POOL_RESIZE                 2
+#define WL_BUFFER_DESTROY                  0
+/* wl_shm.format: 32-bit ARGB, premultiplied alpha, little-endian — matches
+ * the cairo ARGB32 the theme render produces. Value 0 in wayland.xml. */
+#define WL_SHM_FORMAT_ARGB8888             0
 
 /* ── Xlib function pointer types ────────────────────────────────────────── */
 
@@ -369,6 +385,7 @@ static PFN_wl_display_roundtrip_queue       p_wl_display_roundtrip_queue       =
 static PFN_wl_display_dispatch_queue        p_wl_display_dispatch_queue        = NULL;
 static PFN_wl_display_dispatch_queue_pending p_wl_display_dispatch_queue_pending = NULL;
 static PFN_wl_event_queue_destroy           p_wl_event_queue_destroy           = NULL;
+static PFN_wl_display_flush                 p_wl_display_flush                 = NULL;
 
 static const struct wl_interface *g_wl_registry_interface     = NULL;
 static const struct wl_interface *g_wl_compositor_interface   = NULL;
@@ -377,6 +394,10 @@ static const struct wl_interface *g_wl_subsurface_interface   = NULL;
 static const struct wl_interface *g_wl_surface_interface      = NULL;
 static const struct wl_interface *g_wl_region_interface       = NULL;
 static const struct wl_interface *g_wl_callback_interface     = NULL;
+/* wl_shm plumbing for the dedicated shadow subsurface (approach B). */
+static const struct wl_interface *g_wl_shm_interface          = NULL;
+static const struct wl_interface *g_wl_shm_pool_interface     = NULL;
+static const struct wl_interface *g_wl_buffer_interface       = NULL;
 
 static int load_libs(void) {
     if (g_libs_loaded) return 1;
@@ -481,6 +502,8 @@ static int load_libs(void) {
             (PFN_wl_display_dispatch_queue_pending) dlsym(g_libwlclient, "wl_display_dispatch_queue_pending");
         p_wl_event_queue_destroy =
             (PFN_wl_event_queue_destroy)           dlsym(g_libwlclient, "wl_event_queue_destroy");
+        p_wl_display_flush =
+            (PFN_wl_display_flush)                 dlsym(g_libwlclient, "wl_display_flush");
         g_wl_registry_interface =
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_registry_interface");
         g_wl_compositor_interface =
@@ -495,6 +518,12 @@ static int load_libs(void) {
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_region_interface");
         g_wl_callback_interface =
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_callback_interface");
+        g_wl_shm_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_shm_interface");
+        g_wl_shm_pool_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_shm_pool_interface");
+        g_wl_buffer_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_buffer_interface");
     }
 #undef LOAD
 
@@ -589,15 +618,32 @@ typedef struct {
      * queue. nativeDetach destroys them in this order: wl_window →
      * wl_subsurface → wl_child_surface → wl_compositor / wl_subcompositor →
      * wl_registry → wl_queue. */
+    wl_display     *wl_display_conn;   /* GTK's wl_display — not owned. */
     wl_event_queue *wl_queue;
     wl_proxy       *wl_registry;
     wl_proxy       *wl_compositor;
     wl_proxy       *wl_subcompositor;
+    wl_proxy       *wl_parent_surface; /* GTK's wl_surface — not owned, not destroyed. */
     wl_proxy       *wl_child_surface;
     wl_proxy       *wl_subsurface;
     wl_egl_window  *wl_window;
-    int        widthPx;
-    int        heightPx;
+    /* Approach-B drop shadow: a second subsurface placed *below* the content
+     * one, backed by a wl_shm ARGB buffer we paint. Always alpha-blended by the
+     * compositor (unlike the EGL content buffer). All lazily created on the
+     * first nativeShadowCommit and torn down in nativeDetach. */
+    wl_proxy       *wl_shm;             /* bound global, on wl_queue */
+    wl_proxy       *wl_shadow_surface;  /* the shadow subsurface's wl_surface */
+    wl_proxy       *wl_shadow_subsurface;
+    wl_proxy       *wl_shadow_pool;     /* current wl_shm_pool */
+    wl_proxy       *wl_shadow_buffer;   /* current wl_buffer */
+    int             shadow_fd;          /* memfd backing the pool (-1 if none) */
+    void           *shadow_data;        /* mmap of the pool */
+    size_t          shadow_cap;         /* bytes currently mmap'd */
+    int             shadow_w;           /* current buffer size, physical px */
+    int             shadow_h;
+    int             shadow_scale;       /* buffer_scale applied to the shadow surface */
+    int             widthPx;
+    int             heightPx;
     float      scale;
 } EglAttachment;
 
@@ -908,6 +954,7 @@ typedef struct {
     wl_proxy *registry;
     wl_proxy *compositor;
     wl_proxy *subcompositor;
+    wl_proxy *shm;
 } WlBindState;
 
 static void wl_registry_global(
@@ -929,6 +976,12 @@ static void wl_registry_global(
         st->subcompositor = p_wl_proxy_marshal_flags(
             registry, WL_REGISTRY_BIND, g_wl_subcompositor_interface, v, 0,
             name, "wl_subcompositor", v, NULL);
+    } else if (!st->shm && g_wl_shm_interface && strcmp(interface, "wl_shm") == 0) {
+        /* wl_shm v1 is enough — create_pool/create_buffer are all we use. */
+        uint32_t v = version < 1 ? version : 1;
+        st->shm = p_wl_proxy_marshal_flags(
+            registry, WL_REGISTRY_BIND, g_wl_shm_interface, v, 0,
+            name, "wl_shm", v, NULL);
     }
 }
 
@@ -1041,7 +1094,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     }
     p_wl_proxy_set_queue(registry, queue);
 
-    WlBindState bind_state = { registry, NULL, NULL };
+    WlBindState bind_state = { registry, NULL, NULL, NULL };
     p_wl_proxy_add_listener(
         registry, (void (**)(void)) wl_registry_listener, &bind_state);
 
@@ -1078,6 +1131,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     }
     p_wl_proxy_set_queue(bind_state.compositor, queue);
     p_wl_proxy_set_queue(bind_state.subcompositor, queue);
+    /* wl_shm is optional — its absence just means no drop shadow (the content
+     * subsurface still works). Keep it on our private queue if present. */
+    if (bind_state.shm) p_wl_proxy_set_queue(bind_state.shm, queue);
 
     /* ── 2) Create our owned child wl_surface via wl_compositor.create_surface ── */
     wl_proxy *child_surface = p_wl_proxy_marshal_flags(
@@ -1292,9 +1348,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     att->wl_registry      = registry;
     att->wl_compositor    = bind_state.compositor;
     att->wl_subcompositor = bind_state.subcompositor;
+    att->wl_display_conn  = wdpy;
+    att->wl_parent_surface = wparent;
     att->wl_child_surface = child_surface;
     att->wl_subsurface    = subsurface;
     att->wl_window        = wlwin;
+    att->wl_shm           = bind_state.shm;
+    att->shadow_fd        = -1;
     att->widthPx          = phys_w;
     att->heightPx         = phys_h;
     att->scale            = (float) (bufferScale > 0 ? bufferScale : 1);
@@ -1312,11 +1372,344 @@ fail_after_subsurface:
         p_wl_proxy_get_version(subsurface), WL_MARSHAL_FLAG_DESTROY);
     p_wl_proxy_marshal_flags(child_surface, WL_SURFACE_DESTROY, NULL,
         p_wl_proxy_get_version(child_surface), WL_MARSHAL_FLAG_DESTROY);
+    if (bind_state.shm) p_wl_proxy_destroy(bind_state.shm);
     p_wl_proxy_destroy(bind_state.subcompositor);
     p_wl_proxy_destroy(bind_state.compositor);
     p_wl_proxy_destroy(registry);
     p_wl_event_queue_destroy(queue);
     return 0;
+}
+
+/* ── Approach-B drop shadow: dedicated wl_shm subsurface ────────────────────
+ *
+ * A second subsurface, placed *below* the content one and backed by a wl_shm
+ * ARGB buffer we paint from the theme render, so the compositor always
+ * alpha-blends the shadow (the EGL content buffer may be presented opaque —
+ * that was the #374 bug). The content subsurface is offset by the margins
+ * (nativeShadowSetContentOffset) so it sits inside the shadow ring.
+ *
+ * Everything here runs on the render/GTK thread; commits are plain client→
+ * server requests (no event dispatch needed), flushed via wl_display_flush.
+ */
+
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC 0x0001U
+#endif
+
+/** Anonymous, sealed-capable fd for the shm pool. -1 on failure. */
+static int shadow_make_fd(size_t size) {
+    long fd = syscall(SYS_memfd_create, "nucleus-tao-shadow", MFD_CLOEXEC);
+    if (fd < 0) return -1;
+    if (ftruncate((int) fd, (off_t) size) != 0) {
+        close((int) fd);
+        return -1;
+    }
+    return (int) fd;
+}
+
+/** Tears down the shadow buffer+pool+mmap (keeps the subsurface/surface). */
+static void shadow_free_buffer(EglAttachment *att) {
+    if (att->wl_shadow_buffer && p_wl_proxy_marshal_flags) {
+        p_wl_proxy_marshal_flags(att->wl_shadow_buffer, WL_BUFFER_DESTROY, NULL,
+            p_wl_proxy_get_version(att->wl_shadow_buffer), WL_MARSHAL_FLAG_DESTROY);
+        att->wl_shadow_buffer = NULL;
+    }
+    if (att->wl_shadow_pool && p_wl_proxy_marshal_flags) {
+        p_wl_proxy_marshal_flags(att->wl_shadow_pool, WL_SHM_POOL_DESTROY, NULL,
+            p_wl_proxy_get_version(att->wl_shadow_pool), WL_MARSHAL_FLAG_DESTROY);
+        att->wl_shadow_pool = NULL;
+    }
+    if (att->shadow_data && att->shadow_data != MAP_FAILED) {
+        munmap(att->shadow_data, att->shadow_cap);
+    }
+    att->shadow_data = NULL;
+    att->shadow_cap = 0;
+    if (att->shadow_fd >= 0) {
+        close(att->shadow_fd);
+        att->shadow_fd = -1;
+    }
+    att->shadow_w = 0;
+    att->shadow_h = 0;
+}
+
+/** Frees the buffer and destroys the shadow subsurface + surface. */
+static void shadow_destroy(EglAttachment *att) {
+    shadow_free_buffer(att);
+    if (att->wl_shadow_subsurface && p_wl_proxy_marshal_flags) {
+        p_wl_proxy_marshal_flags(att->wl_shadow_subsurface, WL_SUBSURFACE_DESTROY,
+            NULL, p_wl_proxy_get_version(att->wl_shadow_subsurface),
+            WL_MARSHAL_FLAG_DESTROY);
+        att->wl_shadow_subsurface = NULL;
+    }
+    if (att->wl_shadow_surface && p_wl_proxy_marshal_flags) {
+        p_wl_proxy_marshal_flags(att->wl_shadow_surface, WL_SURFACE_DESTROY,
+            NULL, p_wl_proxy_get_version(att->wl_shadow_surface),
+            WL_MARSHAL_FLAG_DESTROY);
+        att->wl_shadow_surface = NULL;
+    }
+}
+
+/**
+ * Lazily creates the shadow subsurface below the content subsurface. The
+ * shadow surface is input-transparent (empty region) so clicks fall through to
+ * GTK exactly like the content subsurface. Returns 0 on failure.
+ */
+static int shadow_ensure_surface(EglAttachment *att) {
+    if (att->wl_shadow_subsurface) return 1;
+    if (!att->wl_shm || !att->wl_compositor || !att->wl_subcompositor) return 0;
+    if (!g_wl_surface_interface || !g_wl_subsurface_interface) return 0;
+
+    wl_proxy *surface = p_wl_proxy_marshal_flags(
+        att->wl_compositor, WL_COMPOSITOR_CREATE_SURFACE, g_wl_surface_interface,
+        p_wl_proxy_get_version(att->wl_compositor), 0, NULL);
+    if (!surface) return 0;
+    p_wl_proxy_set_queue(surface, att->wl_queue);
+
+    wl_proxy *subsurface = p_wl_proxy_marshal_flags(
+        att->wl_subcompositor, WL_SUBCOMPOSITOR_GET_SUBSURFACE,
+        g_wl_subsurface_interface, p_wl_proxy_get_version(att->wl_subcompositor),
+        0, NULL, surface, att->wl_parent_surface);
+    if (!subsurface) {
+        p_wl_proxy_marshal_flags(surface, WL_SURFACE_DESTROY, NULL,
+            p_wl_proxy_get_version(surface), WL_MARSHAL_FLAG_DESTROY);
+        return 0;
+    }
+    p_wl_proxy_set_queue(subsurface, att->wl_queue);
+
+    /* Top-left of the whole (shadow-inclusive) surface, desync so we commit
+     * independently of the parent, and stacked *below* the content so the
+     * opaque content covers the transparent shadow centre. */
+    p_wl_proxy_marshal_flags(subsurface, WL_SUBSURFACE_SET_POSITION, NULL,
+        p_wl_proxy_get_version(subsurface), 0, 0, 0);
+    p_wl_proxy_marshal_flags(subsurface, WL_SUBSURFACE_SET_DESYNC, NULL,
+        p_wl_proxy_get_version(subsurface), 0);
+    if (att->wl_child_surface) {
+        p_wl_proxy_marshal_flags(subsurface, WL_SUBSURFACE_PLACE_BELOW, NULL,
+            p_wl_proxy_get_version(subsurface), 0, att->wl_child_surface);
+    }
+
+    /* Empty input region — clicks fall through to GTK's parent surface. */
+    if (g_wl_region_interface) {
+        wl_proxy *region = p_wl_proxy_marshal_flags(
+            att->wl_compositor, WL_COMPOSITOR_CREATE_REGION, g_wl_region_interface,
+            p_wl_proxy_get_version(att->wl_compositor), 0, NULL);
+        if (region) {
+            p_wl_proxy_set_queue(region, att->wl_queue);
+            p_wl_proxy_marshal_flags(surface, WL_SURFACE_SET_INPUT_REGION, NULL,
+                p_wl_proxy_get_version(surface), 0, region);
+            p_wl_proxy_marshal_flags(region, WL_REGION_DESTROY, NULL,
+                p_wl_proxy_get_version(region), WL_MARSHAL_FLAG_DESTROY);
+        }
+    }
+
+    att->wl_shadow_surface = surface;
+    att->wl_shadow_subsurface = subsurface;
+    return 1;
+}
+
+/**
+ * (Re)allocates the shm pool + buffer to hold a `wPx × hPx` ARGB image.
+ * Returns a pointer to the mmap'd pixels, or NULL on failure.
+ */
+static uint32_t *shadow_ensure_buffer(EglAttachment *att, int wPx, int hPx) {
+    if (wPx <= 0 || hPx <= 0 || wPx > 16384 || hPx > 16384) return NULL;
+    if (att->wl_shadow_buffer && att->shadow_w == wPx && att->shadow_h == hPx &&
+        att->shadow_data) {
+        return (uint32_t *) att->shadow_data;
+    }
+    shadow_free_buffer(att);
+
+    size_t stride = (size_t) wPx * 4;
+    size_t size = stride * (size_t) hPx;
+    int fd = shadow_make_fd(size);
+    if (fd < 0) return NULL;
+    void *data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (data == MAP_FAILED) {
+        close(fd);
+        return NULL;
+    }
+
+    wl_proxy *pool = p_wl_proxy_marshal_flags(
+        att->wl_shm, WL_SHM_CREATE_POOL, g_wl_shm_pool_interface,
+        p_wl_proxy_get_version(att->wl_shm), 0, NULL, fd, (int32_t) size);
+    if (!pool) {
+        munmap(data, size);
+        close(fd);
+        return NULL;
+    }
+    p_wl_proxy_set_queue(pool, att->wl_queue);
+
+    wl_proxy *buffer = p_wl_proxy_marshal_flags(
+        pool, WL_SHM_POOL_CREATE_BUFFER, g_wl_buffer_interface,
+        p_wl_proxy_get_version(pool), 0, NULL,
+        /*offset*/ 0, wPx, hPx, (int32_t) stride, WL_SHM_FORMAT_ARGB8888);
+    if (!buffer) {
+        p_wl_proxy_marshal_flags(pool, WL_SHM_POOL_DESTROY, NULL,
+            p_wl_proxy_get_version(pool), WL_MARSHAL_FLAG_DESTROY);
+        munmap(data, size);
+        close(fd);
+        return NULL;
+    }
+    p_wl_proxy_set_queue(buffer, att->wl_queue);
+
+    att->wl_shadow_pool = pool;
+    att->wl_shadow_buffer = buffer;
+    att->shadow_fd = fd;
+    att->shadow_data = data;
+    att->shadow_cap = size;
+    att->shadow_w = wPx;
+    att->shadow_h = hPx;
+    return (uint32_t *) data;
+}
+
+/**
+ * Nine-slice expansion of a `tw × th` premultiplied-ARGB tile (centre slice
+ * [sl,st,sr,sb]) into the `dw × dh` destination. Corners are copied 1:1; the
+ * edges and centre are stretched by nearest-sampling the tile's slice columns/
+ * rows — GTK shadows are constant strips, so the stretch is exact.
+ */
+static void shadow_nine_slice(
+    uint32_t *dst, int dw, int dh,
+    const uint32_t *tile, int tw, int th,
+    int sl, int st, int sr, int sb)
+{
+    if (sl < 0) sl = 0; if (st < 0) st = 0;
+    if (sr > tw) sr = tw; if (sb > th) sb = th;
+    if (sr <= sl || sb <= st) { sl = 0; st = 0; sr = tw; sb = th; }
+
+    const int leftW  = sl;             /* left corner column width  */
+    const int rightW = tw - sr;        /* right corner column width */
+    const int topH   = st;             /* top corner row height     */
+    const int botH   = th - sb;        /* bottom corner row height  */
+    const int dstMidW = dw - leftW - rightW;  /* may be <= 0 for tiny windows */
+    const int dstMidH = dh - topH - botH;
+    const int srcMidW = sr - sl;
+    const int srcMidH = sb - st;
+
+    for (int y = 0; y < dh; ++y) {
+        int sy;
+        if (y < topH) {
+            sy = y;
+        } else if (y >= dh - botH) {
+            sy = th - (dh - y);
+        } else if (dstMidH > 0 && srcMidH > 0) {
+            sy = st + (int) ((long) (y - topH) * srcMidH / dstMidH);
+        } else {
+            sy = st;
+        }
+        if (sy < 0) sy = 0; if (sy >= th) sy = th - 1;
+
+        const uint32_t *srow = tile + (long) sy * tw;
+        uint32_t *drow = dst + (long) y * dw;
+        for (int x = 0; x < dw; ++x) {
+            int sx;
+            if (x < leftW) {
+                sx = x;
+            } else if (x >= dw - rightW) {
+                sx = tw - (dw - x);
+            } else if (dstMidW > 0 && srcMidW > 0) {
+                sx = sl + (int) ((long) (x - leftW) * srcMidW / dstMidW);
+            } else {
+                sx = sl;
+            }
+            if (sx < 0) sx = 0; if (sx >= tw) sx = tw - 1;
+            drow[x] = srow[sx];
+        }
+    }
+}
+
+/**
+ * Uploads a shadow tile into the full-window shadow subsurface and commits it.
+ * [pixels] is `tw*th` premultiplied ARGB (native-endian = wl ARGB8888 LE on
+ * little-endian). [dwLogical]/[dhLogical] are the whole shadow-inclusive
+ * surface size in *logical* px; the buffer is `logical × scale`.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowCommit(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jintArray pixels, jint tw, jint th,
+    jint sl, jint st, jint sr, jint sb,
+    jint dwLogical, jint dhLogical, jint scale)
+{
+    (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_shm || !p_wl_proxy_marshal_flags) return;
+    if (tw <= 0 || th <= 0 || dwLogical <= 0 || dhLogical <= 0) return;
+    if (scale < 1) scale = 1;
+    if (!shadow_ensure_surface(att)) return;
+
+    const int dwPx = dwLogical * scale;
+    const int dhPx = dhLogical * scale;
+    uint32_t *dst = shadow_ensure_buffer(att, dwPx, dhPx);
+    if (!dst) return;
+
+    jint *src = (*env)->GetIntArrayElements(env, pixels, NULL);
+    if (!src) return;
+    jsize n = (*env)->GetArrayLength(env, pixels);
+    if (n >= (jsize) tw * th) {
+        shadow_nine_slice(dst, dwPx, dhPx, (const uint32_t *) src, tw, th, sl, st, sr, sb);
+    }
+    (*env)->ReleaseIntArrayElements(env, pixels, src, JNI_ABORT);
+
+    /* buffer_scale so the compositor reads the `logical × scale` buffer as
+     * `logical` surface units (matches the content subsurface + GTK parent). */
+    if (att->shadow_scale != scale) {
+        p_wl_proxy_marshal_flags(att->wl_shadow_surface, WL_SURFACE_SET_BUFFER_SCALE,
+            NULL, p_wl_proxy_get_version(att->wl_shadow_surface), 0, scale);
+        att->shadow_scale = scale;
+    }
+    p_wl_proxy_marshal_flags(att->wl_shadow_surface, WL_SURFACE_ATTACH, NULL,
+        p_wl_proxy_get_version(att->wl_shadow_surface), 0,
+        att->wl_shadow_buffer, 0, 0);
+    /* Damage in surface (logical) coords; INT32_MAX = whole surface. */
+    p_wl_proxy_marshal_flags(att->wl_shadow_surface, WL_SURFACE_DAMAGE, NULL,
+        p_wl_proxy_get_version(att->wl_shadow_surface), 0,
+        0, 0, dwLogical, dhLogical);
+    p_wl_proxy_marshal_flags(att->wl_shadow_surface, WL_SURFACE_COMMIT, NULL,
+        p_wl_proxy_get_version(att->wl_shadow_surface), 0);
+    /* Push the queued requests to the compositor now — the shadow updates on
+     * focus/size/theme edges, not every frame, so we don't wait for the next
+     * content eglSwapBuffers to flush them. */
+    if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
+}
+
+/**
+ * Hides the shadow (maximize/fullscreen/tile) by attaching a NULL buffer and
+ * committing. Cheap; keeps the subsurface for the next restore.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowHide(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_shadow_surface || !p_wl_proxy_marshal_flags) return;
+    p_wl_proxy_marshal_flags(att->wl_shadow_surface, WL_SURFACE_ATTACH, NULL,
+        p_wl_proxy_get_version(att->wl_shadow_surface), 0, NULL, 0, 0);
+    p_wl_proxy_marshal_flags(att->wl_shadow_surface, WL_SURFACE_COMMIT, NULL,
+        p_wl_proxy_get_version(att->wl_shadow_surface), 0);
+    if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
+}
+
+/**
+ * Positions the content subsurface inside the shadow ring. Offsets are in
+ * *logical* surface coords (subsurface positions are surface-local). (0,0)
+ * restores the flush layout used when the shadow is inactive.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowSetContentOffset(
+    JNIEnv *env, jclass clazz, jlong handle, jint xLogical, jint yLogical)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_subsurface || !p_wl_proxy_marshal_flags) return;
+    p_wl_proxy_marshal_flags(att->wl_subsurface, WL_SUBSURFACE_SET_POSITION, NULL,
+        p_wl_proxy_get_version(att->wl_subsurface), 0, xLogical, yLogical);
+    /* Position is applied with the parent's next commit; the content commit
+     * (eglSwapBuffers) or GTK's own commit carries it. */
+    p_wl_proxy_marshal_flags(att->wl_child_surface, WL_SURFACE_COMMIT, NULL,
+        p_wl_proxy_get_version(att->wl_child_surface), 0);
+    if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
 }
 
 JNIEXPORT void JNICALL
@@ -1347,6 +1740,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeDetach(
     if (att->wl_window && p_wl_egl_window_destroy) {
         p_wl_egl_window_destroy(att->wl_window);
     }
+    /* Drop-shadow subsurface chain (buffer → pool → mmap/fd → subsurface →
+     * surface) — created from wl_compositor/wl_subcompositor/wl_shm, so it must
+     * go before those globals are destroyed below. */
+    shadow_destroy(att);
     if (att->wl_subsurface && p_wl_proxy_marshal_flags) {
         p_wl_proxy_marshal_flags(att->wl_subsurface, WL_SUBSURFACE_DESTROY,
             NULL, p_wl_proxy_get_version(att->wl_subsurface),
@@ -1357,6 +1754,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeDetach(
             NULL, p_wl_proxy_get_version(att->wl_child_surface),
             WL_MARSHAL_FLAG_DESTROY);
     }
+    if (att->wl_shm && p_wl_proxy_destroy)           p_wl_proxy_destroy(att->wl_shm);
     if (att->wl_compositor && p_wl_proxy_destroy)    p_wl_proxy_destroy(att->wl_compositor);
     if (att->wl_subcompositor && p_wl_proxy_destroy) p_wl_proxy_destroy(att->wl_subcompositor);
     if (att->wl_registry && p_wl_proxy_destroy)      p_wl_proxy_destroy(att->wl_registry);
