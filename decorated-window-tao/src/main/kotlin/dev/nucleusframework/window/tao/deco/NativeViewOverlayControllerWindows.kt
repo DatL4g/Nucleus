@@ -602,12 +602,15 @@ private val overlayUnavailableWarned =
     java.util.concurrent.atomic
         .AtomicBoolean(false)
 
+private val overlayLogger: java.util.logging.Logger =
+    java.util.logging.Logger
+        .getLogger("dev.nucleusframework.window.tao.nativeView")
+
 private fun warnOverlayUnavailableOnce() {
     if (!overlayUnavailableWarned.compareAndSet(false, true)) return
-    System.err.println(
-        "[NativeView] Compose overlay unavailable: the DirectComposition " +
-            "overlay chain could not be created on this system. The " +
-            "embedded native view still works; the overlay `content` slot " +
-            "is ignored.",
+    overlayLogger.warning(
+        "Compose overlay unavailable: the DirectComposition overlay chain " +
+            "could not be created on this system. The embedded native view " +
+            "still works; the overlay `content` slot is ignored.",
     )
 }

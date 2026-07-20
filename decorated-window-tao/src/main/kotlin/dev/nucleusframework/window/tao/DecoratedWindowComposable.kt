@@ -536,16 +536,20 @@ private val waylandPositionWarned =
     java.util.concurrent.atomic
         .AtomicBoolean(false)
 
+private val decoratedWindowLogger: java.util.logging.Logger =
+    java.util.logging.Logger
+        .getLogger("dev.nucleusframework.window.tao.decoratedWindow")
+
 private fun warnIfWaylandIgnoresPosition(window: TaoWindow) {
     if (waylandPositionWarned.get()) return
     val handles = NativeTaoBridge.nativeLinuxHandles(window.handle) ?: return
     if (handles.isEmpty() || handles[0] != 2L) return
     if (!waylandPositionWarned.compareAndSet(false, true)) return
-    System.err.println(
-        "[DecoratedWindow] WindowPosition.Aligned ignored on native Wayland: " +
-            "the xdg-shell protocol does not allow clients to set toplevel " +
-            "positions; the compositor decides placement. Set " +
-            "NUCLEUS_TAO_LINUX_RENDERER=x11 to fall back to XWayland.",
+    decoratedWindowLogger.warning(
+        "WindowPosition.Aligned ignored on native Wayland: the xdg-shell " +
+            "protocol does not allow clients to set toplevel positions; the " +
+            "compositor decides placement. Set NUCLEUS_TAO_LINUX_RENDERER=x11 " +
+            "to fall back to XWayland.",
     )
 }
 

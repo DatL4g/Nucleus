@@ -71,6 +71,7 @@ import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantLock
+import java.util.logging.Logger
 import kotlin.concurrent.withLock
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
@@ -2052,7 +2053,7 @@ internal class TaoComposeSceneHostLinux(
                             NativeTaoEglBridge.nativeMakeCurrent(handle)
                             NativeTaoEglBridge.nativePresent(handle)
                         } catch (t: Throwable) {
-                            t.printStackTrace()
+                            linuxHostLogger.log(java.util.logging.Level.WARNING, "EGL present failed", t)
                         } finally {
                             try {
                                 NativeTaoEglBridge.nativeReleaseCurrent(handle)
@@ -2169,3 +2170,5 @@ private class LinuxTaoPlatformContext(
         }.getOrDefault(dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT)
     }
 }
+
+private val linuxHostLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.scene")
