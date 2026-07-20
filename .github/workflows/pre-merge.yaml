@@ -286,6 +286,12 @@ jobs:
         if: runner.os != 'Linux'
         run: ./gradlew :decorated-window-tao:taoHeadfulTest
 
+      - name: Smoke standalone NSPanel chain (macOS)
+        if: runner.os == 'macOS'
+        # Ownerless NSPanel + Metal pipeline + reposition/orderFront/orderOut
+        # cycle — the standalone-popup native chain has no other CI coverage.
+        run: ./gradlew :decorated-window-tao:smokeStandalonePanelMac
+
   # Native accessibility protocol: launches tao-demo on its A11y tab and
   # verifies the OS-level projection from the OUTSIDE, through the same client
   # APIs assistive tech uses — UIA on Windows (hard gate), AT-SPI via pyatspi

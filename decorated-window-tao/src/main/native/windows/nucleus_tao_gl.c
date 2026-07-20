@@ -260,6 +260,12 @@ static HostEglEntry *sHostEglList = NULL;
 static EGLDisplay sHeadlessEglDisplay = EGL_NO_DISPLAY;
 static EGLContext sHeadlessEglContext = EGL_NO_CONTEXT;
 static EGLConfig  sHeadlessEglConfig  = NULL;
+/* 1x1 pbuffer the headless context stays current on. Deliberately immortal,
+ * like the context it backs: there is no headless teardown path (ownerless
+ * panels rely on the trio outliving every window host), and destroying the
+ * surface would leave the context bound to a dead draw target. Kept in a
+ * static so the allocation is reachable and a future teardown can free it. */
+static EGLSurface sHeadlessEglSurface = EGL_NO_SURFACE;
 
 static void registerHostEgl(HWND hwnd, EGLDisplay dpy, EGLContext ctx, EGLConfig cfg) {
     if (!hwnd) {
@@ -698,6 +704,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeEnsureHeadlessC
         pEglDestroySurface(dpy, surface);
         return JNI_FALSE;
     }
+    sHeadlessEglSurface = surface;
     /* No HWND (headless) — primes the global fallback only, not the
      * per-HWND registry. registerHostEgl(NULL,...) handles that branch. */
     registerHostEgl(NULL, dpy, ctx, config);

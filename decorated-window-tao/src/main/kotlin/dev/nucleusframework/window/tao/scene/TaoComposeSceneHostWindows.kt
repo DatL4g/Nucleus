@@ -11,7 +11,6 @@ import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -40,6 +39,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
+import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -57,9 +57,6 @@ import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
@@ -79,7 +76,7 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
 internal class TaoComposeSceneHostWindows(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
-) {
+) : AbstractTaoComposeSceneHost() {
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
 
@@ -117,7 +114,7 @@ internal class TaoComposeSceneHostWindows(
      */
     var nativePopupLayers: Boolean = false
 
-    private val windowInfo = WindowsTaoWindowInfo()
+    private val windowInfo = TaoWindowInfo()
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
@@ -312,10 +309,17 @@ internal class TaoComposeSceneHostWindows(
                     layoutDirection = GlobalLayoutDirection,
                     coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     composeSceneContext =
-                        TaoComposeSceneContextWindows(
+                        TaoComposeSceneContext(
                             platformContext = platformContext,
-                            popupHost = requireNotNull(popupHost()),
-                        ),
+                        ) { density, layoutDirection, focusable, cc ->
+                            TaoPopupSceneLayerWindows(
+                                host = requireNotNull(popupHost()),
+                                initialDensity = density,
+                                initialLayoutDirection = layoutDirection,
+                                initialFocusable = focusable,
+                                parentCompositionContext = cc,
+                            )
+                        },
                     invalidate = { window.requestRedraw() },
                 ).apply { compositionLocalContext = pendingCompositionLocalContext }
             } else {
@@ -1349,88 +1353,15 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    // A11y sync is debounced on a timer rather than run once per render tick.
-    // The SemanticsOwner walk in TaoSemanticsObserver is O(N); during a scroll
-    // `onLayoutChange`/`onSemanticsChange` fire every frame, so a per-frame walk
-    // stutters scrolling — most visibly once a UIA client (Narrator, NVDA) is
-    // attached. Debouncing collapses a burst of changes into a single walk once
-    // activity settles (trailing edge), with a max-wait so sustained activity
-    // still refreshes the tree periodically for assistive tech. The tree
-    // therefore stays fresh enough for on-demand AX queries without ever
-    // running on the per-frame hot path. Mirrors the macOS [TaoComposeSceneHost].
-    private val a11yScheduler =
-        Executors.newSingleThreadScheduledExecutor { r ->
-            Thread(r, "TaoA11yDebounce").apply { isDaemon = true }
-        }
-
-    @Volatile
-    private var a11yPendingBlock: (() -> Unit)? = null
-
-    @Volatile
-    private var a11yFuture: ScheduledFuture<*>? = null
-    private var a11yFirstRequestNs = 0L
-
-    /**
-     * Schedules [block] (a SemanticsOwner walk + snapshot push) to run on the
-     * render thread after changes settle. Coalesces a burst of per-frame change
-     * notifications into one debounced run; see the field comment above.
-     */
-    fun scheduleA11ySync(
-        gate: () -> Boolean = { true },
-        block: () -> Unit,
-    ) {
-        if (a11yScheduler.isShutdown) return
-        a11yPendingBlock = block
-        val now = System.nanoTime()
-        if (a11yFirstRequestNs == 0L) a11yFirstRequestNs = now
-        val waitedMs = (now - a11yFirstRequestNs) / 1_000_000L
-        val delayMs = if (waitedMs >= A11Y_SYNC_MAX_WAIT_MS) 0L else A11Y_SYNC_DEBOUNCE_MS
-        scheduleA11yFire(gate, delayMs)
-    }
-
-    private fun scheduleA11yFire(
-        gate: () -> Boolean,
-        delayMs: Long,
-    ) {
-        a11yFuture?.cancel(false)
-        a11yFuture =
-            try {
-                a11yScheduler.schedule(
-                    {
-                        if (gate()) {
-                            val b = a11yPendingBlock
-                            a11yPendingBlock = null
-                            a11yFirstRequestNs = 0L
-                            if (b != null) {
-                                // Hop to the render thread — the walk touches Compose state.
-                                flushingDispatcher.enqueue(Runnable { b() })
-                                window.requestRedraw()
-                            }
-                        } else {
-                            // No AT client is listening: park the walk and poll the
-                            // activation gate at a slow cadence instead of dropping
-                            // it. A UIA client that connects while the scene is idle
-                            // (WM_GETOBJECT sets the native active + resync flags)
-                            // would otherwise wait for the NEXT semantics change —
-                            // which never comes on a static scene, leaving the AT
-                            // with the 1-node seed tree. The poll is one JNI flag
-                            // read per tick; the render loop is only woken once the
-                            // gate opens.
-                            a11yFirstRequestNs = 0L
-                            scheduleA11yFire(gate, A11Y_ACTIVATION_POLL_MS)
-                        }
-                    },
-                    delayMs,
-                    TimeUnit.MILLISECONDS,
-                )
-            } catch (_: java.util.concurrent.RejectedExecutionException) {
-                null
-            }
+    // Hop the debounced semantics walk onto the render thread (it touches
+    // Compose state) and request a redraw. See AbstractTaoComposeSceneHost.
+    override fun dispatchA11yWalk(block: () -> Unit) {
+        flushingDispatcher.enqueue(Runnable { block() })
+        window.requestRedraw()
     }
 
     fun detach() {
-        a11yFuture?.cancel(false)
-        a11yScheduler.shutdownNow()
+        shutdownA11yScheduler()
         textToolbar.hide()
         // Stop the pinch idle timer; the scene is going away so no Release needed.
         pinchEndJob?.cancel()
@@ -1510,16 +1441,6 @@ internal class TaoComposeSceneHostWindows(
         /** Idle gap after the last tick before the synthetic pinch releases. */
         private const val PINCH_IDLE_END_MS: Long = 120L
 
-        // A11y debounce: run the SemanticsOwner walk ~this long after the last
-        // change (so a scroll's per-frame change burst collapses to one walk
-        // once it settles), but never wait longer than the max so assistive
-        // tech still sees periodic refreshes during sustained scrolling.
-        private const val A11Y_SYNC_DEBOUNCE_MS: Long = 120L
-        private const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
-
-        /** Cadence of the parked-walk activation poll (no AT connected yet). */
-        private const val A11Y_ACTIVATION_POLL_MS: Long = 250L
-
         /**
          * Live attached-host count across the JVM. When > 1, every host
          * shares the process with at least one sibling that owns its own
@@ -1565,25 +1486,6 @@ internal class TaoComposeSceneHostWindows(
             }
         }
     }
-
-    private fun mapButton(code: Int): PointerButton =
-        when (code) {
-            dev.nucleusframework.window.tao.TaoMouseButton.LEFT ->
-                PointerButton.Primary
-            dev.nucleusframework.window.tao.TaoMouseButton.RIGHT ->
-                PointerButton.Secondary
-            dev.nucleusframework.window.tao.TaoMouseButton.MIDDLE ->
-                PointerButton.Tertiary
-            else -> PointerButton.Primary
-        }
-}
-
-internal class WindowsTaoWindowInfo : androidx.compose.ui.platform.WindowInfo {
-    override var isWindowFocused: Boolean by androidx.compose.runtime.mutableStateOf(true)
-    override var keyboardModifiers: PointerKeyboardModifiers
-        by androidx.compose.runtime.mutableStateOf(PointerKeyboardModifiers())
-    override var containerSize: IntSize by androidx.compose.runtime.mutableStateOf(IntSize.Zero)
-    override var containerDpSize: DpSize by androidx.compose.runtime.mutableStateOf(DpSize.Zero)
 }
 
 @OptIn(InternalComposeUiApi::class)

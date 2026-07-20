@@ -9,6 +9,9 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
+import java.util.logging.Logger
+
+private val a11yLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.a11y")
 
 /** Only the Linux backend (AccessKit) consumes partial snapshots; mac/win
  *  must always receive full snapshots otherwise small state diffs would be
@@ -287,8 +290,13 @@ internal object TaoAccessibilityRegistry {
  * Action handlers ([onClick], [onIncrement], [onDecrement]) are wired up by
  * the SemanticsTree observer once it ingests the Compose tree. The
  * controller looks them up by node id when VoiceOver invokes an action.
+ *
+ * Open (with an overridable [pushSnapshot]) so offscreen tests can capture
+ * the projected node list right where it would cross into JNI —
+ * [pushSnapshot] no-ops before [attach] (nsView == 0), which is exactly the
+ * display-less configuration those tests run in.
  */
-internal class TaoAccessibilityController(
+internal open class TaoAccessibilityController(
     private val windowHandle: Long,
 ) {
     private val actionHandlers = HashMap<Long, ActionHandlers>()
@@ -385,7 +393,7 @@ internal class TaoAccessibilityController(
         if (a11yDebug) {
             val bridgeLoaded =
                 if (os.contains("win")) NativeTaoA11yWindowsBridge.isLoaded.toString() else "n/a"
-            System.err.println("[tao-a11y] attach: os=$os bridgeLoaded=$bridgeLoaded handle=$nsView")
+            a11yLogger.fine { "attach: os=$os bridgeLoaded=$bridgeLoaded handle=$nsView" }
         }
         if (nsView == 0L) return
         // Override AT-SPI's app name before the first Adapter spins up.
@@ -476,7 +484,7 @@ internal class TaoAccessibilityController(
      */
     fun shouldRunSync(): Boolean = !isDisposed && (pendingForcedPush || NativeTaoBridge.nativeA11yIsActive())
 
-    fun pushSnapshot(nodes: List<TaoA11yNode>) {
+    open fun pushSnapshot(nodes: List<TaoA11yNode>) {
         // Two trace points: the very first push (usually the 1-node seed —
         // it fires before the first composition has produced semantics) and
         // the first push carrying a real tree. Logging only the seed reads
@@ -484,10 +492,10 @@ internal class TaoAccessibilityController(
         if (a11yDebug && (!firstPushLogged || (!firstTreePushLogged && nodes.size > 1))) {
             if (!firstPushLogged) firstPushLogged = true else firstTreePushLogged = true
             val active = if (nsView != 0L) NativeTaoBridge.nativeA11yIsActive() else false
-            System.err.println(
-                "[tao-a11y] first pushSnapshot: disposed=$isDisposed handle=$nsView " +
-                    "nodes=${nodes.size} active=$active forced=$pendingForcedPush",
-            )
+            a11yLogger.fine {
+                "first pushSnapshot: disposed=$isDisposed handle=$nsView " +
+                    "nodes=${nodes.size} active=$active forced=$pendingForcedPush"
+            }
         }
         if (isDisposed || nsView == 0L) return
         // Smart gating: skip when no AX client is active AND no resync was

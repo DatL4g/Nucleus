@@ -26,7 +26,8 @@ import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
-import dev.nucleusframework.window.tao.scene.TaoComposeSceneContextWindows
+import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
+import dev.nucleusframework.window.tao.scene.TaoComposeSceneContext
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import org.jetbrains.skia.DirectContext
 import kotlin.coroutines.CoroutineContext
@@ -460,10 +461,17 @@ internal class NativeViewOverlayControllerWindows(
                     size = IntSize(widthPx, heightPx),
                     coroutineContext = popupHost.sceneCoroutineContext,
                     composeSceneContext =
-                        TaoComposeSceneContextWindows(
+                        TaoComposeSceneContext(
                             platformContext = ourPlatformContext,
-                            popupHost = overlayPopupHost,
-                        ),
+                        ) { density, layoutDirection, focusable, cc ->
+                            TaoPopupSceneLayerWindows(
+                                host = overlayPopupHost,
+                                initialDensity = density,
+                                initialLayoutDirection = layoutDirection,
+                                initialFocusable = focusable,
+                                parentCompositionContext = cc,
+                            )
+                        },
                     invalidate = { popupHost.requestRedraw() },
                 )
             pendingContent?.let {
@@ -594,12 +602,15 @@ private val overlayUnavailableWarned =
     java.util.concurrent.atomic
         .AtomicBoolean(false)
 
+private val overlayLogger: java.util.logging.Logger =
+    java.util.logging.Logger
+        .getLogger("dev.nucleusframework.window.tao.nativeView")
+
 private fun warnOverlayUnavailableOnce() {
     if (!overlayUnavailableWarned.compareAndSet(false, true)) return
-    System.err.println(
-        "[NativeView] Compose overlay unavailable: the DirectComposition " +
-            "overlay chain could not be created on this system. The " +
-            "embedded native view still works; the overlay `content` slot " +
-            "is ignored.",
+    overlayLogger.warning(
+        "Compose overlay unavailable: the DirectComposition overlay chain " +
+            "could not be created on this system. The embedded native view " +
+            "still works; the overlay `content` slot is ignored.",
     )
 }

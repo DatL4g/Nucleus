@@ -1359,7 +1359,17 @@ static HRESULT STDMETHODCALLTYPE Element_Simple_GetPropertyValue(
     note_a11y_query(el->projection);
     if (!pRetVal) return E_POINTER;
     VariantInit(pRetVal);
-    if (!el->isAlive) return UIA_E_ELEMENTNOTAVAILABLE;
+    /* Serialise with apply_snapshot: it frees/rewires label/valueStr/
+     * customActions under proj->lock, and UIA proxies can still call into
+     * us from outside the STA through transient marshalled references
+     * (see byid_free_table). Reading the string fields unlocked would race
+     * that teardown — classic use-after-free. */
+    NucleusUiaProjection *proj = el->projection;
+    if (proj) EnterCriticalSection(&proj->lock);
+    if (!el->isAlive) {
+        if (proj) LeaveCriticalSection(&proj->lock);
+        return UIA_E_ELEMENTNOTAVAILABLE;
+    }
     switch (propertyId) {
         case UIA_NamePropertyId: {
             if (el->label && el->label[0]) {
@@ -1563,6 +1573,7 @@ static HRESULT STDMETHODCALLTYPE Element_Simple_GetPropertyValue(
         default:
             break;
     }
+    if (proj) LeaveCriticalSection(&proj->lock);
     return S_OK;
 }
 
@@ -1879,7 +1890,12 @@ static HRESULT STDMETHODCALLTYPE Element_Value_get_Value(
 {
     NucleusUiaElement *el = ELEMENT_FROM_VALUE(This);
     if (!pRetVal) return E_POINTER;
+    /* Same locking rationale as Element_Simple_GetPropertyValue: valueStr is
+     * freed by apply_snapshot under proj->lock. */
+    NucleusUiaProjection *proj = el->projection;
+    if (proj) EnterCriticalSection(&proj->lock);
     *pRetVal = SysAllocString(el->valueStr ? el->valueStr : L"");
+    if (proj) LeaveCriticalSection(&proj->lock);
     return S_OK;
 }
 

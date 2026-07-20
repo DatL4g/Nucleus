@@ -1,7 +1,3 @@
-public final class androidx/compose/ui/draganddrop/TaoTransferableAccess {
-	public static fun toAwt (Landroidx/compose/ui/draganddrop/DragAndDropTransferable;)Ljava/awt/datatransfer/Transferable;
-}
-
 public final class dev/nucleusframework/window/ComposableSingletons$DialogTitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$DialogTitleBarKt;
 	public fun <init> ()V

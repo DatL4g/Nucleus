@@ -26,6 +26,7 @@ import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.popup.TaoPopupHost
+import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneContext
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
@@ -391,8 +392,15 @@ internal class NativeViewOverlayController(
                 composeSceneContext =
                     TaoComposeSceneContext(
                         platformContext = ourPlatformContext,
-                        popupHost = overlayPopupHost,
-                    ),
+                    ) { density, layoutDirection, focusable, cc ->
+                        TaoPopupSceneLayer(
+                            host = overlayPopupHost,
+                            initialDensity = density,
+                            initialLayoutDirection = layoutDirection,
+                            initialFocusable = focusable,
+                            parentCompositionContext = cc,
+                        )
+                    },
                 invalidate = { popupHost.requestRedraw() },
             )
         pendingContent?.let {

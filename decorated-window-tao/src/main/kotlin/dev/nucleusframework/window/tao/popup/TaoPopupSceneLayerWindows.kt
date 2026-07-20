@@ -117,8 +117,8 @@ internal class TaoPopupSceneLayerWindows(
                 )
         if (handle == 0L) {
             panelCreateFailed = true
-            System.err.println(
-                "Nucleus: nativeCreatePanel returned 0 (parentHwnd=${host.parentHwnd}); popup layer disabled",
+            layerLogger.warning(
+                "nativeCreatePanel returned 0 (parentHwnd=${host.parentHwnd}); popup layer disabled",
             )
             return false
         }
@@ -400,5 +400,8 @@ internal class TaoPopupSceneLayerWindows(
 
     private companion object {
         private const val OFFSCREEN_OFFSET_PX: Int = 100_000
+        private val layerLogger: java.util.logging.Logger =
+            java.util.logging.Logger
+                .getLogger("dev.nucleusframework.window.tao.popup")
     }
 }

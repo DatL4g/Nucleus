@@ -32,6 +32,9 @@ package dev.nucleusframework.window.tao.dispatch
  */
 internal object LifecycleMainDispatcherPriming {
     private val debug: Boolean = System.getProperty("nucleus.tao.debug") == "true"
+    private val logger: java.util.logging.Logger =
+        java.util.logging.Logger
+            .getLogger("dev.nucleusframework.window.tao.dispatch")
 
     fun primeWithCurrentThread() {
         val thread = Thread.currentThread()
@@ -51,14 +54,10 @@ internal object LifecycleMainDispatcherPriming {
         if (debug) {
             result.fold(
                 onSuccess = {
-                    System.err.println(
-                        "[nucleus-tao] Primed $it main thread = ${thread.name} (id=${thread.id})",
-                    )
+                    logger.fine { "Primed $it main thread = ${thread.name} (id=${thread.id})" }
                 },
                 onFailure = { t ->
-                    System.err.println(
-                        "[nucleus-tao] Lifecycle priming skipped: ${t.javaClass.simpleName}: ${t.message}",
-                    )
+                    logger.fine { "Lifecycle priming skipped: ${t.javaClass.simpleName}: ${t.message}" }
                 },
             )
         }
