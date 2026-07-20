@@ -56,6 +56,15 @@ object StandalonePanelMacSmokeMain {
                     NativeMetalBridge.nativeQueuePtr(attachment),
                 )
             ctx.close()
+
+            // Position + dismissal cycle on the real NSPanel: reposition,
+            // order front, reposition again, order out. Exercises the same
+            // native entry points a production popup uses to show, follow
+            // its anchor, and dismiss.
+            PopupNativeBridge.nativeSetFrameOnScreen(panel, 50, 60, 300, 200)
+            PopupNativeBridge.nativeOrderFront(panel)
+            PopupNativeBridge.nativeSetFrameOnScreen(panel, 80, 90, 300, 200)
+            PopupNativeBridge.nativeOrderOut(panel)
             println("standalonePanelMacSmoke: OK (panel=$panel, attachment=$attachment)")
         } finally {
             if (attachment != 0L) NativeMetalBridge.nativeDetach(attachment)

@@ -74,4 +74,84 @@ class StandalonePanelLinuxNativeSmokeTest {
             PopupNativeBridgeLinux.nativeRelease(panel)
         }
     }
+
+    /**
+     * Exercises the panel lifecycle around a real X window: reposition, show,
+     * hide, event/outside-click callback installation, and the dedicated
+     * event thread (spawned by `nativeCreatePanel`, joined by
+     * `nativeRelease`, detaching itself from the JVM on exit). A crash or
+     * hang anywhere in that chain fails this test; it is the closest JVM-side
+     * proxy for popup dismissal on a real window.
+     */
+    @Test
+    fun standalonePanelLifecycleSurvivesShowMoveHideAndEventThread() {
+        if (!System.getProperty("os.name", "").lowercase().contains("linux")) return
+        assertTrue(PopupNativeBridgeLinux.isLoaded, "nucleus_tao_linux_popup failed to load")
+        if (!PopupNativeBridgeLinux.nativeIsAvailable()) {
+            println("SKIP: no X server reachable (DISPLAY unset?)")
+            return
+        }
+
+        val panel =
+            PopupNativeBridgeLinux.nativeCreatePanel(
+                xPx = -32_000,
+                yPx = -32_000,
+                widthPx = 120,
+                heightPx = 80,
+            )
+        assertNotEquals(0L, panel, "standalone panel creation failed")
+
+        try {
+            // Wire the Java listeners onto the panel's event thread (the
+            // thread itself was spawned by nativeCreatePanel and attaches
+            // itself to the JVM on its first forwarded event).
+            PopupNativeBridgeLinux.nativeSetEventCallback(
+                panel,
+                object : PopupNativeBridgeLinux.EventCallback {
+                    override fun onPointerEvent(
+                        type: Int,
+                        x: Float,
+                        y: Float,
+                        button: Int,
+                        modifiers: Int,
+                    ) = Unit
+
+                    override fun onScroll(
+                        x: Float,
+                        y: Float,
+                        dx: Float,
+                        dy: Float,
+                    ) = Unit
+
+                    override fun onKeyEvent(
+                        type: Int,
+                        vkCode: Int,
+                        codePoint: Int,
+                        modifiers: Int,
+                    ) = Unit
+                },
+            )
+            PopupNativeBridgeLinux.nativeInstallOutsideClickMonitor(
+                panel,
+                object : PopupNativeBridgeLinux.OutsideClickListener {
+                    override fun onOutsideClick(
+                        type: Int,
+                        button: Int,
+                    ) = Unit
+                },
+            )
+
+            // Position + dismissal cycle on the real window.
+            PopupNativeBridgeLinux.nativeSetFrameOnScreen(panel, 50, 60, 160, 90)
+            PopupNativeBridgeLinux.nativeSetPanelVisible(panel, true)
+            PopupNativeBridgeLinux.nativeSetFrameOnScreen(panel, 80, 90, 160, 90)
+            PopupNativeBridgeLinux.nativeSetPanelVisible(panel, false)
+
+            PopupNativeBridgeLinux.nativeUninstallOutsideClickMonitor(panel)
+        } finally {
+            // Joins the event thread; a leaked/attached thread or a stuck
+            // quit pipe hangs here and trips the test timeout.
+            PopupNativeBridgeLinux.nativeRelease(panel)
+        }
+    }
 }

@@ -287,8 +287,13 @@ internal object TaoAccessibilityRegistry {
  * Action handlers ([onClick], [onIncrement], [onDecrement]) are wired up by
  * the SemanticsTree observer once it ingests the Compose tree. The
  * controller looks them up by node id when VoiceOver invokes an action.
+ *
+ * Open (with an overridable [pushSnapshot]) so offscreen tests can capture
+ * the projected node list right where it would cross into JNI —
+ * [pushSnapshot] no-ops before [attach] (nsView == 0), which is exactly the
+ * display-less configuration those tests run in.
  */
-internal class TaoAccessibilityController(
+internal open class TaoAccessibilityController(
     private val windowHandle: Long,
 ) {
     private val actionHandlers = HashMap<Long, ActionHandlers>()
@@ -476,7 +481,7 @@ internal class TaoAccessibilityController(
      */
     fun shouldRunSync(): Boolean = !isDisposed && (pendingForcedPush || NativeTaoBridge.nativeA11yIsActive())
 
-    fun pushSnapshot(nodes: List<TaoA11yNode>) {
+    open fun pushSnapshot(nodes: List<TaoA11yNode>) {
         // Two trace points: the very first push (usually the 1-node seed —
         // it fires before the first composition has produced semantics) and
         // the first push carrying a real tree. Logging only the seed reads

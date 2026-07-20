@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao
 
 import dev.nucleusframework.window.tao.TaoWindowResizableTest
 import dev.nucleusframework.window.tao.TaoWindowScrollTest
+import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
@@ -17,8 +18,10 @@ import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 /**
  * Programmatic, reflection-free registry of the stage-1 offscreen battery so
  * it can run inside a GraalVM native image (JUnit discovery needs reflection
- * metadata; direct calls need none). GENERATED from the @Test methods — keep
- * in sync when adding suites (see the generation script in the PR).
+ * metadata; direct calls need none). Kept in sync with the @Test methods by
+ * [TaoSceneTestBatteryDriftTest], which fails the ordinary JUnit run when an
+ * entry is missing, stale, or a new test class is neither registered here
+ * nor declared JVM-only.
  */
 public object TaoSceneTestBattery {
     public class CaseResult(
@@ -213,6 +216,16 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneSemanticsTest: clickable nodes expose an onClick action") {
             TaoSceneSemanticsTest().`clickable nodes expose an onClick action`()
+        }
+
+        run("TaoA11yProjectionTest: compose semantics are projected into the a11y node snapshot") {
+            TaoA11yProjectionTest().`compose semantics are projected into the a11y node snapshot`()
+        }
+        run("TaoA11yProjectionTest: semantics changes propagate into the next snapshot") {
+            TaoA11yProjectionTest().`semantics changes propagate into the next snapshot`()
+        }
+        run("TaoA11yProjectionTest: projected snapshot round-trips through the v7 wire format") {
+            TaoA11yProjectionTest().`projected snapshot round-trips through the v7 wire format`()
         }
 
         return results

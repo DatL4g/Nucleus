@@ -514,6 +514,9 @@ internal class TaoSceneTestScope(
 
     fun semanticsRoots(): List<SemanticsNode> = owners.map { it.rootSemanticsNode }
 
+    /** The captured owners themselves — for tests that drive [PlatformContext.SemanticsOwnerListener] consumers. */
+    fun semanticsOwners(): List<SemanticsOwner> = owners.toList()
+
     fun allNodes(): List<SemanticsNode> {
         fun collect(
             node: SemanticsNode,
