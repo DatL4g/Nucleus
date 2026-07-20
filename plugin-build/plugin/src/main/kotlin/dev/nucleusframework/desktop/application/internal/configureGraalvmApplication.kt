@@ -25,6 +25,7 @@ import dev.nucleusframework.internal.utils.uppercaseFirstChar
 import org.gradle.api.DefaultTask
 import org.gradle.api.Project
 import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.file.FileCollection
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Copy
@@ -1981,10 +1982,13 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
  * Third-party JAR resources are intentionally excluded — they are covered by the L1/L2 metadata
  * and static analysis.
  *
- * Resolved eagerly at configuration time so only plain [File] paths are captured downstream
- * (config-cache safe). Sibling projects that are not yet evaluated simply contribute nothing.
+ * Each entry is a [SourceDirectorySet.getSourceDirectories] file collection, which carries the
+ * task dependencies of the directories it contains (e.g. Compose's generated resource dirs are
+ * outputs of `assembleDesktopMainResources` / `generateAppProperties`). Wiring these — rather
+ * than plain [File] paths — lets Gradle infer the producing tasks automatically. Sibling
+ * projects that are not yet evaluated simply contribute nothing.
  */
-private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: String?): Set<File> {
+private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: String?): List<FileCollection> {
     val projects = linkedSetOf(project)
     runtimeConfigName?.let { project.configurations.findByName(it) }
         ?.allDependencies
@@ -1992,12 +1996,12 @@ private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: 
         ?.forEach { dep ->
             runCatching { project.project(dep.path) }.getOrNull()?.let { projects.add(it) }
         }
-    return projects.flatMapTo(linkedSetOf()) { resourceSrcDirsOf(it) }
+    return projects.flatMap { resourceSrcDirsOf(it) }
 }
 
-/** Resource source directories declared by a project, across KMP JVM, Kotlin/JVM and plain Java. */
-private fun resourceSrcDirsOf(p: Project): Set<File> {
-    val dirs = linkedSetOf<File>()
+/** Resource source directory collections declared by a project, across KMP JVM, Kotlin/JVM and plain Java. */
+private fun resourceSrcDirsOf(p: Project): List<FileCollection> {
+    val collections = mutableListOf<FileCollection>()
 
     // Kotlin Multiplatform: resources of every JVM target's main compilation (and its
     // associated/depended-on source sets, e.g. commonMain).
@@ -2007,14 +2011,14 @@ private fun resourceSrcDirsOf(p: Project): Set<File> {
             ?.filter { it.platformType == KotlinPlatformType.jvm }
             ?.forEach { target ->
                 target.compilations.findByName("main")?.allKotlinSourceSets?.forEach { sourceSet ->
-                    dirs.addAll(sourceSet.resources.srcDirs)
+                    collections.add(sourceSet.resources.sourceDirectories)
                 }
             }
     }
 
     // Kotlin/JVM single-target projects.
     runCatching {
-        p.kotlinJvmExtOrNull?.sourceSets?.findByName("main")?.resources?.srcDirs?.let(dirs::addAll)
+        p.kotlinJvmExtOrNull?.sourceSets?.findByName("main")?.resources?.sourceDirectories?.let(collections::add)
     }
 
     // Plain Java projects (or the java plugin applied alongside Kotlin).
@@ -2024,9 +2028,9 @@ private fun resourceSrcDirsOf(p: Project): Set<File> {
             ?.sourceSets
             ?.findByName("main")
             ?.resources
-            ?.srcDirs
-            ?.let(dirs::addAll)
+            ?.sourceDirectories
+            ?.let(collections::add)
     }
 
-    return dirs
+    return collections
 }
