@@ -18,7 +18,6 @@ import org.gradle.api.tasks.Optional
 import org.gradle.work.DisableCachingByDefault
 import java.io.File
 import java.io.Writer
-import java.util.jar.JarFile
 import kotlin.collections.LinkedHashMap
 
 @DisableCachingByDefault(because = "Depends on external ProGuard tool")
@@ -115,12 +114,6 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
             }
         }
 
-        // Harvest consumer ProGuard rules shipped by dependencies under `META-INF/proguard/`.
-        // Unlike R8, plain ProGuard does not read these from -injars automatically, so library
-        // rules (e.g. Nucleus modules keeping ServiceLoader factories, kotlinx-coroutines) would
-        // otherwise be silently ignored. Extract them and feed them in as -include files.
-        val consumerRuleFiles = extractConsumerProguardRules(inputToOutputJars.keys)
-
         jarsConfigurationFile.ioFile.bufferedWriter().use { writer ->
             val toSingleOutputJar = joinOutputJars.orNull == true
             for ((input, output) in inputToOutputJars.entries) {
@@ -159,7 +152,7 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
                 sequenceOf(
                     jarsConfigurationFile.ioFile,
                     defaultComposeRulesFile.ioFile,
-                ) + consumerRuleFiles.asSequence() + configurationFiles.files.asSequence()
+                ) + configurationFiles.files.asSequence()
             for (configFile in includeFiles.filterNotNull()) {
                 writer.writeLn("-include '${configFile.normalizedPath()}'")
             }
@@ -190,41 +183,5 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
     private fun Writer.writeLn(s: String) {
         write(s)
         write("\n")
-    }
-
-    /**
-     * Extracts consumer ProGuard rule files bundled by dependencies under `META-INF/proguard/`
-     * into the working directory and returns them, so they can be passed to ProGuard via
-     * `-include`. Mirrors R8's automatic handling of library rules, which plain ProGuard lacks.
-     *
-     * Output names are prefixed with the originating jar to avoid collisions between libraries
-     * that ship a rule file of the same leaf name (e.g. `coroutines.pro`).
-     */
-    private fun extractConsumerProguardRules(jars: Collection<File>): List<File> {
-        val outputDir = workingDir.get().asFile.resolve("consumerRules")
-        fileOperations.clearDirs(outputDir)
-
-        val extracted = mutableListOf<File>()
-        for (jar in jars) {
-            if (!jar.isFile || !jar.name.endsWith(".jar", ignoreCase = true)) continue
-            JarFile(jar).use { jarFile ->
-                for (entry in jarFile.entries()) {
-                    if (entry.isDirectory) continue
-                    val name = entry.name
-                    if (!name.startsWith("META-INF/proguard/")) continue
-
-                    val outFile = outputDir.resolve("${jar.nameWithoutExtension}-${name.substringAfterLast('/')}")
-                    jarFile.getInputStream(entry).use { input ->
-                        outFile.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    extracted.add(outFile)
-                }
-            }
-        }
-
-        if (extracted.isNotEmpty()) {
-            logger.info("ProGuard: applying ${extracted.size} consumer rule file(s) from dependencies")
-        }
-        return extracted
     }
 }
