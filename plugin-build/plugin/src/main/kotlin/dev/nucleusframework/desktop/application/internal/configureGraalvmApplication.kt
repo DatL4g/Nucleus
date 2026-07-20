@@ -13,6 +13,8 @@ import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPl
 import dev.nucleusframework.desktop.application.tasks.AbstractElectronBuilderPackageTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNotarizationTask
 import dev.nucleusframework.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
+import dev.nucleusframework.internal.kotlinJvmExtOrNull
+import dev.nucleusframework.internal.mppExtOrNull
 import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentArch
@@ -21,6 +23,10 @@ import dev.nucleusframework.internal.utils.executableName
 import dev.nucleusframework.internal.utils.javaExecutable
 import dev.nucleusframework.internal.utils.uppercaseFirstChar
 import org.gradle.api.DefaultTask
+import org.gradle.api.Project
+import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.file.FileCollection
+import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Delete
@@ -30,6 +36,7 @@ import org.gradle.api.tasks.TaskProvider
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
+import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 import java.io.File
 
 private val graalvmDefaultJvmArgs: List<String> =
@@ -640,6 +647,34 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 }
             }
 
+    // ── Project resource auto-inclusion ──
+    // The app's own resources live in the uber JAR but native-image only embeds *registered*
+    // resources. Dynamic getResourceAsStream(computedPath) calls cannot be resolved statically,
+    // so resources loaded by a computed path (e.g. markdown listed in an index) are silently
+    // dropped. Register the project's resource roots as globs, mirroring the JVM distribution.
+    // Resource directories are resolved eagerly at configuration time (config-cache safe: only
+    // File paths are captured, not Project references).
+    val projectResourceMetadataDir = appTmpDir.map { it.dir("graalvm/projectResources") }
+    val generateProjectResourceMetadata =
+        if (graalvm.autoIncludeResources.get()) {
+            val resolvedResourceDirs = collectProjectResourceDirs(runtimeCfg?.name)
+            project.tasks
+                .register(
+                    "generateGraalvmProjectResourceMetadata",
+                    GenerateProjectResourceMetadataTask::class.java,
+                ).apply {
+                    configure { task ->
+                        task.description =
+                            "Register the project's own resources for inclusion in the GraalVM native image"
+                        task.group = NUCLEUS_TASK_GROUP
+                        task.resourceDirs.from(resolvedResourceDirs)
+                        task.outputDir.set(projectResourceMetadataDir)
+                    }
+                }
+        } else {
+            null
+        }
+
     // ── Cleanup manual metadata ──
     // Removes entries from the project's reachability-metadata.json that are already
     // covered by L1 (library JARs), L2 (Oracle repo), L3 (platform), or static analysis.
@@ -697,6 +732,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             dependsOn(resolveReachabilityMetadata)
             dependsOn(analyzeStaticMetadata)
             dependsOn(filterLibraryMetadata)
+            generateProjectResourceMetadata?.let { dependsOn(it) }
             compileStubs?.let { dependsOn(it) }
             generateWindowsResources?.let { dependsOn(it) }
 
@@ -744,6 +780,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedLibraryMetadataDir = libraryMetadataDir.get().asFile
             val resolvedPlatformMetadataDir = platformMetadataDir.get().asFile
             val resolvedStaticMetadataDir = staticMetadataDir.get().asFile
+            val resolvedProjectResourceMetadataDir =
+                if (generateProjectResourceMetadata != null) projectResourceMetadataDir.get().asFile else null
             val resolvedMetadataRepoDirsFile = metadataRepoDirsFile.get().asFile
             val resolvedBuildArgs = graalvm.buildArgs.get()
             // Default: portable baseline everywhere, except macOS on Apple Silicon where the
@@ -899,6 +937,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // detected from bytecode scanning of runtime classpath JARs)
                         if (resolvedStaticMetadataDir.exists()) {
                             add("-H:ConfigurationFileDirectories=$resolvedStaticMetadataDir")
+                        }
+
+                        // Include the project's own resources (globs generated from its resource roots)
+                        if (resolvedProjectResourceMetadataDir != null && resolvedProjectResourceMetadataDir.exists()) {
+                            add("-H:ConfigurationFileDirectories=$resolvedProjectResourceMetadataDir")
                         }
 
                         // Include metadata from Oracle Reachability Metadata Repository
@@ -1927,4 +1970,67 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
             }
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Project resource discovery
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Resolves the resource source directories that belong to the project itself: its own source
+ * sets plus those of every `project(...)` module dependency on the given runtime configuration.
+ * Third-party JAR resources are intentionally excluded — they are covered by the L1/L2 metadata
+ * and static analysis.
+ *
+ * Each entry is a [SourceDirectorySet.getSourceDirectories] file collection, which carries the
+ * task dependencies of the directories it contains (e.g. Compose's generated resource dirs are
+ * outputs of `assembleDesktopMainResources` / `generateAppProperties`). Wiring these — rather
+ * than plain [File] paths — lets Gradle infer the producing tasks automatically. Sibling
+ * projects that are not yet evaluated simply contribute nothing.
+ */
+private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: String?): List<FileCollection> {
+    val projects = linkedSetOf(project)
+    runtimeConfigName?.let { project.configurations.findByName(it) }
+        ?.allDependencies
+        ?.withType(ProjectDependency::class.java)
+        ?.forEach { dep ->
+            runCatching { project.project(dep.path) }.getOrNull()?.let { projects.add(it) }
+        }
+    return projects.flatMap { resourceSrcDirsOf(it) }
+}
+
+/** Resource source directory collections declared by a project, across KMP JVM, Kotlin/JVM and plain Java. */
+private fun resourceSrcDirsOf(p: Project): List<FileCollection> {
+    val collections = mutableListOf<FileCollection>()
+
+    // Kotlin Multiplatform: resources of every JVM target's main compilation (and its
+    // associated/depended-on source sets, e.g. commonMain).
+    runCatching {
+        p.mppExtOrNull
+            ?.targets
+            ?.filter { it.platformType == KotlinPlatformType.jvm }
+            ?.forEach { target ->
+                target.compilations.findByName("main")?.allKotlinSourceSets?.forEach { sourceSet ->
+                    collections.add(sourceSet.resources.sourceDirectories)
+                }
+            }
+    }
+
+    // Kotlin/JVM single-target projects.
+    runCatching {
+        p.kotlinJvmExtOrNull?.sourceSets?.findByName("main")?.resources?.sourceDirectories?.let(collections::add)
+    }
+
+    // Plain Java projects (or the java plugin applied alongside Kotlin).
+    runCatching {
+        p.extensions
+            .findByType(JavaPluginExtension::class.java)
+            ?.sourceSets
+            ?.findByName("main")
+            ?.resources
+            ?.sourceDirectories
+            ?.let(collections::add)
+    }
+
+    return collections
 }
