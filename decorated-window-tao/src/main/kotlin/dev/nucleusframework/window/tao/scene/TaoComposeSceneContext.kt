@@ -7,34 +7,37 @@ import androidx.compose.ui.scene.ComposeSceneContext
 import androidx.compose.ui.scene.ComposeSceneLayer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
-import dev.nucleusframework.window.tao.popup.TaoPopupHost
-import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer
 
 /**
- * `ComposeSceneContext` used by macOS overlay scenes that must lift
- * Compose `Popup` / `DropdownMenu` / `Tooltip` content above embedded
- * AppKit views. The main window scene stays fully Compose-rendered via
- * `CanvasLayersComposeScene`, matching Windows and Linux.
+ * `ComposeSceneContext` that lifts Compose `Popup` / `DropdownMenu` /
+ * `Tooltip` content into a native popup window (an NSPanel on macOS, a Tao
+ * popup on Linux, a child HWND on Windows) instead of drawing it inside the
+ * host's own render target.
+ *
+ * The three platforms used to have one context class each, differing only in
+ * the concrete `TaoPopupSceneLayer*` / `TaoPopupHost*` types they wired
+ * together. Those types share no common supertype, so instead of a shared
+ * base this context is parameterised by a [layerFactory] closure: the caller
+ * supplies the platform layer, and the context stays platform-agnostic.
  *
  * Threading: `createLayer` is invoked from the overlay scene's composition,
- * which runs on the macOS main thread.
+ * which runs on the platform's UI thread (macOS main thread / Tao GTK loop /
+ * Windows message pump).
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoComposeSceneContext(
     override val platformContext: PlatformContext,
-    private val popupHost: TaoPopupHost,
+    private val layerFactory: (
+        density: Density,
+        layoutDirection: LayoutDirection,
+        focusable: Boolean,
+        compositionContext: CompositionContext,
+    ) -> ComposeSceneLayer,
 ) : ComposeSceneContext {
     override fun createLayer(
         density: Density,
         layoutDirection: LayoutDirection,
         focusable: Boolean,
         compositionContext: CompositionContext,
-    ): ComposeSceneLayer =
-        TaoPopupSceneLayer(
-            host = popupHost,
-            initialDensity = density,
-            initialLayoutDirection = layoutDirection,
-            initialFocusable = focusable,
-            parentCompositionContext = compositionContext,
-        )
+    ): ComposeSceneLayer = layerFactory(density, layoutDirection, focusable, compositionContext)
 }

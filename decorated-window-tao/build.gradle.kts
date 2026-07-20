@@ -42,6 +42,16 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
+apiValidation {
+    // TaoTransferableAccess lives in androidx.compose.ui.draganddrop purely to
+    // reach Compose's `internal` AwtDragAndDropTransferable through Java
+    // friend-package access (Java ignores Kotlin `internal`). It is a Nucleus
+    // implementation detail, not part of our public ABI — keep it out of the
+    // frozen api/decorated-window-tao.api surface. TaoTransferableAccessGuardTest
+    // fails if Compose ever renames/removes the internal type behind it.
+    ignoredPackages.add("androidx.compose.ui.draganddrop")
+}
+
 kotlin {
     // JetBrains convention (kotlin-desktop-toolkit): every declaration must
     // state its visibility explicitly, so the public API surface can only

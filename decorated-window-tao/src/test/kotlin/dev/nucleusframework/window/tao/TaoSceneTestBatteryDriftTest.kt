@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao
 
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
 import dev.nucleusframework.window.tao.dnd.TaoSyntheticDndTest
+import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
@@ -59,6 +60,7 @@ class TaoSceneTestBatteryDriftTest {
             StandalonePanelLinuxNativeSmokeTest::class.java to "loads the Linux native popup chain",
             TaoRuntimeResizableSmokeTest::class.java to "opt-in headful smoke (NUCLEUS_TAO_SMOKE=1)",
             TaoSyntheticDndTest::class.java to "pins an AWT DropTarget; the no-AWT image never initialises AWT",
+            TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
         )
 
