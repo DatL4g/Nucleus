@@ -7,14 +7,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ProvidableCompositionLocal
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
@@ -27,7 +25,6 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.DecoratedWindowState
@@ -246,7 +243,6 @@ internal fun ApplicationScope.openDecoratedWindow(
             alwaysOnTop,
             maximized,
             isDialog,
-            undecorated,
             icon,
             minimumSize,
             onCloseRequest,
@@ -472,7 +468,6 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     alwaysOnTop: Boolean,
     maximized: Boolean,
     isDialog: Boolean,
-    undecorated: Boolean,
     icon: Painter?,
     minimumSize: DpSize?,
     onCloseRequest: () -> Unit,
@@ -487,9 +482,6 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
-    // GTK-style CSD drop shadow around the visible frame (skipped for
-    // borderless ghost windows; popups are filtered in the host itself).
-    host.decorationShadowEnabled = !undecorated
 
     // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────
     // Same SemanticsObserver pipeline as macOS / Windows. The controller
@@ -562,23 +554,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                     remember {
                         mutableStateOf(0)
                     }
-                // Inset the whole UI by the CSD shadow margins — the shadow
-                // itself is painted natively-themed by the host's render
-                // loop in the ring this padding frees up. Zero when the
-                // shadow is inactive or the window is maximized/fullscreen.
-                val shadowInsets by host.windowShadow.insetsState
                 CompositionLocalProvider(
                     dev.nucleusframework.window.LocalModalDialogCount provides modalCount,
                 ) {
-                    Box(
-                        modifier =
-                            Modifier.fillMaxSize().absolutePadding(
-                                left = shadowInsets.left.dp,
-                                top = shadowInsets.top.dp,
-                                right = shadowInsets.right.dp,
-                                bottom = shadowInsets.bottom.dp,
-                            ),
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         FullscreenOverlayHost(
                             holder = fullscreenHolder,
                             isFullscreen = stateHolder.value.isFullscreen,
@@ -617,47 +596,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
             }
         }
         val (initialW, initialH) = initialLinuxSize(window, w, h, maximized)
-        var surfaceW = initialW
-        var surfaceH = initialH
-        val shadow = host.windowShadow
-        if (shadow.isActive) {
-            // Grow the surface by the shadow margins so the *visible* frame
-            // keeps the requested size — the same bookkeeping GTK does in
-            // gtk_window_update_csd_size. Declaring the extents before the
-            // first map lets the WM position/tile with the visible frame
-            // from the very first frame.
-            val s = window.scaleFactor
-            val marginW = shadow.marginLeft + shadow.marginRight
-            val marginH = shadow.marginTop + shadow.marginBottom
-            val grownWLog = (initialW / s).roundToInt() + marginW
-            val grownHLog = (initialH / s).roundToInt() + marginH
-            // X11: `_GTK_FRAME_EXTENTS` is only a declaration — grow the X
-            // window ourselves (while maximized this lands in the WM's
-            // saved "normal" geometry, used on restore). On Wayland GDK's
-            // set_shadow_width reconfigures the surface itself to keep the
-            // window geometry stable.
-            if (host.isX11) {
-                window.setInnerSize(grownWLog.toDouble(), grownHLog.toDouble())
-            }
-            shadow.reconcile(
-                suspended = maximized,
-                surfaceWLogical = grownWLog,
-                surfaceHLogical = grownHLog,
-            )
-            if (!maximized) {
-                surfaceW = (grownWLog * s).roundToInt()
-                surfaceH = (grownHLog * s).roundToInt()
-            }
-            // Margins participate in the size hints on both backends (GDK
-            // Wayland subtracts them again when emitting the xdg min size).
-            minimumSize?.let {
-                window.setMinimumSize(
-                    it.width.value.toDouble() + marginW,
-                    it.height.value.toDouble() + marginH,
-                )
-            }
-        }
-        host.onResized(surfaceW, surfaceH)
+        host.onResized(initialW, initialH)
         // First paint must happen *after* the surface is shown:
         //  - X11: a pre-show synchronous render leaves the GLX backbuffer
         //    invalidated by the subsequent map, so the dialog stayed black
