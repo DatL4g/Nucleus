@@ -729,6 +729,10 @@ public class TaoWindow internal constructor(
             TaoEventCode.MINIMIZED -> {
                 val minimized = a != 0
                 isMinimized = minimized
+                // On restore, re-kick the render loop. While minimized the scene
+                // host gates frames out before the frame clock ticks, so Compose
+                // animations are parked and nothing re-arms a redraw on its own.
+                if (!minimized) requestRedraw()
                 minimizedListeners.forEach { it.invoke(minimized) }
             }
             TaoEventCode.CURSOR_MOVED -> pointerMoveListener?.invoke(a, b)
