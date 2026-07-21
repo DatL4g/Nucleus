@@ -481,6 +481,11 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
+    // GTK-style CSD drop shadow (approach B — dedicated wl_subsurface). On by
+    // default; the host gates it to Wayland non-popup windows (X11 stays flat)
+    // and it degrades to no-op if the compositor lacks wl_shm / an RGBA visual.
+    // Kill switch: NUCLEUS_TAO_LINUX_SHADOW=0. See docs/linux-csd-shadow-subsurface.md.
+    host.decorationShadowEnabled = System.getenv("NUCLEUS_TAO_LINUX_SHADOW") != "0"
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────

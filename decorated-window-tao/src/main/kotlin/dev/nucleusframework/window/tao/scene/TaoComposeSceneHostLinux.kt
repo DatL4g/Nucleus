@@ -36,6 +36,7 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
+import dev.nucleusframework.window.tao.deco.TaoWindowShadowLinux
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
 import dev.nucleusframework.window.tao.event.taoKeyEvent
@@ -319,8 +320,24 @@ internal class TaoComposeSceneHostLinux(
     /** True while the EGL attachment is torn down because the window is hidden. */
     private var gpuSuspended: Boolean = false
 
+    /**
+     * Opt-in GTK-style CSD drop shadow (approach B — dedicated wl_subsurface,
+     * Wayland only). Set by [dev.nucleusframework.window.tao.DecoratedWindow]
+     * before [attach]. No-op on X11 / popups.
+     */
+    var decorationShadowEnabled: Boolean = false
+
+    /**
+     * Drop-shadow controller: measures theme margins, tracks the focus
+     * cross-fade, and produces the nine-slice shadow tile that
+     * [commitShadow] uploads into the native shadow subsurface. Inactive
+     * (all calls no-op) until [initShadow] succeeds on Wayland.
+     */
+    val windowShadow = TaoWindowShadowLinux(::requestRedrawCoalesced)
+
     fun attach() {
         attachGpu()
+        initShadow()
 
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val dndManager =
@@ -1115,8 +1132,17 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onFocusChanged(focused: Boolean) {
-        if (focused) compositorDragActive = false
+        // NB: do NOT clear compositorDragActive on focus-in here. GNOME toggles
+        // keyboard focus *during* a compositor resize/move grab, and clearing on
+        // that mid-grab focus-in would unmask the following focus-out and flip
+        // the shadow to backdrop for the rest of the drag. The grab-ended signal
+        // is real pointer input resuming (see [onPointerMove] / [onPointerButton]),
+        // which the compositor withholds for the whole grab.
         windowInfo.isWindowFocused = focused
+        // Kick the 200ms normal↔backdrop shadow cross-fade (no-op when the
+        // shadow is inactive). Focus loss during a compositor resize/move grab
+        // keeps the focused shadow, like native GTK CSD windows.
+        windowShadow.onFocusChanged(focused || compositorDragActive)
     }
 
     private fun updateWindowInfoSize() {
@@ -1225,6 +1251,10 @@ internal class TaoComposeSceneHostLinux(
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
 
+        // Push the drop shadow (independent wl_shm subsurface) after the content
+        // swap was requested — no-op unless the shadow is active.
+        commitShadow()
+
         // Drain popup-layer renderers after the host context was released.
         // Each layer binds its own private EGL context on this thread (the
         // swap thread holds the *host* context on its own thread — EGL allows
@@ -1235,6 +1265,75 @@ internal class TaoComposeSceneHostLinux(
             val snapshot = popupRenderers.values.toList()
             for (render in snapshot) render()
         }
+    }
+
+    /**
+     * Arms the drop-shadow controller once the window is attached (Wayland
+     * only). The shadow rides a dedicated subsurface at a *negative* offset
+     * around the content — the content subsurface stays at (0,0), so input and
+     * resize are untouched. No WM margin / surface grow. Pixels are pushed
+     * per-frame by [commitShadow]. No-op on X11, popups, or when disabled.
+     */
+    private fun initShadow() {
+        if (!decorationShadowEnabled || window.isPopup || attachedKind != 2) return
+        val gtkPtr = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+        if (gtkPtr == 0L) return
+        val radius = cornerRadiusPx.toFloat()
+        val armed =
+            windowShadow.initialize(
+                gtkWindowPtr = gtkPtr,
+                kind = attachedKind,
+                radiusTopLeft = radius,
+                radiusTopRight = radius,
+                radiusBottomRight = radius,
+                radiusBottomLeft = radius,
+            )
+        if (armed) requestRedrawCoalesced()
+    }
+
+    /**
+     * Uploads the current shadow to the native shadow subsurface. Called each
+     * rendered frame after the content swap; cheap when nothing changed (the
+     * controller reuses its cached tile and the native buffer is only
+     * reallocated on a size change). Hides the shadow while
+     * maximized/fullscreen/tiled.
+     */
+    private fun commitShadow() {
+        if (!windowShadow.isActive || attachmentHandle == 0L) return
+        // A compositor resize/move grab makes GTK report focus-out for the whole
+        // drag, but a native GTK CSD window keeps its focused shadow. The
+        // onFocusChanged masking can still let an edge through (event ordering),
+        // so re-assert focused every frame while the grab is live — idempotent
+        // once already targeting focused.
+        if (compositorDragActive) windowShadow.onFocusChanged(true)
+        val suspended = window.isMaximized || window.isFullscreen || window.isTiled
+        windowShadow.reconcile(suspended)
+        val insets = windowShadow.effectiveInsets
+        if (insets.isZero) {
+            NativeTaoEglBridge.nativeShadowHide(attachmentHandle)
+            return
+        }
+        val s = if (scale > 0f) scale else 1f
+        val tile = windowShadow.currentTile(s, System.nanoTime()) ?: return
+        // Shadow-inclusive surface size = visible content + margins (logical px),
+        // positioned at the negative margin offset so it rings the content.
+        val contentLogicalW = (widthPx / s).roundToInt()
+        val contentLogicalH = (heightPx / s).roundToInt()
+        NativeTaoEglBridge.nativeShadowCommit(
+            attachmentHandle,
+            tile.pixels,
+            tile.width,
+            tile.height,
+            tile.sliceLeft,
+            tile.sliceTop,
+            tile.sliceRight,
+            tile.sliceBottom,
+            contentLogicalW + insets.left + insets.right,
+            contentLogicalH + insets.top + insets.bottom,
+            s.roundToInt().coerceAtLeast(1),
+            -insets.left,
+            -insets.top,
+        )
     }
 
     /**
@@ -1325,6 +1424,15 @@ internal class TaoComposeSceneHostLinux(
         val yPx = bFixed / 1024f
         lastPointerX = xPx
         lastPointerY = yPx
+        // Real pointer motion resuming means the compositor released any
+        // resize/move grab — that's our grab-ended signal (the compositor
+        // withholds motion for the whole grab), so drop the focus mask here
+        // rather than on focus-in, which can toggle mid-grab. See
+        // [onFocusChanged].
+        if (compositorDragActive) {
+            compositorDragActive = false
+            windowShadow.onFocusChanged(windowInfo.isWindowFocused)
+        }
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
 
@@ -1817,6 +1925,7 @@ internal class TaoComposeSceneHostLinux(
 
     fun detach() {
         shutdownA11yScheduler()
+        windowShadow.dispose()
         textToolbar.hide()
         if (dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded &&
             window.handle != 0L
