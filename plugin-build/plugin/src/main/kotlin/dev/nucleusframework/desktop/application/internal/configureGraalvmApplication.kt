@@ -160,6 +160,19 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             }
         }
 
+    // ── Quick build mode (dev) ──
+    // `runGraalvmNative` is the fast dev loop: it forces native-image's quick-build mode (`-Ob`),
+    // which skips most optimizations and slashes compile time, and skips the distributable-only
+    // packaging steps (strip/codesign/vtool). `runGraalvmNativeDistributable` (and the create/
+    // package tasks) use the configured optimization and full packaging. Detected from the invoked
+    // task name (like PGO instrument above) and tracked as a compile input so switching between
+    // quick and distributable re-compiles instead of serving the other mode's cached binary.
+    val quickBuildRunTaskName = "run${buildType.classifier.uppercaseFirstChar()}GraalvmNative"
+    val quickBuildRequested =
+        project.gradle.startParameter.taskNames.any {
+            it.substringAfterLast(':').equals(quickBuildRunTaskName, ignoreCase = true)
+        }
+
     // ── Uber JAR (reuse existing task) ──
 
     // We need the uber JAR from the existing pipeline (respects build type classifier)
@@ -814,7 +827,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         NativeImageMarch.COMPATIBILITY
                     }
                 ).flag
-            val resolvedOptimizationFlag = graalvm.optimization.orNull?.flag
+            // Quick build (`-Ob`) wins over the configured optimization for the fast dev run.
+            val resolvedQuickBuild = quickBuildRequested
+            inputs.property("quickBuild", resolvedQuickBuild)
+            val resolvedOptimizationFlag =
+                if (resolvedQuickBuild) "-Ob" else graalvm.optimization.orNull?.flag
             val resolvedAllCharsets = graalvm.allCharsets.get()
             val resolvedMlProfileInference = graalvm.mlProfileInference.get()
             val resolvedPgoMode = pgoMode
@@ -881,6 +898,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // buildArgs overrides it (native-image honors the last -O* flag).
                         if (resolvedOptimizationFlag != null) {
                             add(resolvedOptimizationFlag)
+                        }
+                        if (resolvedQuickBuild) {
+                            logger.lifecycle("Quick build mode (-Ob): fast dev compile, not for distribution")
                         }
 
                         // Embed all JDK charsets when the app needs legacy encodings.
@@ -1127,11 +1147,46 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             }
         }
 
+    // Task surface aligned with the JVM distribution pipeline:
+    //   createGraalvmNativeDistributable            ~ createDistributable
+    //   runGraalvmNativeDistributable               ~ runDistributable
+    //   packageGraalvmNativeDistributionForCurrentOS ~ packageDistributionForCurrentOS
+    //   runGraalvmNative                            ~ run (fast dev loop, -Ob quick build)
+    // `packageGraalvmNative` is the internal task that actually assembles the app folder
+    // (binary + skiko/AWT dylibs + icons + strip/codesign); the public tasks below wrap it.
+
+    tasks.register<DefaultTask>(
+        taskNameAction = "create",
+        taskNameObject = "graalvmNativeDistributable",
+    ) {
+        description = "Create the GraalVM native app distributable (self-contained folder) for the current OS"
+        dependsOn(packageGraalvmNative)
+    }
+
+    tasks.register<DefaultTask>(
+        taskNameAction = "package",
+        taskNameObject = "graalvmNativeDistributionForCurrentOS",
+    ) {
+        description = "Package the GraalVM native app distribution for the current OS"
+        dependsOn(packageGraalvmNative)
+    }
+
+    tasks.register<Exec>(
+        taskNameAction = "run",
+        taskNameObject = "graalvmNativeDistributable",
+    ) {
+        description = "Build and run the GraalVM native app distributable (configured optimization, full packaging)"
+        dependsOn(packageGraalvmNative)
+
+        executable = packagedBinaryFile.get().asFile.absolutePath
+        args = app.args
+    }
+
     tasks.register<Exec>(
         taskNameAction = "run",
         taskNameObject = "graalvmNative",
     ) {
-        description = "Build and run the GraalVM native image"
+        description = "Build and run the GraalVM native image in quick-build mode (-Ob) for fast dev iteration"
         dependsOn(packageGraalvmNative)
 
         executable = packagedBinaryFile.get().asFile.absolutePath
