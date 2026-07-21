@@ -11,9 +11,6 @@
     ],
     "resources": [
         { "glob": "META-INF/services/javax.sound.sampled.spi.MixerProvider" },
-        { "glob": "**/*.svg" },
-        { "glob": "**/*.ttf" },
-        { "glob": "**/*.otf" },
         { "glob": "nucleus/**" },
         { "glob": "META-INF/services/**" },
         { "glob": "composeResources/**" }
