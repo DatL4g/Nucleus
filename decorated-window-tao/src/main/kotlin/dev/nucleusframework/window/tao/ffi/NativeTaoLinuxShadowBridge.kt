@@ -66,35 +66,6 @@ internal object NativeTaoLinuxShadowBridge {
     ): IntArray?
 
     /**
-     * Declares the invisible shadow margin (logical px) to the WM —
-     * GTK's own `gdk_window_set_shadow_width()`: `_GTK_FRAME_EXTENTS` on
-     * X11, window-geometry margins on Wayland (where GDK also grows the
-     * surface to keep the visible geometry stable). Zeros clear it.
-     */
-    @JvmStatic
-    external fun nativeShadowApply(
-        gtkWindowPtr: Long,
-        marginL: Int,
-        marginT: Int,
-        marginR: Int,
-        marginB: Int,
-    )
-
-    /**
-     * Restricts the window input region to the given logical rect (visible
-     * frame + 12 px resize ring, GTK4's `RESIZE_HANDLE_SIZE`) so clicks in
-     * the outer shadow fall through. `width < 0` resets to full surface.
-     */
-    @JvmStatic
-    external fun nativeShadowSetInputShape(
-        gtkWindowPtr: Long,
-        x: Int,
-        y: Int,
-        width: Int,
-        height: Int,
-    )
-
-    /**
      * Cache key for rendered shadow images: `"<gtk-theme-name>|<dark>"`.
      * Changes when the user switches theme or toggles dark preference.
      */
