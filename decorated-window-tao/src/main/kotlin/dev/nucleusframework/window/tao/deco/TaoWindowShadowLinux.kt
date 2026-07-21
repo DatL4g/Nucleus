@@ -362,8 +362,7 @@ internal class TaoWindowShadowLinux(
         return tile
     }
 
-    private fun CachedTile.toTile() =
-        ShadowTile(pixels, width, height, sliceLeft, sliceTop, sliceRight, sliceBottom)
+    private fun CachedTile.toTile() = ShadowTile(pixels, width, height, sliceLeft, sliceTop, sliceRight, sliceBottom)
 
     /**
      * Per-pixel alpha-composited blend of two canonical tiles by [fraction]

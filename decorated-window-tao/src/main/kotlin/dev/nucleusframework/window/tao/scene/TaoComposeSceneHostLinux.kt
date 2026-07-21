@@ -36,6 +36,7 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
+import dev.nucleusframework.window.tao.deco.TaoWindowShadowLinux
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
 import dev.nucleusframework.window.tao.event.taoKeyEvent
@@ -332,7 +333,7 @@ internal class TaoComposeSceneHostLinux(
      * [commitShadow] uploads into the native shadow subsurface. Inactive
      * (all calls no-op) until [initShadow] succeeds on Wayland.
      */
-    val windowShadow = dev.nucleusframework.window.tao.deco.TaoWindowShadowLinux(::requestRedrawCoalesced)
+    val windowShadow = TaoWindowShadowLinux(::requestRedrawCoalesced)
 
     fun attach() {
         attachGpu()
