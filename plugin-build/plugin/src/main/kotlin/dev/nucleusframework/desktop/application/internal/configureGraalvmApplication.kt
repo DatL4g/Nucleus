@@ -805,6 +805,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedPgoMode = pgoMode
             val resolvedPgoEnabled = graalvm.pgo.enabled.get()
             val resolvedPgoProfile = pgoProfileFile
+            val resolvedAdvancedObfuscation = graalvm.advancedObfuscation.get()
+            inputs.property("advancedObfuscation", resolvedAdvancedObfuscation)
             val resolvedGraalvmHome = graalvmHome.get()
             // Rerun the compile when the PGO mode or the recorded profile changes — the args are
             // assembled in doFirst, so they are not tracked as inputs by themselves.
@@ -894,6 +896,31 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                             "Oracle GraalVM (current toolchain: $resolvedGraalvmHome)",
                                     )
                                 }
+                            }
+                        }
+
+                        // Advanced symbol obfuscation (Oracle GraalVM only, experimental). Renames
+                        // symbols embedded in the image; reflection/JNI names from the reachability
+                        // metadata are preserved automatically, so it is safe with the JNI backends.
+                        if (resolvedAdvancedObfuscation) {
+                            if (pgoSupported) {
+                                // Future GraalVM releases require experimental options to be
+                                // explicitly unlocked; do it now to future-proof and silence the warning.
+                                add("-H:+UnlockExperimentalVMOptions")
+                                add("-H:AdvancedObfuscation=")
+                                // Oracle GraalVM embeds an SBOM by default — the full dependency list
+                                // (names + versions) baked into the binary, which re-leaks exactly what
+                                // obfuscation hides. Export it to a file instead so compliance tooling
+                                // keeps the SBOM without embedding it. Overridable via buildArgs (last wins).
+                                add("--enable-sbom=export")
+                                logger.lifecycle(
+                                    "Advanced obfuscation: enabled (symbols obfuscated; SBOM exported, not embedded)",
+                                )
+                            } else {
+                                logger.warn(
+                                    "Advanced obfuscation ignored — -H:AdvancedObfuscation requires Oracle " +
+                                        "GraalVM (current toolchain: $resolvedGraalvmHome)",
+                                )
                             }
                         }
 

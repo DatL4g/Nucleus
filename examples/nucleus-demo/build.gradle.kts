@@ -83,9 +83,9 @@ nucleus.application {
     buildTypes {
         release {
             proguard {
-                version = "7.8.1"
                 isEnabled = true
-                optimize = false
+                optimize = true
+                obfuscate = true
             }
         }
     }
@@ -93,6 +93,7 @@ nucleus.application {
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
+        advancedObfuscation = true
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "nucleus-sample"
     }

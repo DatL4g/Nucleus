@@ -48,6 +48,7 @@ import dev.nucleusframework.internal.utils.jdkArch
 import dev.nucleusframework.internal.utils.provider
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.file.RegularFile
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.Sync
@@ -737,6 +738,23 @@ private fun JvmApplicationContext.configureProguardTask(
 
         dependsOn(unpackDefaultResources)
         defaultComposeRulesFile.set(unpackDefaultResources.flatMap { it.resources.defaultComposeProguardRules })
+
+        // When obfuscation is on, inject framework name-preservation rules. Compose and the
+        // Kotlin(x) runtimes are resolved by their original names at runtime (Compose compiler,
+        // reflection, serialization), so renaming them crashes the app (e.g.
+        // ClassNotFoundException: androidx.compose.runtime.Composer). Only the application's own
+        // packages stay obfuscated. Not added when obfuscate is off, so shrinking is unaffected.
+        configurationFiles.from(
+            settings.obfuscate.flatMap { obfuscate ->
+                if (obfuscate) {
+                    unpackDefaultResources
+                        .flatMap { it.resources.obfuscationSafetyRules }
+                        .map { listOf(it) }
+                } else {
+                    project.provider { emptyList<RegularFile>() }
+                }
+            },
+        )
 
         maxHeapSize.set(settings.maxHeapSize)
         destinationDir.set(appTmpDir.dir("proguard"))
