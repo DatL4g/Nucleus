@@ -1263,8 +1263,9 @@ internal class TaoComposeSceneHostLinux(
 
     /**
      * Arms the drop-shadow controller once the window is attached (Wayland
-     * only). Declares the invisible margin to the WM and offsets the content
-     * subsurface into the shadow ring; the shadow pixels themselves are pushed
+     * only). The shadow rides a dedicated subsurface at a *negative* offset
+     * around the content — the content subsurface stays at (0,0), so input and
+     * resize are untouched. No WM margin / surface grow. Pixels are pushed
      * per-frame by [commitShadow]. No-op on X11, popups, or when disabled.
      */
     private fun initShadow() {
@@ -1281,13 +1282,7 @@ internal class TaoComposeSceneHostLinux(
                 radiusBottomRight = radius,
                 radiusBottomLeft = radius,
             )
-        if (!armed) return
-        // Declare margins to the WM (grows the GDK surface + window geometry),
-        // then slide the content subsurface into the ring.
-        windowShadow.reconcile(suspended = false)
-        val insets = windowShadow.effectiveInsets
-        NativeTaoEglBridge.nativeShadowSetContentOffset(attachmentHandle, insets.left, insets.top)
-        requestRedrawCoalesced()
+        if (armed) requestRedrawCoalesced()
     }
 
     /**
@@ -1303,14 +1298,13 @@ internal class TaoComposeSceneHostLinux(
         windowShadow.reconcile(suspended)
         val insets = windowShadow.effectiveInsets
         if (insets.isZero) {
-            NativeTaoEglBridge.nativeShadowSetContentOffset(attachmentHandle, 0, 0)
             NativeTaoEglBridge.nativeShadowHide(attachmentHandle)
             return
         }
-        NativeTaoEglBridge.nativeShadowSetContentOffset(attachmentHandle, insets.left, insets.top)
         val s = if (scale > 0f) scale else 1f
         val tile = windowShadow.currentTile(s, System.nanoTime()) ?: return
-        // Shadow-inclusive surface size = visible content + margins (logical px).
+        // Shadow-inclusive surface size = visible content + margins (logical px),
+        // positioned at the negative margin offset so it rings the content.
         val contentLogicalW = (widthPx / s).roundToInt()
         val contentLogicalH = (heightPx / s).roundToInt()
         NativeTaoEglBridge.nativeShadowCommit(
@@ -1325,6 +1319,8 @@ internal class TaoComposeSceneHostLinux(
             contentLogicalW + insets.left + insets.right,
             contentLogicalH + insets.top + insets.bottom,
             s.roundToInt().coerceAtLeast(1),
+            -insets.left,
+            -insets.top,
         )
     }
 

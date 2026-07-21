@@ -164,7 +164,10 @@ internal object NativeTaoEglBridge {
      * tile (`tileW × tileH` premultiplied ARGB, centre slice `[sl,st,sr,sb]`)
      * into a dedicated wl_shm subsurface placed *below* the content one, sized
      * to the whole shadow-inclusive surface (`dwLogical × dhLogical` logical px,
-     * buffer = logical × [scale]), and commits it. Lazily creates the shadow
+     * buffer = logical × [scale]), positioned at the *negative* offset
+     * ([shadowXLogical], [shadowYLogical]) = (−marginLeft, −marginTop) so it
+     * rings the content without the content subsurface moving from (0,0) — input
+     * and resize stay exactly as the flat window. Lazily creates the shadow
      * subsurface + shm buffer. No-op unless the attachment is Wayland with a
      * bound `wl_shm`. See `docs/linux-csd-shadow-subsurface.md`.
      */
@@ -182,22 +185,13 @@ internal object NativeTaoEglBridge {
         dwLogical: Int,
         dhLogical: Int,
         scale: Int,
+        shadowXLogical: Int,
+        shadowYLogical: Int,
     )
 
     /** Hides the shadow subsurface (maximize/fullscreen/tile). */
     @JvmStatic
     external fun nativeShadowHide(handle: Long)
-
-    /**
-     * Positions the content subsurface at ([xLogical], [yLogical]) inside the
-     * shadow ring (logical surface coords). (0,0) = flush (shadow inactive).
-     */
-    @JvmStatic
-    external fun nativeShadowSetContentOffset(
-        handle: Long,
-        xLogical: Int,
-        yLogical: Int,
-    )
 
     /**
      * Returns the address of a C function `void* fn(void* ctx, const char*

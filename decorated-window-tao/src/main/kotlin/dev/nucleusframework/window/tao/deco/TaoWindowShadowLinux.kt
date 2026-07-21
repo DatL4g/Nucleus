@@ -87,9 +87,6 @@ internal class TaoWindowShadowLinux(
 
     private var appliedInsets = ShadowInsets.ZERO
 
-    /** True once the desired margins were handed to the WM. */
-    private var nativeArmed = false
-
     /** 0 = fully normal (focused), 1 = fully backdrop (unfocused). */
     private var backdropFraction = 0f
     private var animStartNanos = 0L
@@ -162,11 +159,15 @@ internal class TaoWindowShadowLinux(
     val backdropAmount: Float get() = backdropFraction
 
     /**
-     * Reconciles the WM-declared margins with the current window state. Cheap
-     * when nothing changed. The margin is handed to GTK once; a native
-     * `window-state-event` handler zeroes/restores it synchronously on
-     * maximize/fullscreen/tile (GTK's exact timing). This state only mirrors
-     * the effective value for the content offset and the shadow tile.
+     * Reconciles the effective margins with the current window state — full
+     * margins when floating, zero while maximized/fullscreen/tiled (those sit
+     * flush against a screen edge, no shadow). Cheap when nothing changed.
+     *
+     * Unlike a real GTK CSD window, approach B does **not** declare the margin
+     * to the WM (`gdk_window_set_shadow_width`) or grow the surface: the shadow
+     * rides a sibling subsurface at a negative offset that overflows the parent
+     * bounds, so the content subsurface — and therefore the input/resize
+     * coordinate system — is left exactly as the flat window.
      */
     fun reconcile(suspended: Boolean) {
         if (!active) return
@@ -177,16 +178,6 @@ internal class TaoWindowShadowLinux(
                 ShadowInsets(marginLeft, marginTop, marginRight, marginBottom)
             }
         if (target == appliedInsets) return
-        if (!nativeArmed) {
-            NativeTaoLinuxShadowBridge.nativeShadowApply(
-                gtkWindowPtr,
-                marginLeft,
-                marginTop,
-                marginRight,
-                marginBottom,
-            )
-            nativeArmed = true
-        }
         appliedInsets = target
         insetsState.value = target
     }

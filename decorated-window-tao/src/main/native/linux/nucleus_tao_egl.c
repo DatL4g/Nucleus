@@ -1476,11 +1476,13 @@ static int shadow_ensure_surface(EglAttachment *att) {
     }
     p_wl_proxy_set_queue(subsurface, att->wl_queue);
 
-    /* Top-left of the whole (shadow-inclusive) surface, desync so we commit
-     * independently of the parent, and stacked *below* the content so the
-     * opaque content covers the transparent shadow centre. */
-    p_wl_proxy_marshal_flags(subsurface, WL_SUBSURFACE_SET_POSITION, NULL,
-        p_wl_proxy_get_version(subsurface), 0, 0, 0);
+    /* Desync so we commit independently of the parent, and stacked *below* the
+     * content so the opaque content covers the transparent shadow centre. The
+     * position is set per-commit: the shadow sits at a *negative* offset
+     * (−margin, −margin) so it rings the content without touching the content
+     * subsurface's own (0,0) placement — subsurfaces are not clipped to the
+     * parent, so no surface grow / _GTK_FRAME_EXTENTS is needed and the input
+     * coordinate system is left exactly as the flat window. */
     p_wl_proxy_marshal_flags(subsurface, WL_SUBSURFACE_SET_DESYNC, NULL,
         p_wl_proxy_get_version(subsurface), 0);
     if (att->wl_child_surface) {
@@ -1629,7 +1631,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowCommit(
     JNIEnv *env, jclass clazz, jlong handle,
     jintArray pixels, jint tw, jint th,
     jint sl, jint st, jint sr, jint sb,
-    jint dwLogical, jint dhLogical, jint scale)
+    jint dwLogical, jint dhLogical, jint scale,
+    jint shadowXLogical, jint shadowYLogical)
 {
     (void) clazz;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
@@ -1637,6 +1640,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowCommit(
     if (tw <= 0 || th <= 0 || dwLogical <= 0 || dhLogical <= 0) return;
     if (scale < 1) scale = 1;
     if (!shadow_ensure_surface(att)) return;
+
+    /* Position the shadow subsurface at the (negative) offset so it rings the
+     * content without the content subsurface moving from (0,0). Sub-surface
+     * position is parent-surface state: it takes effect on GTK's next parent
+     * commit, which follows naturally from the window's ongoing draws. Re-queued
+     * every commit so the latest offset always lands. */
+    p_wl_proxy_marshal_flags(att->wl_shadow_subsurface, WL_SUBSURFACE_SET_POSITION,
+        NULL, p_wl_proxy_get_version(att->wl_shadow_subsurface), 0,
+        shadowXLogical, shadowYLogical);
 
     const int dwPx = dwLogical * scale;
     const int dhPx = dhLogical * scale;
@@ -1688,27 +1700,6 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowHide(
         p_wl_proxy_get_version(att->wl_shadow_surface), 0, NULL, 0, 0);
     p_wl_proxy_marshal_flags(att->wl_shadow_surface, WL_SURFACE_COMMIT, NULL,
         p_wl_proxy_get_version(att->wl_shadow_surface), 0);
-    if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
-}
-
-/**
- * Positions the content subsurface inside the shadow ring. Offsets are in
- * *logical* surface coords (subsurface positions are surface-local). (0,0)
- * restores the flush layout used when the shadow is inactive.
- */
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowSetContentOffset(
-    JNIEnv *env, jclass clazz, jlong handle, jint xLogical, jint yLogical)
-{
-    (void) env; (void) clazz;
-    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
-    if (!att || !att->wl_subsurface || !p_wl_proxy_marshal_flags) return;
-    p_wl_proxy_marshal_flags(att->wl_subsurface, WL_SUBSURFACE_SET_POSITION, NULL,
-        p_wl_proxy_get_version(att->wl_subsurface), 0, xLogical, yLogical);
-    /* Position is applied with the parent's next commit; the content commit
-     * (eglSwapBuffers) or GTK's own commit carries it. */
-    p_wl_proxy_marshal_flags(att->wl_child_surface, WL_SURFACE_COMMIT, NULL,
-        p_wl_proxy_get_version(att->wl_child_surface), 0);
     if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
 }
 
