@@ -583,48 +583,18 @@ internal class TaoComposeSceneHostLinux(
     ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
         if (!dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded) return null
         if (window.handle == 0L) return null
-
-        val allowed =
-            request.supportedActions
-                .fold(0) { acc, action ->
-                    acc or
-                        when (action) {
-                            androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy ->
-                                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
-                            androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move ->
-                                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE
-                            androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link ->
-                                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK
-                            else -> 0
-                        }
-                }.let {
-                    if (it == 0) {
-                        dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
-                    } else {
-                        it
-                    }
-                }
-
-        val files =
-            request.files
-                .takeIf { it.isNotEmpty() }
-                ?.map { it.absolutePath }
-                ?.toTypedArray()
-        val effect =
+        return dev.nucleusframework.window.tao.dnd.TaoSceneDnD.launchOutboundDrag(
+            request = request,
+            dropEffectCopy = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY,
+            dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE,
+            dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK,
+        ) { files, text, allowedEffects ->
             dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.nativeStartDrag(
                 handle = window.handle,
                 files = files,
-                text = request.text,
-                allowedEffects = allowed,
+                text = text,
+                allowedEffects = allowedEffects,
             )
-        return when (effect) {
-            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY ->
-                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy
-            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE ->
-                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move
-            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK ->
-                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link
-            else -> null
         }
     }
 
@@ -643,91 +613,26 @@ internal class TaoComposeSceneHostLinux(
      */
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.Callback {
-        private fun rootNode() = scene?.rootDragAndDropNode
+        private fun node() = scene?.rootDragAndDropNode
 
-        // Coordinates from native are already in physical pixels (post
-        // `gtk_widget_translate_coordinates` × scale_factor on the Rust side),
-        // so we feed them straight into Compose's positionInRoot.
-        private fun makeDragEvent(
-            xPx: Int,
-            yPx: Int,
-            files: Array<String>?,
-        ): androidx.compose.ui.draganddrop.DragAndDropEvent {
-            val payload =
-                dev.nucleusframework.window.tao.TaoDragAndDropPayload(
-                    files = files?.toList() ?: emptyList(),
-                )
-            val transferable =
-                dev.nucleusframework.window.tao.dnd.TaoFilesTransferable(
-                    files = payload.files.map { java.io.File(it) },
-                )
-            val native =
-                dev.nucleusframework.window.tao.dnd.TaoSyntheticDragEvent(
-                    cursorLocn = java.awt.Point(xPx, yPx),
-                    dropAction = java.awt.dnd.DnDConstants.ACTION_COPY,
-                    backingTransferable = transferable,
-                    payload = payload,
-                )
-            return androidx.compose.ui.draganddrop.DragAndDropEvent(
-                action = androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy,
-                nativeEvent = native,
-                positionInRootImpl =
-                    androidx.compose.ui.geometry
-                        .Offset(xPx.toFloat(), yPx.toFloat()),
-            )
-        }
-
-        private fun makeDropEvent(
-            xPx: Int,
-            yPx: Int,
-            files: Array<String>?,
-        ): androidx.compose.ui.draganddrop.DragAndDropEvent {
-            val payload =
-                dev.nucleusframework.window.tao.TaoDragAndDropPayload(
-                    files = files?.toList() ?: emptyList(),
-                )
-            val transferable =
-                dev.nucleusframework.window.tao.dnd.TaoFilesTransferable(
-                    files = payload.files.map { java.io.File(it) },
-                )
-            val native =
-                dev.nucleusframework.window.tao.dnd.TaoSyntheticDropEvent(
-                    cursorLocn = java.awt.Point(xPx, yPx),
-                    dropAction = java.awt.dnd.DnDConstants.ACTION_COPY,
-                    backingTransferable = transferable,
-                    payload = payload,
-                )
-            return androidx.compose.ui.draganddrop.DragAndDropEvent(
-                action = androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy,
-                nativeEvent = native,
-                positionInRootImpl =
-                    androidx.compose.ui.geometry
-                        .Offset(xPx.toFloat(), yPx.toFloat()),
-            )
-        }
-
+        // Linux keeps neither the macOS/Windows diagnostic logging nor their
+        // `if (!hasFiles) return NONE` guard, so its overrides delegate straight
+        // to the shared helper. Folding those in via TaoSceneDnD would change
+        // Linux behaviour (rejecting non-file drags at enter).
         override fun onDragEnter(
             handle: Long,
             x: Int,
             y: Int,
             modState: Int,
             hasFiles: Boolean,
-        ): Int {
-            val node =
-                rootNode()
-                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
-            val ev = makeDragEvent(x, y, null)
-            val accepted = node.acceptDragAndDropTransfer(ev)
-            if (accepted) {
-                node.onStarted(ev)
-                node.onEntered(ev)
-            }
-            return if (accepted) {
+        ): Int =
+            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                    .onDragEnter(node(), x, y)
+            ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
-        }
 
         override fun onDragOver(
             handle: Long,
@@ -735,25 +640,18 @@ internal class TaoComposeSceneHostLinux(
             y: Int,
             modState: Int,
             hasFiles: Boolean,
-        ): Int {
-            val node =
-                rootNode()
-                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
-            val ev = makeDragEvent(x, y, null)
-            node.onMoved(ev)
-            return if (node.hasEligibleDropTarget) {
+        ): Int =
+            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                    .onDragOver(node(), x, y)
+            ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
-        }
 
-        override fun onDragLeave(handle: Long) {
-            val node = rootNode() ?: return
-            val ev = makeDragEvent(-1, -1, null)
-            node.onExited(ev)
-            node.onEnded(ev)
-        }
+        override fun onDragLeave(handle: Long) =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .onDragLeave(node())
 
         override fun onDrop(
             handle: Long,
@@ -761,19 +659,14 @@ internal class TaoComposeSceneHostLinux(
             y: Int,
             modState: Int,
             files: Array<String>?,
-        ): Int {
-            val node =
-                rootNode()
-                    ?: return dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
-            val ev = makeDropEvent(x, y, files)
-            val accepted = node.onDrop(ev)
-            node.onEnded(ev)
-            return if (accepted) {
+        ): Int =
+            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                    .onDrop(node(), x, y, files)
+            ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
-        }
     }
 
     // ── Touch & trackpad gestures (Linux) ─────────────────────────────────
