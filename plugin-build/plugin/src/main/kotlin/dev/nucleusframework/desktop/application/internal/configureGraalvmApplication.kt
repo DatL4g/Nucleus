@@ -868,6 +868,14 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                             add("-H:+AddAllCharsets")
                         }
 
+                        // Grant native access to code on the classpath. The Nucleus native
+                        // modules call System.loadLibrary from the unnamed module; since JDK 24
+                        // (JEP 472) that emits a "restricted method called" warning at startup and
+                        // will be blocked outright in a future release. native-image bakes the flag
+                        // in as a launcher default so the produced binary never prints the warning
+                        // and stays forward-compatible. Placed before user buildArgs (last wins).
+                        add("--enable-native-access=ALL-UNNAMED")
+
                         // Default runtime max heap. Serial GC otherwise defaults to 80% of RAM;
                         // bake a desktop-appropriate ceiling (JVM parity, ~25%) instead. Baked as a
                         // default — still overridable at runtime with -Xmx. An absolute size wins
