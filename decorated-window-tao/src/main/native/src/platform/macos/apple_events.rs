@@ -32,5 +32,9 @@ pub(crate) fn dispatch_deep_link(url: &str) {
             "(Ljava/lang/String;)V",
             &[JValue::Object(&jstr.into())],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }

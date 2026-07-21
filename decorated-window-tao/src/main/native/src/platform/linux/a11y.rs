@@ -800,6 +800,10 @@ fn forward_action_to_jvm(
                     JValue::Object(&jstr.into()),
                 ],
             );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
         }
         Action::SetValue => {
             // Slider / progress value setter. AT-SPI's
@@ -820,6 +824,10 @@ fn forward_action_to_jvm(
                     JValue::Double(value),
                 ],
             );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
         }
         Action::SetScrollOffset | Action::ScrollToPoint => {
             // Both carry a target point; forward as an absolute scroll
@@ -841,6 +849,10 @@ fn forward_action_to_jvm(
                     JValue::Float(dy),
                 ],
             );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
         }
         Action::SetTextSelection => {
             let sel = match request.data {
@@ -858,6 +870,10 @@ fn forward_action_to_jvm(
                     JValue::Int(sel.focus.character_index as i32),
                 ],
             );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
         }
         Action::CustomAction => {
             let idx = match request.data {
@@ -877,6 +893,10 @@ fn forward_action_to_jvm(
                     JValue::Int(idx),
                 ],
             );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
         }
         _ => {
             if action_bit == 0 {
@@ -892,6 +912,10 @@ fn forward_action_to_jvm(
                     JValue::Int(action_bit),
                 ],
             );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
         }
     }
 }

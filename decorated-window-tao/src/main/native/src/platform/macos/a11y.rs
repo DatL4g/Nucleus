@@ -196,6 +196,10 @@ pub extern "C" fn nucleus_tao_a11y_set_text(
                 JValue::Object(&jstr.into()),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -224,6 +228,10 @@ pub extern "C" fn nucleus_tao_a11y_invoke_custom_action(
                 JValue::Int(action_index),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -254,6 +262,10 @@ pub extern "C" fn nucleus_tao_a11y_scroll_by(
                 JValue::Float(dy),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -284,6 +296,10 @@ pub extern "C" fn nucleus_tao_a11y_set_selection(
                 JValue::Int(end),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -314,5 +330,9 @@ pub extern "C" fn nucleus_tao_a11y_invoke_action(
                 JValue::Int(action as i32),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
