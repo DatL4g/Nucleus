@@ -1131,7 +1131,12 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onFocusChanged(focused: Boolean) {
-        if (focused) compositorDragActive = false
+        // NB: do NOT clear compositorDragActive on focus-in here. GNOME toggles
+        // keyboard focus *during* a compositor resize/move grab, and clearing on
+        // that mid-grab focus-in would unmask the following focus-out and flip
+        // the shadow to backdrop for the rest of the drag. The grab-ended signal
+        // is real pointer input resuming (see [onPointerMove] / [onPointerButton]),
+        // which the compositor withholds for the whole grab.
         windowInfo.isWindowFocused = focused
         // Kick the 200ms normal↔backdrop shadow cross-fade (no-op when the
         // shadow is inactive). Focus loss during a compositor resize/move grab
@@ -1418,6 +1423,15 @@ internal class TaoComposeSceneHostLinux(
         val yPx = bFixed / 1024f
         lastPointerX = xPx
         lastPointerY = yPx
+        // Real pointer motion resuming means the compositor released any
+        // resize/move grab — that's our grab-ended signal (the compositor
+        // withholds motion for the whole grab), so drop the focus mask here
+        // rather than on focus-in, which can toggle mid-grab. See
+        // [onFocusChanged].
+        if (compositorDragActive) {
+            compositorDragActive = false
+            windowShadow.onFocusChanged(windowInfo.isWindowFocused)
+        }
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
 
