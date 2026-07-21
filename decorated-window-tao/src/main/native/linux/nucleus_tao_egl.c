@@ -1510,58 +1510,72 @@ static int shadow_ensure_surface(EglAttachment *att) {
 }
 
 /**
- * (Re)allocates the shm pool + buffer to hold a `wPx × hPx` ARGB image.
- * Returns a pointer to the mmap'd pixels, or NULL on failure.
+ * Ensures the shm pool + buffer hold a `wPx × hPx` ARGB image. Reuses the
+ * memfd / mmap / wl_shm_pool across size changes (grow-only, never shrunk), so
+ * an interactive resize doesn't churn a fresh fd+mmap+pool every frame — only
+ * the lightweight `wl_buffer` (a fixed-size view into the pool) is recreated on
+ * a dimension change. Returns the mmap'd pixels, or NULL on failure.
+ *
+ * NB single-buffered: the mapped memory is overwritten in place without waiting
+ * for `wl_buffer.release`. The shadow only changes on resize/focus/theme edges,
+ * not mid-scanout at a steady state, so tearing isn't observed; a genuine
+ * double-buffer pool would be the fully-correct form.
  */
 static uint32_t *shadow_ensure_buffer(EglAttachment *att, int wPx, int hPx) {
     if (wPx <= 0 || hPx <= 0 || wPx > 16384 || hPx > 16384) return NULL;
     if (att->wl_shadow_buffer && att->shadow_w == wPx && att->shadow_h == hPx &&
         att->shadow_data) {
-        return (uint32_t *) att->shadow_data;
-    }
-    shadow_free_buffer(att);
-
-    size_t stride = (size_t) wPx * 4;
-    size_t size = stride * (size_t) hPx;
-    int fd = shadow_make_fd(size);
-    if (fd < 0) return NULL;
-    void *data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (data == MAP_FAILED) {
-        close(fd);
-        return NULL;
+        return (uint32_t *) att->shadow_data;   /* exact reuse, no protocol traffic */
     }
 
-    wl_proxy *pool = p_wl_proxy_marshal_flags(
-        att->wl_shm, WL_SHM_CREATE_POOL, g_wl_shm_pool_interface,
-        p_wl_proxy_get_version(att->wl_shm), 0, NULL, fd, (int32_t) size);
-    if (!pool) {
-        munmap(data, size);
-        close(fd);
-        return NULL;
-    }
-    p_wl_proxy_set_queue(pool, att->wl_queue);
+    const size_t stride = (size_t) wPx * 4;
+    const size_t size = stride * (size_t) hPx;
 
+    /* 1) Backing store: created once, then grown in place as needed. */
+    if (att->shadow_fd < 0 || !att->shadow_data || !att->wl_shadow_pool) {
+        int fd = shadow_make_fd(size);
+        if (fd < 0) return NULL;
+        void *data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        if (data == MAP_FAILED) { close(fd); return NULL; }
+        wl_proxy *pool = p_wl_proxy_marshal_flags(
+            att->wl_shm, WL_SHM_CREATE_POOL, g_wl_shm_pool_interface,
+            p_wl_proxy_get_version(att->wl_shm), 0, NULL, fd, (int32_t) size);
+        if (!pool) { munmap(data, size); close(fd); return NULL; }
+        p_wl_proxy_set_queue(pool, att->wl_queue);
+        att->shadow_fd = fd;
+        att->shadow_data = data;
+        att->shadow_cap = size;
+        att->wl_shadow_pool = pool;
+    } else if (size > att->shadow_cap) {
+        /* Grow: extend the fd, resize the pool, remap. Old content is discarded
+         * (about to be repainted by the nine-slice). */
+        if (ftruncate(att->shadow_fd, (off_t) size) != 0) return NULL;
+        p_wl_proxy_marshal_flags(att->wl_shadow_pool, WL_SHM_POOL_RESIZE, NULL,
+            p_wl_proxy_get_version(att->wl_shadow_pool), 0, (int32_t) size);
+        munmap(att->shadow_data, att->shadow_cap);
+        void *data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, att->shadow_fd, 0);
+        if (data == MAP_FAILED) { att->shadow_data = NULL; return NULL; }
+        att->shadow_data = data;
+        att->shadow_cap = size;
+    }
+
+    /* 2) wl_buffer is a fixed-size view — recreate on any dimension change
+     * (cheap: no fd/mmap, just a protocol object into the existing pool). */
+    if (att->wl_shadow_buffer) {
+        p_wl_proxy_marshal_flags(att->wl_shadow_buffer, WL_BUFFER_DESTROY, NULL,
+            p_wl_proxy_get_version(att->wl_shadow_buffer), WL_MARSHAL_FLAG_DESTROY);
+        att->wl_shadow_buffer = NULL;
+    }
     wl_proxy *buffer = p_wl_proxy_marshal_flags(
-        pool, WL_SHM_POOL_CREATE_BUFFER, g_wl_buffer_interface,
-        p_wl_proxy_get_version(pool), 0, NULL,
+        att->wl_shadow_pool, WL_SHM_POOL_CREATE_BUFFER, g_wl_buffer_interface,
+        p_wl_proxy_get_version(att->wl_shadow_pool), 0, NULL,
         /*offset*/ 0, wPx, hPx, (int32_t) stride, WL_SHM_FORMAT_ARGB8888);
-    if (!buffer) {
-        p_wl_proxy_marshal_flags(pool, WL_SHM_POOL_DESTROY, NULL,
-            p_wl_proxy_get_version(pool), WL_MARSHAL_FLAG_DESTROY);
-        munmap(data, size);
-        close(fd);
-        return NULL;
-    }
+    if (!buffer) return NULL;
     p_wl_proxy_set_queue(buffer, att->wl_queue);
-
-    att->wl_shadow_pool = pool;
     att->wl_shadow_buffer = buffer;
-    att->shadow_fd = fd;
-    att->shadow_data = data;
-    att->shadow_cap = size;
     att->shadow_w = wPx;
     att->shadow_h = hPx;
-    return (uint32_t *) data;
+    return (uint32_t *) att->shadow_data;
 }
 
 /**
