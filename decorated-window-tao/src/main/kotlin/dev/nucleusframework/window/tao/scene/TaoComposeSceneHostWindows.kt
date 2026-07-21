@@ -942,6 +942,14 @@ internal class TaoComposeSceneHostWindows(
 
         if (widthPx <= 0 || heightPx <= 0) return
 
+        // Minimized: skip before the frame-clock tick below. Unlike
+        // Linux/Wayland there's no vsync back-pressure while minimized (ANGLE's
+        // flip-model swapchain never reports occlusion), so without this the
+        // loop would spin recording + presenting into a hidden surface whenever
+        // an animation keeps invalidating. Parks animations; restored via
+        // TaoWindow.requestRedraw on the MINIMIZED-off event.
+        if (window.isMinimized) return
+
         // Push a pending size into the ComposeScene + GL surface before the
         // frame-clock drain, so the size-change-driven recomposition (and any
         // coroutine keyed on the new size) is scheduled and drained this frame.

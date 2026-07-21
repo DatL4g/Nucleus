@@ -1164,6 +1164,14 @@ internal class TaoComposeSceneHostLinux(
         // be able to schedule another redraw — i.e. the app would freeze.
         redrawPending.set(false)
 
+        // Minimized: skip before the frame-clock tick so animations park and
+        // the loop goes idle. Belt-and-suspenders here — the swap-in-flight
+        // back-pressure below already throttles an occluded/minimised window —
+        // but this also covers the app-synthesised minimize (Wayland reports no
+        // iconified state). redrawPending is already cleared above, so restore's
+        // requestRedraw re-arms cleanly.
+        if (window.isMinimized) return
+
         // Wait for the previous frame's `eglSwapBuffers` to complete on the
         // swap thread before issuing the next render. This is what gives us
         // hardware vsync without melting CPU: the swap thread parks in

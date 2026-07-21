@@ -1221,6 +1221,13 @@ internal class TaoComposeSceneHost(
         val ctx = directContext ?: return
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
 
+        // Minimized: nothing is visible. Drop the frame before recording +
+        // advancing the frame clock — that parks Compose animations (no
+        // withFrameNanos tick → no re-invalidation), so the FrameDispatcher
+        // quiesces instead of rendering into a hidden surface. Restored via
+        // TaoWindow's requestRedraw on the MINIMIZED-off event.
+        if (window.isMinimized) return
+
         // ── interop transaction snapshot (main) ──
         val tx = retrieveTransaction()
         val needsTransaction =
