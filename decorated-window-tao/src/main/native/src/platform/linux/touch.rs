@@ -198,32 +198,40 @@ fn dispatch_touch(
         }
     }
 
-    let Ok(ids_arr) = env.new_long_array(count) else { return };
-    if env.set_long_array_region(&ids_arr, 0, &ids).is_err() { return }
-    let Ok(xs_arr) = env.new_long_array(count) else { return };
-    if env.set_long_array_region(&xs_arr, 0, &xs).is_err() { return }
-    let Ok(ys_arr) = env.new_long_array(count) else { return };
-    if env.set_long_array_region(&ys_arr, 0, &ys).is_err() { return }
+    // The three long[] arrays are JNI local refs. `dispatch_touch` runs on the
+    // Tao loop thread, which is attached *permanently* — nothing ever pops its
+    // frame, so without a scoped local frame each touch event (up to ~one per
+    // display refresh during a drag) would leak three refs until the JNI local
+    // reference table overflows and aborts the JVM. `with_local_frame` reclaims
+    // them on return, including the early-error paths.
+    let _ = env.with_local_frame(8, |env| -> Result<(), jni::errors::Error> {
+        let ids_arr = env.new_long_array(count)?;
+        env.set_long_array_region(&ids_arr, 0, &ids)?;
+        let xs_arr = env.new_long_array(count)?;
+        env.set_long_array_region(&xs_arr, 0, &xs)?;
+        let ys_arr = env.new_long_array(count)?;
+        env.set_long_array_region(&ys_arr, 0, &ys)?;
 
-    let res = env.call_method(
-        callback.as_obj(),
-        "onTouchEvent",
-        "(JII[J[J[JJ)V",
-        &[
-            JValue::Long(handle as jlong),
-            JValue::Int(event_type),
-            JValue::Int(count),
-            JValue::Object(&ids_arr.into()),
-            JValue::Object(&xs_arr.into()),
-            JValue::Object(&ys_arr.into()),
-            JValue::Long(pressed_mask),
-        ],
-    );
-    let _ = res;
-    if env.exception_check().unwrap_or(false) {
-        let _ = env.exception_describe();
-        let _ = env.exception_clear();
-    }
+        let _ = env.call_method(
+            callback.as_obj(),
+            "onTouchEvent",
+            "(JII[J[J[JJ)V",
+            &[
+                JValue::Long(handle as jlong),
+                JValue::Int(event_type),
+                JValue::Int(count),
+                JValue::Object(&ids_arr.into()),
+                JValue::Object(&xs_arr.into()),
+                JValue::Object(&ys_arr.into()),
+                JValue::Long(pressed_mask),
+            ],
+        );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
+        Ok(())
+    });
 }
 
 /// Dispatch a trackpad gesture (MAGNIFY or ROTATE) to the per-window
