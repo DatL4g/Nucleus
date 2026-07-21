@@ -904,8 +904,18 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // metadata are preserved automatically, so it is safe with the JNI backends.
                         if (resolvedAdvancedObfuscation) {
                             if (pgoSupported) {
+                                // Future GraalVM releases require experimental options to be
+                                // explicitly unlocked; do it now to future-proof and silence the warning.
+                                add("-H:+UnlockExperimentalVMOptions")
                                 add("-H:AdvancedObfuscation=")
-                                logger.lifecycle("Advanced obfuscation: enabled (symbol names obfuscated in the image)")
+                                // Oracle GraalVM embeds an SBOM by default — the full dependency list
+                                // (names + versions) baked into the binary, which re-leaks exactly what
+                                // obfuscation hides. Export it to a file instead so compliance tooling
+                                // keeps the SBOM without embedding it. Overridable via buildArgs (last wins).
+                                add("--enable-sbom=export")
+                                logger.lifecycle(
+                                    "Advanced obfuscation: enabled (symbols obfuscated; SBOM exported, not embedded)",
+                                )
                             } else {
                                 logger.warn(
                                     "Advanced obfuscation ignored — -H:AdvancedObfuscation requires Oracle " +
