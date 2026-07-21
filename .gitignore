@@ -48,8 +48,17 @@ decorated-window-tao/src/main/native/vendor/**/.cargo-ok
 # IDE temporary lock files
 .*~
 
-# sample-tao Windows native build artifacts (NuGet-fetched WebView2 SDK,
+# tao-demo Windows native build artifacts (NuGet-fetched WebView2 SDK,
 # generated MSVC outputs)
-sample-tao/src/main/native/windows/packages/
-sample-tao/src/main/native/windows/nuget.exe
-sample-tao/src/main/native/windows/build_log.txt
+examples/tao-demo/src/main/native/windows/packages/
+examples/tao-demo/src/main/native/windows/nuget.exe
+examples/tao-demo/src/main/native/windows/build_log.txt
+
+# GraalVM native-image build output (agent metadata, static analysis, repo
+# metadata). PGO profiles under graalvm/pgo/ are committed intentionally and
+# kept trackable.
+**/graalvm/reachability-metadata.json
+**/graalvm/agentOutput/
+**/graalvm/staticAnalysis/
+**/graalvm/libraryMetadata/
+**/graalvm/metadataRepoDirs.txt
