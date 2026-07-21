@@ -13,7 +13,10 @@
         { "glob": "META-INF/services/javax.sound.sampled.spi.MixerProvider" },
         { "glob": "nucleus/**" },
         { "glob": "META-INF/services/**" },
-        { "glob": "composeResources/**" }
+        { "glob": "composeResources/**" },
+        { "glob": "**/*.svg" },
+        { "glob": "**/*.ttf" },
+        { "glob": "**/*.otf" }
     ],
     "serialization": [
         { "type": "java.lang.String" },
