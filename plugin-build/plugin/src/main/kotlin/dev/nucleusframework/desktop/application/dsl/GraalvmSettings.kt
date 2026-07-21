@@ -80,6 +80,16 @@ abstract class GraalvmSettings
         // stack traces by adding `-H:AdvancedObfuscation=export-mapping` via [buildArgs]. Off by default.
         val advancedObfuscation: Property<Boolean> = objects.notNullProperty(false)
 
+        // Default runtime maximum heap baked into the image. native-image's Serial GC otherwise
+        // defaults the max heap to 80% of physical RAM — far above a desktop app's norm (HotSpot
+        // defaults to ~25% via MaxRAMPercentage, which Compose Desktop apps already run under on the
+        // JVM). [maxHeapSizePercent] bakes `-R:MaximumHeapSizePercent` (default 25, JVM parity);
+        // [maxHeapSize] bakes an absolute `-R:MaxHeapSize` (e.g. "2g", "512m") and takes precedence
+        // when set. Both are only defaults — overridable at runtime via `-Xmx` /
+        // `-XX:MaximumHeapSizePercent`. Set percent to 80 to restore native-image's own default.
+        val maxHeapSize: Property<String> = objects.nullableProperty()
+        val maxHeapSizePercent: Property<Int> = objects.notNullProperty(25)
+
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val toolchain: GraalvmToolchainSettings = objects.new()
