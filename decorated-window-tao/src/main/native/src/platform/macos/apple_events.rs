@@ -21,20 +21,23 @@ pub(crate) fn dispatch_deep_link(url: &str) {
         return;
     }
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge") {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let Ok(jstr) = env.new_string(url) else { return };
-        let _ = env.call_static_method(
-            class,
-            "dispatchDeepLink",
-            "(Ljava/lang/String;)V",
-            &[JValue::Object(&jstr.into())],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Runs on the AppKit main thread, which the Tao loop attached
+        // *permanently* — the `find_class` + `new_string` local refs would never
+        // be reclaimed. Bound them in a scoped local frame.
+        let _ = env.with_local_frame(6, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let jstr = env.new_string(url)?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchDeepLink",
+                "(Ljava/lang/String;)V",
+                &[JValue::Object(&jstr.into())],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }

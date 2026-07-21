@@ -165,26 +165,27 @@ fn api() -> Option<&'static A11yApi> {
 extern "system" fn invoke_action_trampoline(hwnd: i64, node_id: u64, action: u16) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class(
-            "dev/nucleusframework/window/tao/ffi/NativeTaoBridge",
-        ) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11yActionByNsView",
-            "(JJI)V",
-            &[
-                JValue::Long(hwnd),
-                JValue::Long(node_id as i64),
-                JValue::Int(action as i32),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // UIA dispatches provider calls on the message-pump thread, which the
+        // Tao loop attached permanently — bound the `find_class` local ref in a
+        // scoped frame so it doesn't leak per action.
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11yActionByNsView",
+                "(JJI)V",
+                &[
+                    JValue::Long(hwnd),
+                    JValue::Long(node_id as i64),
+                    JValue::Int(action as i32),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -196,27 +197,27 @@ extern "system" fn set_text_trampoline(
     let slice = unsafe { std::slice::from_raw_parts(utf8, len as usize) };
     let Ok(text) = std::str::from_utf8(slice) else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class(
-            "dev/nucleusframework/window/tao/ffi/NativeTaoBridge",
-        ) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let Ok(jstr) = env.new_string(text) else { return };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11ySetText",
-            "(JJLjava/lang/String;)V",
-            &[
-                JValue::Long(hwnd),
-                JValue::Long(node_id as i64),
-                JValue::Object(&jstr.into()),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the class + string local refs on the
+        // permanently attached message-pump thread (see invoke_action_trampoline).
+        let _ = env.with_local_frame(6, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let jstr = env.new_string(text)?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11ySetText",
+                "(JJLjava/lang/String;)V",
+                &[
+                    JValue::Long(hwnd),
+                    JValue::Long(node_id as i64),
+                    JValue::Object(&jstr.into()),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -225,27 +226,27 @@ extern "system" fn set_selection_trampoline(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class(
-            "dev/nucleusframework/window/tao/ffi/NativeTaoBridge",
-        ) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11ySetSelection",
-            "(JJII)V",
-            &[
-                JValue::Long(hwnd),
-                JValue::Long(node_id as i64),
-                JValue::Int(start),
-                JValue::Int(end),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the `find_class` local ref on the permanently
+        // attached message-pump thread (see invoke_action_trampoline).
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11ySetSelection",
+                "(JJII)V",
+                &[
+                    JValue::Long(hwnd),
+                    JValue::Long(node_id as i64),
+                    JValue::Int(start),
+                    JValue::Int(end),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -254,27 +255,27 @@ extern "system" fn scroll_by_trampoline(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class(
-            "dev/nucleusframework/window/tao/ffi/NativeTaoBridge",
-        ) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11yScrollBy",
-            "(JJFF)V",
-            &[
-                JValue::Long(hwnd),
-                JValue::Long(node_id as i64),
-                JValue::Float(dx),
-                JValue::Float(dy),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the `find_class` local ref on the permanently
+        // attached message-pump thread (see invoke_action_trampoline).
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11yScrollBy",
+                "(JJFF)V",
+                &[
+                    JValue::Long(hwnd),
+                    JValue::Long(node_id as i64),
+                    JValue::Float(dx),
+                    JValue::Float(dy),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -283,26 +284,26 @@ extern "system" fn set_value_trampoline(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class(
-            "dev/nucleusframework/window/tao/ffi/NativeTaoBridge",
-        ) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11ySetValue",
-            "(JJD)V",
-            &[
-                JValue::Long(hwnd),
-                JValue::Long(node_id as i64),
-                JValue::Double(value),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the `find_class` local ref on the permanently
+        // attached message-pump thread (see invoke_action_trampoline).
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11ySetValue",
+                "(JJD)V",
+                &[
+                    JValue::Long(hwnd),
+                    JValue::Long(node_id as i64),
+                    JValue::Double(value),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -311,26 +312,26 @@ extern "system" fn custom_action_trampoline(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class(
-            "dev/nucleusframework/window/tao/ffi/NativeTaoBridge",
-        ) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11yCustomAction",
-            "(JJI)V",
-            &[
-                JValue::Long(hwnd),
-                JValue::Long(node_id as i64),
-                JValue::Int(index),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the `find_class` local ref on the permanently
+        // attached message-pump thread (see invoke_action_trampoline).
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11yCustomAction",
+                "(JJI)V",
+                &[
+                    JValue::Long(hwnd),
+                    JValue::Long(node_id as i64),
+                    JValue::Int(index),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 

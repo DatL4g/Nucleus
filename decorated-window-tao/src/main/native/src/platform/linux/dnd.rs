@@ -252,28 +252,34 @@ fn dispatch_drop(
     let Ok(mut env) = vm.attach_current_thread_permanently() else {
         return DROP_EFFECT_NONE;
     };
-    let arr = match build_string_array(&mut env, files) {
-        Some(a) => a,
-        None => return DROP_EFFECT_NONE,
-    };
-    let res = env.call_method(
-        callback.as_obj(),
-        "onDrop",
-        "(JIII[Ljava/lang/String;)I",
-        &[
-            JValue::Long(handle as jlong),
-            JValue::Int(x),
-            JValue::Int(y),
-            JValue::Int(0),
-            JValue::Object(&arr),
-        ],
-    );
-    if env.exception_check().unwrap_or(false) {
-        let _ = env.exception_describe();
-        let _ = env.exception_clear();
-        return DROP_EFFECT_NONE;
-    }
-    res.and_then(|v| v.i()).unwrap_or(DROP_EFFECT_NONE)
+    // The String[] and its elements are JNI local refs. This runs on the Tao
+    // loop thread (attached permanently, frame never popped), so scope them in
+    // a local frame or every drop leaks the array + one ref per file.
+    env.with_local_frame(files.len() as i32 + 6, |env| -> Result<jint, jni::errors::Error> {
+        let arr = match build_string_array(env, files) {
+            Some(a) => a,
+            None => return Ok(DROP_EFFECT_NONE),
+        };
+        let res = env.call_method(
+            callback.as_obj(),
+            "onDrop",
+            "(JIII[Ljava/lang/String;)I",
+            &[
+                JValue::Long(handle as jlong),
+                JValue::Int(x),
+                JValue::Int(y),
+                JValue::Int(0),
+                JValue::Object(&arr),
+            ],
+        );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+            return Ok(DROP_EFFECT_NONE);
+        }
+        Ok(res.and_then(|v| v.i()).unwrap_or(DROP_EFFECT_NONE))
+    })
+    .unwrap_or(DROP_EFFECT_NONE)
 }
 
 fn build_string_array<'a>(

@@ -181,25 +181,28 @@ pub extern "C" fn nucleus_tao_a11y_set_text(
     let slice = unsafe { std::slice::from_raw_parts(utf8, len as usize) };
     let Ok(text) = std::str::from_utf8(slice) else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge") {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let Ok(jstr) = env.new_string(text) else { return };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11ySetText",
-            "(JJLjava/lang/String;)V",
-            &[
-                JValue::Long(ns_view_handle),
-                JValue::Long(node_id as i64),
-                JValue::Object(&jstr.into()),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // AppKit action callbacks arrive on the main thread, which the Tao loop
+        // attached permanently, so the class + string local refs are never
+        // reclaimed without a scoped frame.
+        let _ = env.with_local_frame(6, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let jstr = env.new_string(text)?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11ySetText",
+                "(JJLjava/lang/String;)V",
+                &[
+                    JValue::Long(ns_view_handle),
+                    JValue::Long(node_id as i64),
+                    JValue::Object(&jstr.into()),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -214,24 +217,26 @@ pub extern "C" fn nucleus_tao_a11y_invoke_custom_action(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge") {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11yCustomAction",
-            "(JJI)V",
-            &[
-                JValue::Long(ns_view_handle),
-                JValue::Long(node_id as i64),
-                JValue::Int(action_index),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the `find_class` local ref on the permanently
+        // attached AppKit main thread (see nucleus_tao_a11y_set_text).
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11yCustomAction",
+                "(JJI)V",
+                &[
+                    JValue::Long(ns_view_handle),
+                    JValue::Long(node_id as i64),
+                    JValue::Int(action_index),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -247,25 +252,27 @@ pub extern "C" fn nucleus_tao_a11y_scroll_by(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge") {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11yScrollBy",
-            "(JJFF)V",
-            &[
-                JValue::Long(ns_view_handle),
-                JValue::Long(node_id as i64),
-                JValue::Float(dx),
-                JValue::Float(dy),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the `find_class` local ref on the permanently
+        // attached AppKit main thread (see nucleus_tao_a11y_set_text).
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11yScrollBy",
+                "(JJFF)V",
+                &[
+                    JValue::Long(ns_view_handle),
+                    JValue::Long(node_id as i64),
+                    JValue::Float(dx),
+                    JValue::Float(dy),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -281,25 +288,27 @@ pub extern "C" fn nucleus_tao_a11y_set_selection(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge") {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11ySetSelection",
-            "(JJII)V",
-            &[
-                JValue::Long(ns_view_handle),
-                JValue::Long(node_id as i64),
-                JValue::Int(start),
-                JValue::Int(end),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the `find_class` local ref on the permanently
+        // attached AppKit main thread (see nucleus_tao_a11y_set_text).
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11ySetSelection",
+                "(JJII)V",
+                &[
+                    JValue::Long(ns_view_handle),
+                    JValue::Long(node_id as i64),
+                    JValue::Int(start),
+                    JValue::Int(end),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
 
@@ -316,23 +325,25 @@ pub extern "C" fn nucleus_tao_a11y_invoke_action(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge") {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = env.call_static_method(
-            class,
-            "dispatchA11yActionByNsView",
-            "(JJI)V",
-            &[
-                JValue::Long(ns_view_handle),
-                JValue::Long(node_id as i64),
-                JValue::Int(action as i32),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-        }
+        // Scoped frame: reclaims the `find_class` local ref on the permanently
+        // attached AppKit main thread (see nucleus_tao_a11y_set_text).
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(
+                class,
+                "dispatchA11yActionByNsView",
+                "(JJI)V",
+                &[
+                    JValue::Long(ns_view_handle),
+                    JValue::Long(node_id as i64),
+                    JValue::Int(action as i32),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
     }
 }
