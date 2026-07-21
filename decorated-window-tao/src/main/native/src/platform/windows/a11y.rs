@@ -181,6 +181,10 @@ extern "system" fn invoke_action_trampoline(hwnd: i64, node_id: u64, action: u16
                 JValue::Int(action as i32),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -209,6 +213,10 @@ extern "system" fn set_text_trampoline(
                 JValue::Object(&jstr.into()),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -234,6 +242,10 @@ extern "system" fn set_selection_trampoline(
                 JValue::Int(end),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -259,6 +271,10 @@ extern "system" fn scroll_by_trampoline(
                 JValue::Float(dy),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -283,6 +299,10 @@ extern "system" fn set_value_trampoline(
                 JValue::Double(value),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -307,6 +327,10 @@ extern "system" fn custom_action_trampoline(
                 JValue::Int(index),
             ],
         );
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
     }
 }
 
