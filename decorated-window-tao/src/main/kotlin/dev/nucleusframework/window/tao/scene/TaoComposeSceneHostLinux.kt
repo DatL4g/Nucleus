@@ -1294,6 +1294,12 @@ internal class TaoComposeSceneHostLinux(
      */
     private fun commitShadow() {
         if (!windowShadow.isActive || attachmentHandle == 0L) return
+        // A compositor resize/move grab makes GTK report focus-out for the whole
+        // drag, but a native GTK CSD window keeps its focused shadow. The
+        // onFocusChanged masking can still let an edge through (event ordering),
+        // so re-assert focused every frame while the grab is live — idempotent
+        // once already targeting focused.
+        if (compositorDragActive) windowShadow.onFocusChanged(true)
         val suspended = window.isMaximized || window.isFullscreen || window.isTiled
         windowShadow.reconcile(suspended)
         val insets = windowShadow.effectiveInsets
