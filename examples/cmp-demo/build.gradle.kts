@@ -68,6 +68,16 @@ android {
 nucleus.application {
     mainClass = "com.example.samplecmp.MainKt"
 
+    buildTypes {
+        release {
+            proguard {
+                isEnabled = true
+                optimize = true
+                obfuscate = true
+            }
+        }
+    }
+
     nativeDistributions {
         targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb, TargetFormat.Rpm)
         cleanupNativeLibs = true
@@ -88,5 +98,6 @@ nucleus.application {
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "cmp-sample"
         optimization = NativeImageOptimization.SIZE
+        advancedObfuscation = true
     }
 }

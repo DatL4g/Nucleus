@@ -805,6 +805,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedPgoMode = pgoMode
             val resolvedPgoEnabled = graalvm.pgo.enabled.get()
             val resolvedPgoProfile = pgoProfileFile
+            val resolvedAdvancedObfuscation = graalvm.advancedObfuscation.get()
+            inputs.property("advancedObfuscation", resolvedAdvancedObfuscation)
             val resolvedGraalvmHome = graalvmHome.get()
             // Rerun the compile when the PGO mode or the recorded profile changes — the args are
             // assembled in doFirst, so they are not tracked as inputs by themselves.
@@ -894,6 +896,21 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                             "Oracle GraalVM (current toolchain: $resolvedGraalvmHome)",
                                     )
                                 }
+                            }
+                        }
+
+                        // Advanced symbol obfuscation (Oracle GraalVM only, experimental). Renames
+                        // symbols embedded in the image; reflection/JNI names from the reachability
+                        // metadata are preserved automatically, so it is safe with the JNI backends.
+                        if (resolvedAdvancedObfuscation) {
+                            if (pgoSupported) {
+                                add("-H:AdvancedObfuscation=")
+                                logger.lifecycle("Advanced obfuscation: enabled (symbol names obfuscated in the image)")
+                            } else {
+                                logger.warn(
+                                    "Advanced obfuscation ignored — -H:AdvancedObfuscation requires Oracle " +
+                                        "GraalVM (current toolchain: $resolvedGraalvmHome)",
+                                )
                             }
                         }
 

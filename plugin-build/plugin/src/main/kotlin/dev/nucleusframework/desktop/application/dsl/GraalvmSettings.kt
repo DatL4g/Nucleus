@@ -68,6 +68,18 @@ abstract class GraalvmSettings
         // static analysis). Defaults to `true`; set to `false` to manage resource globs manually.
         val autoIncludeResources: Property<Boolean> = objects.notNullProperty(true)
 
+        // Symbol obfuscation baked into the native image (`-H:AdvancedObfuscation=`, Oracle GraalVM
+        // only, experimental). Renames module/package/class/method/field/source names to opaque
+        // identifiers inside the binary — in stack traces, heap dumps, and everything read via
+        // metadata (`Class#getName()`, `strings`) — hardening the app against reverse engineering.
+        // Unlike ProGuard, this operates on the compiled image and is JNI/reflection-safe by design:
+        // names registered under `reflection` in the reachability metadata are left intact, so JNI
+        // callbacks and reflective lookups keep working. JDK/SubstrateVM code is never obfuscated.
+        // Costs 20–50% longer builds (two-phase), no runtime cost. Ignored on non-Oracle toolchains
+        // (a warning is logged). Export the original→obfuscated mapping for deobfuscating production
+        // stack traces by adding `-H:AdvancedObfuscation=export-mapping` via [buildArgs]. Off by default.
+        val advancedObfuscation: Property<Boolean> = objects.notNullProperty(false)
+
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val toolchain: GraalvmToolchainSettings = objects.new()
