@@ -961,6 +961,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                     "PGO: building instrumented image — run it to record ${resolvedPgoProfile.name}",
                                 )
                             }
+                            resolvedQuickBuild -> {
+                                // Applying a PGO profile on a -Ob (quick) build is contradictory —
+                                // quick build disables the optimizations PGO drives — and only slows
+                                // the dev loop. Skip it in quick mode.
+                                logger.lifecycle("Quick build: skipping PGO profile (dev run)")
+                            }
                             resolvedPgoMode != "off" && resolvedPgoEnabled && resolvedPgoProfile.exists() -> {
                                 if (oracleGraalvm) {
                                     add("--pgo=${resolvedPgoProfile.absolutePath}")
@@ -977,7 +983,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // Advanced symbol obfuscation (Oracle GraalVM only, experimental). Renames
                         // symbols embedded in the image; reflection/JNI names from the reachability
                         // metadata are preserved automatically, so it is safe with the JNI backends.
-                        if (resolvedAdvancedObfuscation) {
+                        // Skipped in quick-build mode — its two-phase build (+20–50%) defeats the
+                        // purpose of the fast dev loop, and obfuscation is a distributable concern.
+                        if (resolvedQuickBuild && resolvedAdvancedObfuscation) {
+                            logger.lifecycle("Quick build: skipping advanced obfuscation (dev run)")
+                        }
+                        if (resolvedAdvancedObfuscation && !resolvedQuickBuild) {
                             if (oracleGraalvm) {
                                 // Future GraalVM releases require experimental options to be
                                 // explicitly unlocked; do it now to future-proof and silence the warning.
