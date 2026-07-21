@@ -100,7 +100,7 @@ Version format: `1.3.0-beta-XX` (hyphen before number, e.g. `1.3.0-beta-07`).
     - **L1**: Generic cross-platform metadata shipped in `graalvm-runtime` JAR (`reachability-metadata.json` with ~300+ types)
     - **L2**: Oracle GraalVM Reachability Metadata Repository — auto-resolved for classpath deps (enabled by default, `metadataRepository {}` DSL)
     - **L3**: Platform-specific metadata (macOS/Windows/Linux) shipped inside the plugin JAR under `nucleus/graalvm/platform-metadata/`
-- `graalvm-runtime` auto-includes `.svg`, `.ttf`, `.otf`, `composeResources/*`, `nucleus/native/*`, and `META-INF/services/*` via `native-image.properties` glob patterns
+- `graalvm-runtime` auto-includes `.svg`, `.ttf`, `.otf`, `composeResources/*`, `nucleus/native/*`, and `META-INF/services/*` via `reachability-metadata.json` resource globs (the deprecated `-H:IncludeResources` option was dropped)
 - The tracing agent (`runWithNativeAgent`) is only needed for app-specific reflection, uncommon libraries, and resource bundles
 - PGO (Oracle GraalVM): `runWithPgoInstrument` builds + runs an instrumented image and records `graalvm/pgo/default.iprof` on exit; later native-image builds apply the profile automatically. Opt out with `-Pnucleus.graalvm.pgo=off`; customize via `graalvm { pgo { enabled / profile } }`
 - Agent output is automatically deduplicated against library metadata on the classpath
