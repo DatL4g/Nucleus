@@ -658,6 +658,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     val generateProjectResourceMetadata =
         if (graalvm.autoIncludeResources.get()) {
             val resolvedResourceDirs = collectProjectResourceDirs(runtimeCfg?.name)
+            val nativeBuildTasks = collectNativeBuildTasks(runtimeCfg?.name)
             project.tasks
                 .register(
                     "generateGraalvmProjectResourceMetadata",
@@ -668,6 +669,10 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                             "Register the project's own resources for inclusion in the GraalVM native image"
                         task.group = NUCLEUS_TASK_GROUP
                         task.resourceDirs.from(resolvedResourceDirs)
+                        // The native modules write their .so into src/main/resources/nucleus/native
+                        // (a resource dir this task reads) — depend on their build tasks so Gradle
+                        // doesn't flag the implicit dependency.
+                        nativeBuildTasks.forEach { task.dependsOn(it) }
                         task.outputDir.set(projectResourceMetadataDir)
                     }
                 }
@@ -1988,7 +1993,7 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
  * than plain [File] paths — lets Gradle infer the producing tasks automatically. Sibling
  * projects that are not yet evaluated simply contribute nothing.
  */
-private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: String?): List<FileCollection> {
+private fun JvmApplicationContext.collectProjectResourceProjects(runtimeConfigName: String?): Set<Project> {
     val projects = linkedSetOf(project)
     runtimeConfigName?.let { project.configurations.findByName(it) }
         ?.allDependencies
@@ -1996,8 +2001,25 @@ private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: 
         ?.forEach { dep ->
             runCatching { project.project(dep.path) }.getOrNull()?.let { projects.add(it) }
         }
-    return projects.flatMap { resourceSrcDirsOf(it) }
+    return projects
 }
+
+private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: String?): List<FileCollection> =
+    collectProjectResourceProjects(runtimeConfigName).flatMap { resourceSrcDirsOf(it) }
+
+/**
+ * The `buildNative<OS>` tasks of the resource-contributing projects. They write the JNI `.so`/
+ * `.dylib`/`.dll` into `src/main/resources/nucleus/native` — i.e. *into* a resource source
+ * directory that [GenerateProjectResourceMetadataTask] reads — so that task must depend on them
+ * or Gradle flags an implicit dependency. `src/main/resources` isn't a declared build output of
+ * the source set, so the [FileCollection] dependency inference in [resourceSrcDirsOf] can't see
+ * these producers; wire them explicitly. Non-host variants self-skip (`onlyIf`), so depending on
+ * all of them is harmless.
+ */
+private fun JvmApplicationContext.collectNativeBuildTasks(runtimeConfigName: String?): List<Any> =
+    collectProjectResourceProjects(runtimeConfigName).map { p ->
+        p.tasks.matching { it.name.startsWith("buildNative") }
+    }
 
 /** Resource source directory collections declared by a project, across KMP JVM, Kotlin/JVM and plain Java. */
 private fun resourceSrcDirsOf(p: Project): List<FileCollection> {
