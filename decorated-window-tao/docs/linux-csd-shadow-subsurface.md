@@ -81,6 +81,18 @@ Set the content **and** shadow subsurfaces to **sync** during an interactive
 resize grab so they apply atomically with the parent's transaction (no lag /
 spill), back to `desync` when idle for independent vsync-paced content swaps.
 
+### Move (issue #383)
+
+The shadow subsurface overflows the toplevel's window geometry (negative
+offset). In `desync` mode Mutter/GNOME computes interactive-move damage from the
+window geometry and skips that overflow, so the shadow ring traces at the old
+position while the window is dragged and only clears when the grab ends. Flip
+the shadow subsurface to **sync** for the duration of the compositor move grab
+(`nativeShadowSetSync`) so it rides the toplevel's atomic surface tree and the
+compositor moves + repaints it together with the window; restore `desync` when
+the grab ends. Wired in `TaoComposeSceneHostLinux.onNativeWindowDragStarted` /
+`endShadowMoveSync`.
+
 ## Scope: Wayland only
 
 This effort targets **Wayland only**. X11 keeps the current flat, shadowless

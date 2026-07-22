@@ -194,6 +194,24 @@ internal object NativeTaoEglBridge {
     external fun nativeShadowHide(handle: Long)
 
     /**
+     * Switches the shadow subsurface between synchronized ([sync] = true) and
+     * desynchronized commit modes (`wl_subsurface.set_sync` / `set_desync`).
+     *
+     * The shadow normally runs desync so its buffer swaps (focus fade, resize)
+     * land independently of GTK's parent commits. During a compositor **move**
+     * grab it is flipped to sync so the shadow is part of the toplevel's atomic
+     * surface tree: Mutter/GNOME then moves and repaints it together with the
+     * window instead of leaving its overflowing ring as a trace at the old
+     * position (issue #383). Restored to desync when the grab ends. No-op until
+     * the shadow subsurface exists.
+     */
+    @JvmStatic
+    external fun nativeShadowSetSync(
+        handle: Long,
+        sync: Boolean,
+    )
+
+    /**
      * Returns the address of a C function `void* fn(void* ctx, const char*
      * name)` matching Skia's `GrGLGetProc` signature. Pass to
      * [org.jetbrains.skia.GLAssembledInterface.createFromNativePointers] with

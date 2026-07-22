@@ -317,6 +317,25 @@ internal class TaoComposeSceneHostLinux(
      */
     private var compositorDragActive = false
 
+    /**
+     * True while a compositor **move** grab has the drop shadow in synchronized
+     * mode.
+     *
+     * The shadow rides a sibling `wl_subsurface` at a negative offset that
+     * deliberately overflows the toplevel's window geometry (that is how it
+     * avoids growing the surface / shifting the input coordinate system). In its
+     * normal desync mode Mutter/GNOME computes interactive-move damage from the
+     * window geometry, which excludes that overflow, so the shadow "frame" is
+     * never repainted at the old position while the window is dragged — it traces
+     * behind until the grab ends and a full repaint clears it (issue #383).
+     * Flipping the shadow subsurface to sync for the duration of the move makes
+     * it part of the toplevel's atomic surface tree, so the compositor moves and
+     * repaints it together with the window; it is restored to desync the instant
+     * the grab ends. Move-only: a resize grab keeps the shadow desync (it tracks
+     * the resizing frame, which stays inside the repainted region).
+     */
+    private var shadowSyncedForMove = false
+
     /** True while the EGL attachment is torn down because the window is hidden. */
     private var gpuSuspended: Boolean = false
 
@@ -1238,6 +1257,21 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
+     * Ends move-grab shadow sync (see [shadowSyncedForMove]): restores the
+     * shadow subsurface to desync and schedules a redraw so the next
+     * [commitShadow] re-commits it at the window's new position. No-op unless a
+     * move grab had it synced.
+     */
+    private fun endShadowMoveSync() {
+        if (!shadowSyncedForMove) return
+        shadowSyncedForMove = false
+        if (windowShadow.isActive && attachmentHandle != 0L) {
+            NativeTaoEglBridge.nativeShadowSetSync(attachmentHandle, false)
+        }
+        requestRedrawCoalesced()
+    }
+
+    /**
      * Post-render frame decoration: carves the rounded corners out of the
      * fully-rendered surface. Clears everything outside the rounded frame to
      * transparent so the compositor blends the content behind those corner
@@ -1332,6 +1366,7 @@ internal class TaoComposeSceneHostLinux(
         // [onFocusChanged].
         if (compositorDragActive) {
             compositorDragActive = false
+            endShadowMoveSync()
             windowShadow.onFocusChanged(windowInfo.isWindowFocused)
         }
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
@@ -1372,6 +1407,15 @@ internal class TaoComposeSceneHostLinux(
         // The move grab also steals the focus notify — keep the focused
         // shadow for the whole drag (see [compositorDragActive]).
         compositorDragActive = true
+        // Flip the drop shadow to synchronized mode for the whole move grab so
+        // the compositor moves and repaints its overflowing sibling subsurface
+        // atomically with the window instead of leaving a trace at the old
+        // position (issue #383). Restored to desync when the grab ends (see
+        // [onPointerMove] / [endShadowMoveSync]).
+        if (windowShadow.isActive && attachmentHandle != 0L) {
+            shadowSyncedForMove = true
+            NativeTaoEglBridge.nativeShadowSetSync(attachmentHandle, true)
+        }
         // The compositor's interactive-move grab swallows the button release, so
         // neither the Compose scene nor the title-bar drag gesture ever see it:
         // the pointer stays "pressed" and the window ignores hover/clicks until a
@@ -1426,7 +1470,10 @@ internal class TaoComposeSceneHostLinux(
             }
         }
         // Any other real press means no compositor grab is in flight.
-        if (pressed) compositorDragActive = false
+        if (pressed) {
+            compositorDragActive = false
+            endShadowMoveSync()
+        }
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
 
         // A press reaching the parent scene is outside every popup layer (the
