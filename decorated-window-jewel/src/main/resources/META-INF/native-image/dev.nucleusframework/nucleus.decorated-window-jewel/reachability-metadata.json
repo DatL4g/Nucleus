@@ -1,0 +1,8 @@
+{
+    "reflection": [
+        {
+            "type": "java.lang.Module",
+            "methods": [ { "name": "implAddOpens", "parameterTypes": [ "java.lang.String", "java.lang.Module" ] } ]
+        }
+    ]
+}
