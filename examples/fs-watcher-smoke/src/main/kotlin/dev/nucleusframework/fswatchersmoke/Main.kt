@@ -62,9 +62,10 @@ private suspend fun runSmoke(): Pair<SmokeReport, Int> {
                 val scenarios = mutableListOf<ScenarioResult>()
 
                 Files.writeString(target, "hello-native-smoke")
-                val createdEventKind = awaitEventKind(seen, target) { event ->
-                    event is FsWatchEvent.Created || event is FsWatchEvent.Modified
-                }
+                val createdEventKind =
+                    awaitEventKind(seen, target) { event ->
+                        event is FsWatchEvent.Created || event is FsWatchEvent.Modified
+                    }
                 scenarios +=
                     ScenarioResult(
                         name = "created",
@@ -74,9 +75,10 @@ private suspend fun runSmoke(): Pair<SmokeReport, Int> {
                     )
 
                 Files.delete(target)
-                val deletedEventKind = awaitEventKind(seen, target) { event ->
-                    event is FsWatchEvent.Removed
-                }
+                val deletedEventKind =
+                    awaitEventKind(seen, target) { event ->
+                        event is FsWatchEvent.Removed
+                    }
                 scenarios +=
                     ScenarioResult(
                         name = "deleted",
@@ -184,8 +186,8 @@ private data class SmokeReport(
     val errorMessage: String?,
     val scenarios: List<ScenarioResult>,
 ) {
-    fun toJson(): String {
-        return buildString {
+    fun toJson(): String =
+        buildString {
             append('{')
             appendJsonField("status", status)
             append(',')
@@ -207,7 +209,6 @@ private data class SmokeReport(
             append(']')
             append('}')
         }
-    }
 }
 
 private data class ScenarioResult(
@@ -230,7 +231,10 @@ private data class ScenarioResult(
         }
 }
 
-private fun StringBuilder.appendJsonField(name: String, value: String?) {
+private fun StringBuilder.appendJsonField(
+    name: String,
+    value: String?,
+) {
     append('"').append(name).append('"').append(':')
     if (value == null) {
         append("null")

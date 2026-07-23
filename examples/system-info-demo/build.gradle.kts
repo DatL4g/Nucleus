@@ -14,6 +14,7 @@ plugins {
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(project(":core-runtime"))
+    implementation(project(":aot-runtime"))
     implementation(project(":darkmode-detector"))
     implementation(project(":system-color"))
     implementation(project(":system-info"))
@@ -54,15 +55,6 @@ kotlin {
 
 nucleus.application {
     mainClass = "systeminfodemo.MainKt"
-    jvmArgs +=
-        listOf(
-            "--add-opens",
-            "java.desktop/sun.awt=ALL-UNNAMED",
-            "--add-opens",
-            "java.desktop/sun.lwawt=ALL-UNNAMED",
-            "--add-opens",
-            "java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-        )
 
     graalvm {
         isEnabled = true
@@ -72,10 +64,12 @@ nucleus.application {
         optimization = NativeImageOptimization.SIZE
     }
 
+    jvmArgs += listOf("-XX:+UseSerialGC")
+
     nativeDistributions {
         compressionLevel = CompressionLevel.Maximum
         targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb)
-
+        enableAotCache = true
         packageName = "SystemInfo"
         packageVersion = "1.0.0"
         homepage = "https://github.com/NucleusFramework/Nucleus"

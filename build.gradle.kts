@@ -15,9 +15,6 @@ plugins {
     alias(libs.plugins.versionCheck)
 }
 
-val demoProjects =
-    setOf("nucleus-demo", "compose-demo", "jewel-demo", "system-info-demo", "cmp-demo", "scheduler-demo", "service-management-demo")
-
 val nativeBuildTaskPrefix = "buildNative"
 
 val buildNative by tasks.registering {
@@ -40,7 +37,8 @@ fun isCurrentHostNativeTask(taskName: String): Boolean =
     }
 
 subprojects {
-    if (name !in demoProjects) {
+    val isDemoProject = path.startsWith(":examples:")
+    if (!isDemoProject) {
         apply {
             plugin(
                 rootProject.libs.plugins.detekt
@@ -70,7 +68,7 @@ subprojects {
         }
     }
 
-    if (name !in demoProjects) {
+    if (!isDemoProject) {
         detekt {
             config.setFrom(rootProject.files("config/detekt/detekt.yml"))
         }

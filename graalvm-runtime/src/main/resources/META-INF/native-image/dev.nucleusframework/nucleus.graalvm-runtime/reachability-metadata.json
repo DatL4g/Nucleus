@@ -7,6 +7,10 @@
         {
             "type": "com.sun.media.sound.PortMixerProvider",
             "methods": [ { "name": "<init>", "parameterTypes": [] } ]
+        },
+        {
+            "type": "java.lang.Module",
+            "methods": [ { "name": "implAddOpens", "parameterTypes": [ "java.lang.String", "java.lang.Module" ] } ]
         }
     ],
     "resources": [

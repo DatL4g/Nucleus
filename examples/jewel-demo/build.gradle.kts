@@ -64,6 +64,9 @@ dependencies {
     implementation(libs.jewel.markdown.extensions.images, jewelExclusions)
     implementation(libs.coil.compose)
     implementation(libs.intellij.icons)
+    // Jewel 0.39+ IntUiTheme needs IconManager/DefaultIconManager from these modules
+    implementation(libs.intellij.icons.api)
+    implementation(libs.intellij.icons.impl)
 
     // Jewel's StandalonePlatformCursorController uses JNA at runtime
     implementation(libs.jna.jpms)
@@ -109,7 +112,6 @@ nucleus.application {
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "jewel-sample"
         optimization = NativeImageOptimization.SIZE
-
     }
 
     nativeDistributions {
