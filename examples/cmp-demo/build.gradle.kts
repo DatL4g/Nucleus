@@ -43,7 +43,6 @@ kotlin {
                 implementation(project(":decorated-window-core"))
 
                 implementation(project(":decorated-window-tao"))
-
             }
         }
     }
@@ -89,7 +88,6 @@ nucleus.application {
         linux {
             debMaintainer = "KDroidFilter <dev@kdroidfilter.com>"
         }
-
     }
 
     graalvm {

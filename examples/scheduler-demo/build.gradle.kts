@@ -25,6 +25,9 @@ dependencies {
         }
     implementation(libs.jewel.int.ui.standalone, jewelExclusions)
     implementation(libs.intellij.icons)
+    // Jewel 0.39+ IntUiTheme needs IconManager/DefaultIconManager from these modules
+    implementation(libs.intellij.icons.api)
+    implementation(libs.intellij.icons.impl)
     implementation(libs.jna.jpms)
     implementation(libs.coroutines.core)
 }
