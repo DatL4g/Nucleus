@@ -113,6 +113,9 @@ nucleus.application {
 
         // --- Native libs handling ---
         cleanupNativeLibs = true // Auto cleanup native libraries
+        // --- AOT cache (JDK 25+) ---
+        // Defaults to a portable cache (metadata only), safe to build in CI and ship to any CPU.
+        // Opt into cached adapter code with aotCache { compatibility = AotCacheCompatibility.NATIVE }.
         enableAotCache = System.getenv("GITHUB_REF") != null
 //        splashImage = "splash.png" // Splash screen image file
         homepage = "https://github.com/KdroidFilter/NucleusDemo"

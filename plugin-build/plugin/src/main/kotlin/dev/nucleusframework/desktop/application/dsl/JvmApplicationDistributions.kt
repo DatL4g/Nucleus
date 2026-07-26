@@ -36,8 +36,24 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
     /** Splash screen image filename relative to appResources (e.g. "splash.png"). */
     var splashImage: String? = null
 
-    /** Enable JDK 25+ AOT cache generation for faster application startup. */
-    var enableAotCache: Boolean = false
+    /**
+     * JDK 25+ AOT cache settings. See [AotCacheSettings].
+     */
+    val aotCache: AotCacheSettings = objects.newInstance(AotCacheSettings::class.java)
+
+    fun aotCache(fn: Action<AotCacheSettings>) {
+        fn.execute(aotCache)
+    }
+
+    /**
+     * Enable JDK 25+ AOT cache generation for faster application startup.
+     * Shorthand for `aotCache { enabled = ... }`.
+     */
+    var enableAotCache: Boolean
+        get() = aotCache.enabled
+        set(value) {
+            aotCache.enabled = value
+        }
 
     /**
      * Whether any of the configured target formats require sandboxing
