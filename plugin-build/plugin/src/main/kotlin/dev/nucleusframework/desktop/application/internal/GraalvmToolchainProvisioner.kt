@@ -114,6 +114,9 @@ internal abstract class GraalvmToolchainValueSource :
  * `GRAALVM_HOME` environment variable pointing at a valid installation bypasses the
  * download entirely.
  */
+// Three download sources (GraalVM CE, Oracle GraalVM, Liberica NIK) each need their own
+// resolution step on top of the shared download/verify/extract helpers.
+@Suppress("TooManyFunctions")
 internal object GraalvmToolchainProvisioner {
     private const val MARKER_FILE = ".nucleus-provisioned"
     private const val CONNECT_TIMEOUT_MS = 30_000
@@ -126,6 +129,8 @@ internal object GraalvmToolchainProvisioner {
     private const val BELLSOFT_NIK_API = "https://api.bell-sw.com/v1/nik/releases?os=macos&output=json"
     private const val GRAALVM_CE_RELEASES_API =
         "https://api.github.com/repos/graalvm/graalvm-ce-builds/releases?per_page=100"
+    private const val GRAALVM_CE_DOWNLOAD_BASE =
+        "https://github.com/graalvm/graalvm-ce-builds/releases/download"
     private const val GRAALVM_CE_ASSET_PREFIX = "graalvm-community-jdk-"
 
     fun provision(
@@ -298,11 +303,12 @@ internal object GraalvmToolchainProvisioner {
     // ── GraalVM Community Edition ──
 
     /**
-     * Resolves a CE asset from the `graalvm/graalvm-ce-builds` releases. Unlike the Oracle
-     * endpoints there is no "latest" URL to construct: LTS assets are named
-     * `graalvm-community-jdk-25.0.2_<os>-<arch>_bin.<ext>` while innovation assets embed a
-     * base version (`graalvm-community-jdk-25i1-25.0.3_…`), so the newest matching asset is
-     * picked from the API listing.
+     * Resolves a CE asset from the `graalvm/graalvm-ce-builds` releases.
+     *
+     * A pinned patch release ("25.0.2") maps to a deterministic tag and asset name and is
+     * resolved offline. Floating versions need the API: for the LTS line ("25") the newest
+     * patch is unknown, and innovation assets embed a base version that is not derivable from
+     * the requested version (`graalvm-community-jdk-25i1-25.0.3_…` under tag `graal-25.1.3`).
      */
     private fun resolveCommunityDownload(request: GraalvmToolchainRequest): DownloadSource {
         check(!(request.os == OS.Windows && request.arch == Arch.Arm64)) {
@@ -313,15 +319,27 @@ internal object GraalvmToolchainProvisioner {
         val version = request.version
         val ext = if (request.os == OS.Windows) "zip" else "tar.gz"
         val suffix = "_${request.os.id}-${archToken(request.arch)}_bin.$ext"
+        val target = "${request.os.id}-${archToken(request.arch)}"
+
+        // Pinned patch release: build the URL directly. This is the escape hatch when the
+        // GitHub API is rate-limited (60/hour unauthenticated, shared per IP on CI runners).
+        if (version.contains('.') && !version.contains('i')) {
+            val url = "$GRAALVM_CE_DOWNLOAD_BASE/jdk-$version/$GRAALVM_CE_ASSET_PREFIX$version$suffix"
+            return DownloadSource(
+                url = url,
+                description = "GraalVM Community Edition $version ($target)",
+                sha256Url = "$url.sha256",
+            )
+        }
+
         val prefix =
-            when {
+            if (version.contains('i')) {
                 // Innovation release ("25i1") — the asset appends the base version.
-                version.contains('i') -> "$GRAALVM_CE_ASSET_PREFIX$version-"
-                // Pinned patch release ("25.0.1") — matched exactly via the suffix below.
-                version.contains('.') -> "$GRAALVM_CE_ASSET_PREFIX$version"
+                "$GRAALVM_CE_ASSET_PREFIX$version-"
+            } else {
                 // Feature version tracking the latest CPU ("25"); the trailing dot keeps
                 // "25" from also matching the "25i1" innovation assets.
-                else -> "$GRAALVM_CE_ASSET_PREFIX$version."
+                "$GRAALVM_CE_ASSET_PREFIX$version."
             }
         val chosen =
             communityAssets(request)
@@ -332,16 +350,15 @@ internal object GraalvmToolchainProvisioner {
                     },
                 )
                 ?: error(
-                    "No GraalVM Community Edition build matching '$version' for " +
-                        "${request.os.id}-${archToken(request.arch)} was found in the " +
-                        "graalvm/graalvm-ce-builds releases. Pin a known version via " +
+                    "No GraalVM Community Edition build matching '$version' for $target was found " +
+                        "in the graalvm/graalvm-ce-builds releases. Pin a known version via " +
                         "graalvm { toolchain { version = \"25.0.2\" } }, or set GRAALVM_HOME.",
                 )
         val (name, url) = chosen
         return DownloadSource(
             url = url,
-            description = "GraalVM Community Edition ${name.removePrefix(GRAALVM_CE_ASSET_PREFIX).removeSuffix(suffix)} " +
-                "(${request.os.id}-${archToken(request.arch)})",
+            description = "GraalVM Community Edition " +
+                "${name.removePrefix(GRAALVM_CE_ASSET_PREFIX).removeSuffix(suffix)} ($target)",
             // Every CE asset ships a sibling .sha256 in the same release.
             sha256Url = "$url.sha256",
         )
@@ -578,6 +595,8 @@ internal object GraalvmToolchainProvisioner {
     ): String = openConnection(url, headers).inputStream.use { it.readBytes().decodeToString() }
 
     /** Opens a connection following redirects across hosts (HttpURLConnection won't by itself). */
+    // Redirect handling has three distinct failure modes worth reporting separately.
+    @Suppress("ThrowsCount")
     private fun openConnection(
         url: String,
         headers: Map<String, String> = emptyMap(),
