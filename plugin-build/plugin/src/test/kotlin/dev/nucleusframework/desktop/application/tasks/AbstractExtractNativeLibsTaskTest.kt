@@ -61,12 +61,14 @@ class AbstractExtractNativeLibsTaskTest {
 
     @Suppress("MagicNumber")
     private fun macho(cpuType: Int): ByteArray {
-        // Bytes FE ED FA CF read big-endian == 0xFEEDFACF, decoded with LITTLE_ENDIAN cpuType.
+        // Real thin Mach-O layout: the file is little-endian, so MH_MAGIC_64 is stored byte-swapped
+        // as "cf fa ed fe" — the prefix every shipped dylib actually starts with — and cpu_type
+        // follows in that same order.
         val buf = ByteArray(16)
-        buf[0] = 0xFE.toByte()
-        buf[1] = 0xED.toByte()
-        buf[2] = 0xFA.toByte()
-        buf[3] = 0xCF.toByte()
+        buf[0] = 0xCF.toByte()
+        buf[1] = 0xFA.toByte()
+        buf[2] = 0xED.toByte()
+        buf[3] = 0xFE.toByte()
         buf[4] = (cpuType and 0xFF).toByte()
         buf[5] = ((cpuType ushr 8) and 0xFF).toByte()
         buf[6] = ((cpuType ushr 16) and 0xFF).toByte()
@@ -76,17 +78,19 @@ class AbstractExtractNativeLibsTaskTest {
 
     private val winArm64Dll = pe(0xAA64)
     private val winX64Dll = pe(0x8664)
+    private val macArm64Dylib = macho(0x0100000C)
+    private val macX64Dylib = macho(0x01000007)
 
     /** Entry set mirroring zstd-kmp-jvm 0.4.0 exactly. */
     private fun buildInputJar(file: File): File {
         val entries =
             linkedMapOf(
-                "jni/aarch64/libzstd-kmp.dylib" to macho(0x0100000C), // macOS arm64
+                "jni/aarch64/libzstd-kmp.dylib" to macArm64Dylib, // macOS arm64
                 "jni/aarch64/libzstd-kmp.so" to elf(0xB7), // linux arm64
                 "jni/aarch64/zstd-kmp.dll" to winArm64Dll, // windows arm64
                 "jni/amd64/libzstd-kmp.so" to elf(0x3E), // linux x64
                 "jni/amd64/zstd-kmp.dll" to winX64Dll, // windows x64
-                "jni/x86_64/libzstd-kmp.dylib" to macho(0x01000007), // macOS x64
+                "jni/x86_64/libzstd-kmp.dylib" to macX64Dylib, // macOS x64
             )
         ZipOutputStream(file.outputStream().buffered()).use { zos ->
             for ((name, bytes) in entries) {
@@ -139,6 +143,32 @@ class AbstractExtractNativeLibsTaskTest {
         val extracted = outDir.resolve("zstd-kmp.dll")
         assertTrue(extracted.isFile)
         assertArrayEquals(winArm64Dll, extracted.readBytes())
+    }
+
+    /**
+     * The two dylibs flatten to the same `libzstd-kmp.dylib`, so exactly one may survive the
+     * filter. Before the arch merge both did — they were `(MACOS, UNKNOWN)` — and the winner was
+     * whichever came first in the JAR, i.e. the arm64 one on an Intel target.
+     */
+    @Test
+    fun `macos x64 target extracts the x64 dylib, not the arm64 one listed before it`() {
+        val outDir = runExtract(os = "macos", arch = "x64")
+
+        val extracted = outDir.resolve("libzstd-kmp.dylib")
+        assertTrue("expected the flattened dylib to be extracted", extracted.isFile)
+        assertArrayEquals("wrong-arch dylib was extracted for an x64 target", macX64Dylib, extracted.readBytes())
+
+        assertFalse(outDir.resolve("zstd-kmp.dll").exists())
+        assertFalse(outDir.resolve("libzstd-kmp.so").exists())
+    }
+
+    @Test
+    fun `macos arm64 target extracts the arm64 dylib`() {
+        val outDir = runExtract(os = "macos", arch = "arm64")
+
+        val extracted = outDir.resolve("libzstd-kmp.dylib")
+        assertTrue(extracted.isFile)
+        assertArrayEquals(macArm64Dylib, extracted.readBytes())
     }
 
     @Test
