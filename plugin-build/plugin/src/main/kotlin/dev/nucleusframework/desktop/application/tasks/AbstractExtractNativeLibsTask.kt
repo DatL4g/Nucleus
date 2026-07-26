@@ -31,6 +31,11 @@ import java.util.zip.ZipInputStream
  */
 @DisableCachingByDefault(because = "Extracts native libs from JARs; output depends on JAR content order")
 abstract class AbstractExtractNativeLibsTask : AbstractNucleusTask() {
+    private companion object {
+        /** Bytes read from each native lib to reach the PE/ELF/Mach-O machine field for arch detection. */
+        const val HEADER_BYTES = 4096
+    }
+
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.NAME_ONLY)
     abstract val inputJars: ConfigurableFileCollection
@@ -113,17 +118,31 @@ abstract class AbstractExtractNativeLibsTask : AbstractNucleusTask() {
         zis: ZipInputStream,
     ): NativeLibArchDetector.NativeInfo {
         val pathInfo = NativeLibArchDetector.detectFromPath(entryName)
+        // Path detection is authoritative once it fully resolves the platform.
         if (pathInfo.os != NativeOs.UNKNOWN && pathInfo.arch != NativeArch.UNKNOWN) {
             return pathInfo
         }
-        // Fall back to binary header detection
-        @Suppress("MagicNumber")
-        val header = ByteArray(64)
+        // Otherwise complement — not replace — the path result with binary header detection.
+        // Layouts like zstd-kmp's "jni/aarch64/foo.dll" encode the arch in the path but carry
+        // no OS token, while the PE/ELF/Mach-O header supplies the OS. Discarding the
+        // path-detected arch here previously let an ARM64 .dll be extracted for an x64 target
+        // (its arch reads as UNKNOWN and passes the filter), see issue #399.
+        val headerInfo = detectFromHeaderBytes(zis)
+        return NativeLibArchDetector.NativeInfo(
+            os = if (pathInfo.os != NativeOs.UNKNOWN) pathInfo.os else headerInfo.os,
+            arch = if (pathInfo.arch != NativeArch.UNKNOWN) pathInfo.arch else headerInfo.arch,
+        )
+    }
+
+    private fun detectFromHeaderBytes(zis: ZipInputStream): NativeLibArchDetector.NativeInfo {
+        // Must be large enough to reach the PE machine field: it sits at e_lfanew (a 4-byte
+        // value at offset 0x3C) + 4, which for real DLLs is routinely past the first 64 bytes.
+        val header = ByteArray(HEADER_BYTES)
         val bytesRead = readFully(zis, header)
-        if (bytesRead > 0) {
-            return NativeLibArchDetector.detectFromHeader(header.copyOf(bytesRead))
+        if (bytesRead <= 0) {
+            return NativeLibArchDetector.NativeInfo(NativeOs.UNKNOWN, NativeArch.UNKNOWN)
         }
-        return pathInfo
+        return NativeLibArchDetector.detectFromHeader(header.copyOf(bytesRead))
     }
 
     private fun shouldExtract(

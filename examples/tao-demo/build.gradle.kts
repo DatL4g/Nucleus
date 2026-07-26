@@ -78,11 +78,29 @@ nucleus.application {
     }
 
     nativeDistributions {
-        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Pkg)
+        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Pkg, TargetFormat.AppX)
         compressionLevel = CompressionLevel.Maximum
         appName = "Sample Tao"
         packageName = "SampleTao"
         packageVersion = "1.0.0"
+
+        windows {
+            // AppX (Windows Store) is a store format → activates the sandboxed pipeline, so the
+            // zstd-kmp marker/shim rewrite is exercised end-to-end on Windows too (issue #399/#317),
+            // mirroring what the Pkg format does on macOS.
+            //
+            // To actually sideload + launch it locally (`:examples:tao-demo:runAppX`), add a
+            // `signing { certificateFile = … }` block with a dev cert trusted on the machine and set
+            // `publisher` to that cert's subject — Windows refuses unsigned AppX packages.
+            appx {
+                identityName = "NucleusFramework.SampleTao"
+                publisher = "CN=NucleusFramework"
+                publisherDisplayName = "Nucleus Framework"
+                displayName = "Sample Tao"
+                applicationId = "SampleTao"
+                languages = listOf("en-US")
+            }
+        }
 
         macOS {
             bundleID = "dev.nucleusframework.sampletao"
