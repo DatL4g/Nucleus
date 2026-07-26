@@ -7,6 +7,8 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.dsl.AotCacheCompatibility
+import dev.nucleusframework.desktop.application.dsl.AotCacheSettings
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.validation.validatePackageVersions
@@ -401,6 +403,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 distributableDir.set(createDistributable.flatMap { it.destinationDir })
                 javaHome.set(app.javaHomeProvider)
                 javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
+                applyAotCacheSettings(app.nativeDistributions.aotCache)
                 if (currentOS == OS.MacOS) {
                     val mac = app.nativeDistributions.macOS
                     val defaultResources = commonTasks.unpackDefaultResources
@@ -485,6 +488,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                         distributableDir.set(createSandboxedDistributable.flatMap { it.destinationDir })
                         javaHome.set(app.javaHomeProvider)
                         javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
+                        applyAotCacheSettings(app.nativeDistributions.aotCache)
                         if (currentOS == OS.MacOS) {
                             val mac = app.nativeDistributions.macOS
                             val defaultResources = commonTasks.unpackDefaultResources
@@ -671,6 +675,18 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
  * (see [TargetFormat.producesUpdateManifest]) is compatible with the current OS — in which case
  * there is no manifest to publish.
  */
+/**
+ * Maps the `aotCache { }` DSL onto the training task.
+ *
+ * [AotCacheCompatibility.COMPATIBILITY] (the default) disables the cached adapter code, which is
+ * generated for the build machine CPU and crashes with an illegal instruction on narrower CPUs
+ * (issue #400).
+ */
+private fun AbstractGenerateAotCacheTask.applyAotCacheSettings(settings: AotCacheSettings) {
+    adapterCaching.set(settings.compatibility == AotCacheCompatibility.NATIVE)
+    extraTrainingJvmArgs.set(settings.extraTrainingJvmArgs.toList())
+}
+
 private fun JvmApplicationContext.registerUpdateYmlMergeIfNeeded(
     nonStoreFormats: List<TargetFormat>,
     nonStorePackageFormats: List<TaskProvider<AbstractElectronBuilderPackageTask>>,
