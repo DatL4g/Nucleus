@@ -1717,6 +1717,25 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowHide(
     if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
 }
 
+/**
+ * Flips the shadow subsurface between synchronized and desynchronized commit
+ * modes. Sync during a compositor move grab makes Mutter treat the shadow as
+ * part of the toplevel's atomic surface tree, so its overflowing ring is moved
+ * and repainted with the window instead of tracing at the old position (#383).
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeShadowSetSync(
+    JNIEnv *env, jclass clazz, jlong handle, jboolean sync)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_shadow_subsurface || !p_wl_proxy_marshal_flags) return;
+    p_wl_proxy_marshal_flags(att->wl_shadow_subsurface,
+        sync ? WL_SUBSURFACE_SET_SYNC : WL_SUBSURFACE_SET_DESYNC, NULL,
+        p_wl_proxy_get_version(att->wl_shadow_subsurface), 0);
+    if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeDetach(
     JNIEnv *env, jclass clazz, jlong handle)
