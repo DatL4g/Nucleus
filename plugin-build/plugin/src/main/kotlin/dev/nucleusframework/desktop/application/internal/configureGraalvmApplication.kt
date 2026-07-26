@@ -50,18 +50,10 @@ private val graalvmDefaultJvmArgs: List<String> =
     }
 
 // Oracle GraalVM ships PGO (--pgo / --pgo-instrument); community builds (GraalVM CE, Liberica
-// NIK, Mandrel) reject those flags as unknown options. Detected from the JDK `release` file
-// (Oracle GraalVM reports IMPLEMENTOR="Oracle Corporation").
-private fun isOracleGraalvm(javaHome: File): Boolean =
-    javaHome
-        .resolve("release")
-        .takeIf { it.isFile }
-        ?.readLines()
-        .orEmpty()
-        .any { line ->
-            (line.startsWith("IMPLEMENTOR=") || line.startsWith("VENDOR=")) &&
-                line.contains("Oracle", ignoreCase = true)
-        }
+// NIK, Mandrel) reject those flags as unknown options. Detected from the resolved toolchain's
+// `release` file, so a GRAALVM_HOME that disagrees with the declared distribution still
+// degrades gracefully instead of failing the compile.
+private fun isOracleGraalvm(javaHome: File): Boolean = isOracleGraalvmInstallation(javaHome)
 
 // native-image reads arguments from an @argfile using the JDK argument-file syntax: tokens are
 // separated by whitespace/newlines, double quotes group a token, and backslash is an escape
@@ -74,16 +66,35 @@ private fun escapeNativeImageArgFileArgument(arg: String): String =
 internal fun JvmApplicationContext.configureGraalvmApplication() {
     val graalvm = app.graalvm
 
+    // Declared distribution. Community Edition is the default: it is GPLv2 + Classpath
+    // Exception, so the GraalVM runtime libraries this plugin copies next to the executable
+    // carry no redistribution-for-a-fee restriction. Oracle GraalVM is opt-in.
+    val graalvmDistribution = graalvm.toolchain.distribution.get()
+    if (graalvmDistribution.isOracle) {
+        project.logger.warn(
+            "[graalvm] Using Oracle GraalVM instead of the default Community Edition. It is " +
+                "governed by the GraalVM Free Terms and Conditions (GFTC), which permit production " +
+                "and commercial use but only allow redistributing the Program \"provided that You " +
+                "do not charge Your licensees any fees associated with such distribution or use\". " +
+                "Nucleus copies GraalVM runtime libraries (libjvm, libawt, …) next to the packaged " +
+                "executable, so review the GFTC before shipping a paid application. Revert with " +
+                "graalvm { toolchain { distribution = GraalvmDistribution.COMMUNITY } }.",
+        )
+    }
+
     val graalvmHome: Provider<String>
     val graalvmJavaExecutable: Provider<String>
     if (graalvm.toolchain.autoDownload.get()) {
-        // Auto-provisioned toolchain: Oracle GraalVM (Liberica NIK on Intel macs) is
+        // Auto-provisioned toolchain: GraalVM CE by default (Liberica NIK on Intel macs) is
         // downloaded on first use and cached under the Gradle user home, so once
-        // provisioned resolution costs a single marker-file read. GRAALVM_HOME, when
-        // set to a valid installation, bypasses the download. Provisioning goes through
-        // a ValueSource so the `tar` extraction stays configuration-cache compatible.
+        // provisioned resolution costs a single marker-file read. GRAALVM_HOME, when set to a
+        // valid installation of the requested distribution, bypasses the download.
+        // Provisioning goes through a ValueSource so the `tar` extraction stays
+        // configuration-cache compatible, and stays lazy so merely realizing these tasks
+        // (an IDE sync, `gradlew tasks`) never triggers a multi-GB download.
         graalvmHome =
             project.providers.of(GraalvmToolchainValueSource::class.java) { spec ->
+                spec.parameters.distribution.set(graalvmDistribution)
                 spec.parameters.version.set(
                     graalvm.toolchain.version.orNull
                         ?: graalvm.toolchain.channel
@@ -169,7 +180,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             description = "Run the app with the GraalVM native-image-agent to collect reflection metadata"
 
             mainClass.set(app.mainClass)
-            setExecutable(graalvmJavaExecutable.get())
+            // Resolved at execution time: querying the provider here would provision the
+            // toolchain as soon as the task is realized (an IDE sync, `gradlew tasks`).
+            doFirst { setExecutable(graalvmJavaExecutable.get()) }
 
             useAppRuntimeFiles { (runtimeJars, _) ->
                 classpath = runtimeJars
@@ -764,7 +777,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     }
                 }
 
-            executable = nativeImageExe.get()
+            // Set in doFirst rather than here: resolving it at configuration/realization time
+            // would download the toolchain just to list tasks or sync the IDE.
+            doFirst { executable = nativeImageExe.get() }
 
             // Control the minos in LC_BUILD_VERSION at link time
             if (currentOS == OS.MacOS) {
@@ -811,7 +826,6 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedMaxHeapSizePercent = graalvm.maxHeapSizePercent.get()
             inputs.property("maxHeapSize", resolvedMaxHeapSize ?: "")
             inputs.property("maxHeapSizePercent", resolvedMaxHeapSizePercent)
-            val resolvedGraalvmHome = graalvmHome.get()
             // Rerun the compile when the PGO mode or the recorded profile changes — the args are
             // assembled in doFirst, so they are not tracked as inputs by themselves.
             inputs.property("pgoMode", resolvedPgoMode)
@@ -841,6 +855,10 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
 
             doFirst {
                 outputDir.mkdirs()
+
+                // Resolved here, not at configuration time: this is the call that provisions the
+                // toolchain, and it must only happen when a native image is actually built.
+                val resolvedGraalvmHome = graalvmHome.get()
 
                 // PGO flags are Oracle GraalVM-only: community toolchains (GraalVM CE, Liberica
                 // NIK, Mandrel) reject --pgo/--pgo-instrument as unknown options. Gate on the
@@ -1105,40 +1123,46 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         args = app.args
     }
 
-    // ── Record a PGO profile ──
+    // ── Record a PGO profile (Oracle GraalVM only) ──
     // Builds and packages an instrumented image (the instrumented compile is enabled by the
     // startParameter detection above), runs it, and lets SubstrateVM dump the profile to
     // pgoProfileFile on exit. The next regular build picks the profile up automatically.
+    //
+    // PGO is an Oracle GraalVM feature, so under the default community toolchain the task is
+    // not registered at all: it stays out of `gradlew tasks` and cannot be invoked, rather
+    // than being offered and then failing on an unknown --pgo-instrument flag.
 
-    tasks.register<Exec>(
-        taskNameAction = "run",
-        taskNameObject = "withPgoInstrument",
-    ) {
-        description = "Build and run an instrumented native image to record a PGO profile"
-        dependsOn(packageGraalvmNative)
+    if (graalvmDistribution.isOracle) {
+        tasks.register<Exec>(
+            taskNameAction = "run",
+            taskNameObject = "withPgoInstrument",
+        ) {
+            description = "Build and run an instrumented native image to record a PGO profile"
+            dependsOn(packageGraalvmNative)
 
-        executable = packagedBinaryFile.get().asFile.absolutePath
-        // -XX:ProfilesDumpFile is a SubstrateVM runtime option: it is consumed at isolate
-        // startup and never reaches the application's main(args).
-        args = listOf("-XX:ProfilesDumpFile=${pgoProfileFile.absolutePath}") + app.args
+            executable = packagedBinaryFile.get().asFile.absolutePath
+            // -XX:ProfilesDumpFile is a SubstrateVM runtime option: it is consumed at isolate
+            // startup and never reaches the application's main(args).
+            args = listOf("-XX:ProfilesDumpFile=${pgoProfileFile.absolutePath}") + app.args
 
-        val resolvedInstrumenting = pgoMode == "instrument"
-        val resolvedProfile = pgoProfileFile
-        val resolvedTaskName = pgoInstrumentTaskName
-        doFirst {
-            check(resolvedInstrumenting) {
-                "The native image was not built with PGO instrumentation. Invoke the task by its " +
-                    "full name (./gradlew $resolvedTaskName) or pass " +
-                    "-P${NucleusProperties.GRAALVM_PGO_MODE}=instrument."
+            val resolvedInstrumenting = pgoMode == "instrument"
+            val resolvedProfile = pgoProfileFile
+            val resolvedTaskName = pgoInstrumentTaskName
+            doFirst {
+                check(resolvedInstrumenting) {
+                    "The native image was not built with PGO instrumentation. Invoke the task by its " +
+                        "full name (./gradlew $resolvedTaskName) or pass " +
+                        "-P${NucleusProperties.GRAALVM_PGO_MODE}=instrument."
+                }
+                resolvedProfile.parentFile.mkdirs()
             }
-            resolvedProfile.parentFile.mkdirs()
-        }
-        doLast {
-            logger.lifecycle("PGO profile recorded to: $resolvedProfile")
-            logger.lifecycle(
-                "Subsequent native image builds apply it automatically (--pgo). " +
-                    "Delete the file or pass -P${NucleusProperties.GRAALVM_PGO_MODE}=off to opt out.",
-            )
+            doLast {
+                logger.lifecycle("PGO profile recorded to: $resolvedProfile")
+                logger.lifecycle(
+                    "Subsequent native image builds apply it automatically (--pgo). " +
+                        "Delete the file or pass -P${NucleusProperties.GRAALVM_PGO_MODE}=off to opt out.",
+                )
+            }
         }
     }
 
@@ -1199,7 +1223,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             description = "Copy AWT dylibs into .app bundle"
             dependsOn(nativeImageCompile, cleanAppBundle)
             doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
-            from("${graalvmHome.get()}/lib") {
+            from(graalvmHome.map { "$it/lib" }) {
                 include(
                     "libawt.dylib",
                     "libawt_lwawt.dylib",
@@ -1215,7 +1239,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
                     "libsplashscreen.dylib",
                 )
             }
-            from("${graalvmHome.get()}/lib/server") {
+            from(graalvmHome.map { "$it/lib/server" }) {
                 include("libjvm.dylib")
             }
             into(appBundleDir.map { it.dir("MacOS") })
@@ -1229,7 +1253,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             description = "Copy libjawt.dylib + fontconfig to lib/ subdir for Skiko and AWT font init"
             dependsOn(nativeImageCompile, cleanAppBundle)
             doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
-            from("${graalvmHome.get()}/lib") {
+            from(graalvmHome.map { "$it/lib" }) {
                 // fontconfig.bfc: SunFontManager/FontConfiguration reads it from <java.home>/lib at
                 // startup; java.home is the executable dir under native image, so without it
                 // FontConfiguration.getVersion() throws "Fontconfig head is null" the first time AWT
@@ -1647,7 +1671,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
         ) {
             description = "Copy AWT DLLs into output directory"
             dependsOn(nativeImageCompile)
-            from("${graalvmHome.get()}/bin") {
+            from(graalvmHome.map { "$it/bin" }) {
                 include(
                     "awt.dll",
                     "java.dll",
@@ -1671,7 +1695,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
         ) {
             description = "Copy jvm.dll into output directory"
             dependsOn(nativeImageCompile)
-            from("${graalvmHome.get()}/bin/server") {
+            from(graalvmHome.map { "$it/bin/server" }) {
                 include("jvm.dll")
             }
             into(outputDir)
@@ -1684,7 +1708,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
         ) {
             description = "Copy jawt.dll to bin/ subdir for Skiko"
             dependsOn(nativeImageCompile)
-            from("${graalvmHome.get()}/bin") {
+            from(graalvmHome.map { "$it/bin" }) {
                 include("jawt.dll")
             }
             into(outputDir.map { it.dir("bin") })
@@ -1717,7 +1741,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
         ) {
             description = "Copy fontconfig.bfc to lib/ subdir for AWT font init"
             dependsOn(nativeImageCompile)
-            from("${graalvmHome.get()}/lib") {
+            from(graalvmHome.map { "$it/lib" }) {
                 include("fontconfig.bfc")
             }
             into(outputDir.map { it.dir("lib") })
@@ -1738,7 +1762,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
             ) {
                 description = "Copy MSVC C/C++ runtime DLLs next to the native executable"
                 dependsOn(nativeImageCompile)
-                from(cRuntimeSourceDir.get()) {
+                from(cRuntimeSourceDir) {
                     requestedDlls.forEach { include(it) }
                 }
                 into(outputDir)
@@ -1807,7 +1831,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
         ) {
             description = "Copy AWT .so libs into output directory"
             dependsOn(nativeImageCompile)
-            from("${graalvmHome.get()}/lib") {
+            from(graalvmHome.map { "$it/lib" }) {
                 include(
                     "libawt.so",
                     "libawt_headless.so",
@@ -1833,7 +1857,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
         ) {
             description = "Copy libjvm.so into output directory"
             dependsOn(nativeImageCompile)
-            from("${graalvmHome.get()}/lib/server") {
+            from(graalvmHome.map { "$it/lib/server" }) {
                 include("libjvm.so")
             }
             into(outputDir)
@@ -1846,7 +1870,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
         ) {
             description = "Copy libjawt.so to lib/ subdir for Skiko"
             dependsOn(nativeImageCompile)
-            from("${graalvmHome.get()}/lib") {
+            from(graalvmHome.map { "$it/lib" }) {
                 include("libjawt.so")
             }
             into(outputDir.map { it.dir("lib") })

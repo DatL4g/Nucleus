@@ -1,4 +1,5 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.GraalvmDistribution
 import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -43,6 +44,12 @@ nucleus.application {
         javaLanguageVersion = 25
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "benchmark-demo"
+        // Opt out of the default Community Edition toolchain: -O3 and PGO below only exist in
+        // Oracle GraalVM, so on CE this benchmark would silently measure -O2 and mislabel it.
+        // This demo is never sold or redistributed, so the GFTC no-fee condition is not engaged.
+        toolchain {
+            distribution = GraalvmDistribution.ORACLE
+        }
         // The whole point of this demo: -O3 (Oracle GraalVM only) so the AOT
         // build is compiled at peak-runtime optimization for the JIT-vs-AOT shootout.
         // Override with -Popt=2 (native-image default level) or -Popt=s (-Os, size-optimized).
