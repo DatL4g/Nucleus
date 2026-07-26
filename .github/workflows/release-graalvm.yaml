@@ -99,6 +99,10 @@ jobs:
 
       - name: Build GraalVM native packages
         shell: bash
+        # GraalVM CE is resolved through the GitHub releases API. Hosted runners share an IP,
+        # so the 60/hour anonymous limit is routinely exhausted — authenticate the call.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             ./gradlew :examples:jewel-demo:packageGraalvmDeb -PnativeMarch=compatibility --no-daemon --stacktrace

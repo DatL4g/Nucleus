@@ -122,17 +122,21 @@ abstract class GraalvmSettings
 /**
  * GraalVM JDK toolchain acquisition.
  *
- * By default the plugin downloads Oracle GraalVM (the former Enterprise Edition) on first
- * use and caches it under `<gradle-user-home>/nucleus/graalvm` — no locally installed
- * GraalVM is required. Innovation releases (the default [channel]) come from
- * `gds.oracle.com`, LTS and pinned releases from `download.oracle.com`. On Intel macs,
- * which Oracle stopped supporting after GraalVM 25.0.1, the plugin falls back to BellSoft
- * Liberica NIK (resolved through the BellSoft discovery API).
+ * By default the plugin downloads **GraalVM Community Edition** on first use and caches it
+ * under `<gradle-user-home>/nucleus/graalvm` — no locally installed GraalVM is required.
+ * Community builds come from the `graalvm/graalvm-ce-builds` GitHub releases; setting
+ * [distribution] to [GraalvmDistribution.ORACLE] switches to Oracle GraalVM instead
+ * (innovation releases from `gds.oracle.com`, LTS and pinned releases from
+ * `download.oracle.com`) and logs a licensing warning. On Intel macs, which both
+ * distributions stopped shipping after 25.0.1, the plugin falls back to BellSoft Liberica
+ * NIK (resolved through the BellSoft discovery API).
  *
  * A `GRAALVM_HOME` environment variable pointing at a valid GraalVM installation always
  * wins over the download — useful on CI where `setup-graalvm` already provisioned one.
  * Set [autoDownload] to `false` to resolve through the regular Gradle toolchain machinery
- * instead ([GraalvmSettings.javaLanguageVersion] / [GraalvmSettings.jvmVendor]).
+ * instead ([GraalvmSettings.javaLanguageVersion] / [GraalvmSettings.jvmVendor]); note that
+ * [distribution] still declares intent in that case, since it also gates the Oracle-only
+ * tasks (`runWithPgoInstrument`).
  *
  * "latest" versions ("25", "25i1") are sticky once downloaded; delete the corresponding
  * directory under [installDir] to pick up a newer build.
@@ -145,11 +149,20 @@ abstract class GraalvmToolchainSettings
         /** Download and cache the GraalVM JDK automatically. Defaults to `true`. */
         val autoDownload: Property<Boolean> = objects.notNullProperty(true)
 
+        /**
+         * Which GraalVM build to use. Defaults to [GraalvmDistribution.COMMUNITY] (GPLv2 with
+         * the Classpath Exception, no restriction on redistributing it inside a paid app).
+         * [GraalvmDistribution.ORACLE] unlocks PGO, `-O3` and advanced obfuscation but is
+         * governed by the GraalVM Free Terms and Conditions; selecting it logs a warning.
+         */
+        val distribution: Property<GraalvmDistribution> =
+            objects.notNullProperty(GraalvmDistribution.COMMUNITY)
+
         /** Release channel used when [version] is not set. Defaults to [GraalvmChannel.INNOVATION]. */
         val channel: Property<GraalvmChannel> = objects.notNullProperty(GraalvmChannel.INNOVATION)
 
         /**
-         * Explicit Oracle GraalVM version, overriding [channel]: an innovation release
+         * Explicit GraalVM version, overriding [channel]: an innovation release
          * (`"25i1"`), a feature version tracking the latest CPU (`"25"`), or a pinned
          * patch release (`"25.0.1"`).
          */
@@ -167,6 +180,10 @@ abstract class GraalvmToolchainSettings
 
 /**
  * Profile-Guided Optimization settings (Oracle GraalVM only).
+ *
+ * Requires `graalvm { toolchain { distribution = GraalvmDistribution.ORACLE } }`: under the
+ * default [GraalvmDistribution.COMMUNITY] toolchain the `runWithPgoInstrument` task is not
+ * registered at all, and a recorded [profile] is ignored with a warning.
  *
  * Workflow:
  * 1. `./gradlew runWithPgoInstrument` — builds an instrumented native image, packages and runs

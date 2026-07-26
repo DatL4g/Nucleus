@@ -93,8 +93,6 @@ nucleus.application {
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
-        advancedObfuscation = true
-        jvmVendor = JvmVendorSpec.ORACLE
         imageName = "nucleus-sample"
     }
 

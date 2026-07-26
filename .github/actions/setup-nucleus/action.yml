@@ -34,6 +34,10 @@ inputs:
     description: 'GraalVM toolchain version, used only as a cache-key component. Keep in sync with the graalvm { toolchain { } } DSL (e.g. 25i1, 25).'
     required: false
     default: '25i1'
+  graalvm-distribution:
+    description: 'GraalVM distribution, used only as a cache-key component. Keep in sync with graalvm { toolchain { distribution } } (community or oracle). Changing it must not restore a cache holding the other distribution.'
+    required: false
+    default: 'community'
   setup-node:
     description: 'Setup Node.js'
     required: false
@@ -71,9 +75,10 @@ runs:
 
     # ── GraalVM native-image prerequisites ──────────────────────────────
     # The GraalVM JDK is not installed here: the Nucleus plugin auto-downloads
-    # Oracle GraalVM (Liberica NIK on Intel macOS) per the graalvm { toolchain { } }
-    # DSL and caches it under ~/.gradle/nucleus/graalvm. Only the native build
-    # tools (Xcode/MSVC) and the toolchain cache are GraalVM-specific.
+    # GraalVM Community Edition by default (Liberica NIK on Intel macOS) per the
+    # graalvm { toolchain { } } DSL and caches it under ~/.gradle/nucleus/graalvm.
+    # Only the native build tools (Xcode/MSVC) and the toolchain cache are
+    # GraalVM-specific.
     - name: Select Xcode 26
       if: runner.os == 'macOS' && inputs.graalvm == 'true'
       shell: bash
@@ -83,14 +88,16 @@ runs:
       if: runner.os == 'Windows' && inputs.graalvm == 'true'
       uses: ilammy/msvc-dev-cmd@v1
 
-    # Keyed per OS/arch: the plugin resolves a platform-specific toolchain, and
-    # cache entries with different keys are never shared across runners.
+    # Keyed per OS/arch/distribution: the plugin resolves a platform-specific
+    # toolchain, and cache entries with different keys are never shared across
+    # runners. The distribution is part of the key so switching it never restores
+    # a cache still holding the other build.
     - name: Cache GraalVM toolchain
       if: inputs.graalvm == 'true'
       uses: actions/cache@v4
       with:
         path: ~/.gradle/nucleus/graalvm
-        key: graalvm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.graalvm-version }}
+        key: graalvm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.graalvm-distribution }}-${{ inputs.graalvm-version }}
 
     - name: Set java-home output
       id: set-java-home
