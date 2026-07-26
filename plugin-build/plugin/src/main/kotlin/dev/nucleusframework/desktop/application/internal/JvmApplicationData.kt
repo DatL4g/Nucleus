@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.dsl.GarbageCollector
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationBuildTypes
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
@@ -41,6 +42,7 @@ internal open class JvmApplicationData
             get() = providers.provider { javaHome }
         val args: MutableList<String> = ArrayList()
         val jvmArgs: MutableList<String> = ArrayList()
+        var garbageCollector: GarbageCollector? = null
         val nativeDistributions: JvmApplicationDistributions = objects.new()
         val buildTypes: JvmApplicationBuildTypes = objects.new()
         val graalvm: GraalvmSettings = objects.new()

@@ -893,7 +893,9 @@ private fun JvmApplicationContext.configurePackageTask(
         provider {
             val executableTypeArg = "-D$APP_EXECUTABLE_TYPE=${packageTask.targetFormat.executableTypeValue}"
             val appIdArg = "-D$APP_ID=${resolvedAppIdProvider().get()}"
-            var args = defaultJvmArgs + executableTypeArg + appIdArg + app.jvmArgs
+            // GC flags before app.jvmArgs so an explicit -XX:+Use…GC there still wins.
+            val gcArgs = app.garbageCollector?.jvmArgs.orEmpty()
+            var args = defaultJvmArgs + gcArgs + executableTypeArg + appIdArg + app.jvmArgs
             val splash = app.nativeDistributions.splashImage
             if (splash != null) {
                 args = args + "-splash:\$APPDIR/resources/$splash"
@@ -1148,6 +1150,9 @@ private fun JvmApplicationContext.configureRunTask(
     exec.jvmArgs =
         arrayListOf<String>().apply {
             addAll(defaultJvmArgs)
+            // Same collector in dev as in the packaged app; before app.jvmArgs so an
+            // explicit -XX:+Use…GC there still wins.
+            app.garbageCollector?.let { addAll(it.jvmArgs) }
             add("-D$APP_EXECUTABLE_TYPE=$EXECUTABLE_TYPE_DEV")
             add("-D$APP_ID=${resolvedAppIdProvider().get()}")
 
