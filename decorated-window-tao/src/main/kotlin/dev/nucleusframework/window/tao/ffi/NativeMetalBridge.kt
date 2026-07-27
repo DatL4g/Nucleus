@@ -149,6 +149,76 @@ internal object NativeMetalBridge {
         argb: Int,
     )
 
+    /**
+     * Toggles the behind-window glass background: the window becomes
+     * non-opaque and a backdrop view is inserted below the content view —
+     * `NSGlassEffectView` (real Liquid Glass) on macOS 26+, an
+     * `NSVisualEffectView` behind-window material as pre-26 fallback. Every
+     * fallback layer background is cleared so an alpha-cleared Compose
+     * render shows the desktop through the glass. [tintArgb] gives the
+     * glass its material body (0 = untinted, ignored by the pre-26
+     * fallback). Returns `false` when the window is not ready yet.
+     */
+    @JvmStatic
+    external fun nativeSetGlassBackground(
+        nsViewPtr: Long,
+        enabled: Boolean,
+        tintArgb: Int,
+    ): Boolean
+
+    /**
+     * Window-level transparency for the glass-region API: flips the window
+     * and CAMetalLayer between opaque themed background and transparent
+     * without inserting any backdrop view. Ref-counting is done Kotlin-side.
+     */
+    @JvmStatic
+    external fun nativeSetWindowTransparencyMode(
+        nsViewPtr: Long,
+        enabled: Boolean,
+    )
+
+    /**
+     * Inserts a hosted `NSSplitViewController` pane region below the content
+     * view — AppKit backs it with the wallpaper-tinted system material
+     * (System Settings sidebar look). [kindOrdinal] indexes
+     * `WindowGlassRegionKind`. Returns a retained pointer (0 if the window
+     * is not ready) — position it with [nativeSetGlassRegionFrame] and
+     * release it with [nativeRemoveGlassRegion].
+     */
+    @JvmStatic
+    external fun nativeAddGlassRegion(
+        nsViewPtr: Long,
+        kindOrdinal: Int,
+    ): Long
+
+    /**
+     * Region frame in points, top-left origin in Compose scene coordinates.
+     * [cornerRadius] rounds the region clip (for material behind rounded
+     * panels), 0 for a rectangular region.
+     */
+    @JvmStatic
+    external fun nativeSetGlassRegionFrame(
+        regionPtr: Long,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        cornerRadius: Float,
+    )
+
+    @JvmStatic
+    external fun nativeRemoveGlassRegion(regionPtr: Long)
+
+    /**
+     * Forces the window's `NSAppearance` so native surfaces follow the app
+     * theme rather than the system one. [mode]: 0 system, 1 light, 2 dark.
+     */
+    @JvmStatic
+    external fun nativeSetWindowAppearance(
+        nsViewPtr: Long,
+        mode: Int,
+    )
+
     @JvmStatic
     external fun nativeDetach(handle: Long)
 

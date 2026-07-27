@@ -106,6 +106,13 @@ internal class TaoComposeSceneHost(
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
         androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
 
+    // Behind-window glass background (see NativeMetalBridge.nativeSetGlassBackground).
+    // While active, the render loop clears the Skia surface to transparent so
+    // the native glass material shows through wherever the Compose scene has
+    // no opaque pixels; the themed clear color is ignored.
+    val glassBackgroundState: androidx.compose.runtime.MutableState<Boolean> =
+        androidx.compose.runtime.mutableStateOf(false)
+
     /**
      * App-level pre-dispatch hook. Receives every Compose [KeyEvent] before it
      * reaches the scene; returning `true` consumes the event and prevents
@@ -1137,7 +1144,7 @@ internal class TaoComposeSceneHost(
         // Clear to the current themed fallback color, not hard-coded white, so
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
         // at replay time on the recorded surface.
-        val mainClear = clearColorArgbState.value
+        val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
         val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
         val popupSurfaces = recordPopupSurfaces()
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
@@ -1235,7 +1242,7 @@ internal class TaoComposeSceneHost(
         val sc = scene ?: return
         val ctx = directContext ?: return
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
-        val mainClear = clearColorArgbState.value
+        val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
         val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
         val popupSurfaces = recordPopupSurfaces()
         TaoMainDispatcher.pump()

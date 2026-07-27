@@ -22,6 +22,121 @@ public final class dev/nucleusframework/window/TitleBarKt {
 	public static final fun TitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 }
 
+public abstract interface class dev/nucleusframework/window/TitleBarPlacement {
+}
+
+public final class dev/nucleusframework/window/TitleBarPlacement$Docked : dev/nucleusframework/window/TitleBarPlacement {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/TitleBarPlacement$Docked;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/TitleBarPlacement$Overlay : dev/nucleusframework/window/TitleBarPlacement {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun <init> (Z)V
+	public synthetic fun <init> (ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun copy (Z)Ldev/nucleusframework/window/TitleBarPlacement$Overlay;
+	public static synthetic fun copy$default (Ldev/nucleusframework/window/TitleBarPlacement$Overlay;ZILjava/lang/Object;)Ldev/nucleusframework/window/TitleBarPlacement$Overlay;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAutoHideInFullscreen ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/WindowAppearanceKt {
+	public static final fun WindowAppearance (Ldev/nucleusframework/window/DecoratedWindowScope;Ldev/nucleusframework/window/WindowAppearanceMode;Landroidx/compose/runtime/Composer;I)V
+}
+
+public final class dev/nucleusframework/window/WindowAppearanceMode : java/lang/Enum {
+	public static final field Dark Ldev/nucleusframework/window/WindowAppearanceMode;
+	public static final field Light Ldev/nucleusframework/window/WindowAppearanceMode;
+	public static final field System Ldev/nucleusframework/window/WindowAppearanceMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/WindowAppearanceMode;
+	public static fun values ()[Ldev/nucleusframework/window/WindowAppearanceMode;
+}
+
+public final class dev/nucleusframework/window/WindowBackdropKt {
+	public static final fun WindowBackdrop (Ldev/nucleusframework/window/DecoratedWindowScope;Ldev/nucleusframework/window/WindowBackdropStyle;Landroidx/compose/runtime/Composer;I)V
+}
+
+public abstract interface class dev/nucleusframework/window/WindowBackdropStyle {
+}
+
+public final class dev/nucleusframework/window/WindowBackdropStyle$Glass : dev/nucleusframework/window/WindowBackdropStyle {
+	public static final field $stable I
+	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-0d7_KjU ()J
+	public final fun copy-8_81llA (J)Ldev/nucleusframework/window/WindowBackdropStyle$Glass;
+	public static synthetic fun copy-8_81llA$default (Ldev/nucleusframework/window/WindowBackdropStyle$Glass;JILjava/lang/Object;)Ldev/nucleusframework/window/WindowBackdropStyle$Glass;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getTint-0d7_KjU ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/WindowBackdropStyle$Opaque : dev/nucleusframework/window/WindowBackdropStyle {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/WindowBackdropStyle$Opaque;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/WindowChromeInsets {
+	public static final field $stable I
+	public synthetic fun <init> (Landroidx/compose/foundation/layout/PaddingValues;FLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Landroidx/compose/foundation/layout/PaddingValues;
+	public final fun component2-D9Ej5fM ()F
+	public final fun copy-3ABfNKs (Landroidx/compose/foundation/layout/PaddingValues;F)Ldev/nucleusframework/window/WindowChromeInsets;
+	public static synthetic fun copy-3ABfNKs$default (Ldev/nucleusframework/window/WindowChromeInsets;Landroidx/compose/foundation/layout/PaddingValues;FILjava/lang/Object;)Ldev/nucleusframework/window/WindowChromeInsets;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getControlsInsets ()Landroidx/compose/foundation/layout/PaddingValues;
+	public final fun getTitleBarHeight-D9Ej5fM ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/WindowChromeInsetsKt {
+	public static final fun getLocalWindowChromeInsets ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public final class dev/nucleusframework/window/WindowDoubleClickAction : java/lang/Enum {
+	public static final field None Ldev/nucleusframework/window/WindowDoubleClickAction;
+	public static final field ToggleMaximize Ldev/nucleusframework/window/WindowDoubleClickAction;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/WindowDoubleClickAction;
+	public static fun values ()[Ldev/nucleusframework/window/WindowDoubleClickAction;
+}
+
+public final class dev/nucleusframework/window/WindowDragAreaKt {
+	public static final fun windowDragArea (Landroidx/compose/ui/Modifier;ZLdev/nucleusframework/window/WindowDoubleClickAction;)Landroidx/compose/ui/Modifier;
+	public static synthetic fun windowDragArea$default (Landroidx/compose/ui/Modifier;ZLdev/nucleusframework/window/WindowDoubleClickAction;ILjava/lang/Object;)Landroidx/compose/ui/Modifier;
+}
+
+public final class dev/nucleusframework/window/WindowGlassRegionKind : java/lang/Enum {
+	public static final field ContentList Ldev/nucleusframework/window/WindowGlassRegionKind;
+	public static final field Inspector Ldev/nucleusframework/window/WindowGlassRegionKind;
+	public static final field Sidebar Ldev/nucleusframework/window/WindowGlassRegionKind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/WindowGlassRegionKind;
+	public static fun values ()[Ldev/nucleusframework/window/WindowGlassRegionKind;
+}
+
+public final class dev/nucleusframework/window/WindowGlassRegionKt {
+	public static final fun windowGlassRegion-wH6b6FI (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/WindowGlassRegionKind;F)Landroidx/compose/ui/Modifier;
+	public static synthetic fun windowGlassRegion-wH6b6FI$default (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/WindowGlassRegionKind;FILjava/lang/Object;)Landroidx/compose/ui/Modifier;
+}
+
+public final class dev/nucleusframework/window/WindowScaffoldKt {
+	public static final fun WindowScaffold (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/window/TitleBarPlacement;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
 public abstract interface class dev/nucleusframework/window/tao/ApplicationScope {
 	public abstract fun exitApplication ()V
 	public abstract fun getTaoApplication ()Ldev/nucleusframework/window/tao/TaoApplication;

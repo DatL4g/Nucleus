@@ -79,6 +79,16 @@ internal val LocalRequestedClearColor =
     staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
 
 /**
+ * Holds whether the behind-window glass background is requested for this
+ * window (see `WindowBackdrop`). Backed by the host's `glassBackgroundState`:
+ * while `true`, the render loop clears the Skia surface to transparent and
+ * the themed background pushes to the native window are suppressed so the
+ * native glass material stays visible. macOS only — `null` elsewhere.
+ */
+internal val LocalRequestedGlassBackground =
+    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Boolean>?> { null }
+
+/**
  * Exposes the [TaoWindow] backing the current `DecoratedWindow` to any
  * descendant composable. Mirrors `androidx.compose.ui.window.LocalWindow` from
  * Compose Desktop, but for Tao-owned windows. Returns `null` outside of a
@@ -334,6 +344,7 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalRequestedGlassBackground provides host.glassBackgroundState,
                 LocalTaoPopupHost provides host.popupHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
@@ -356,6 +367,10 @@ internal fun ApplicationScope.openDecoratedWindow(
                     }
                 }
                 LaunchedEffect(Unit) {
+                    // Always publish the themed color: the native side stores
+                    // it and applies it according to the window's transparency
+                    // mode (kept clear under a full glass backdrop, painted on
+                    // the still-opaque window when glass regions are active).
                     snapshotFlow { host.clearColorArgbState.value }.collect { argb ->
                         val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
                         if (nsView != 0L && NativeMetalBridge.isLoaded) {
