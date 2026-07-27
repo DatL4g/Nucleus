@@ -59,6 +59,11 @@ internal val LocalRequestedTitleBarHeight =
         error("LocalRequestedTitleBarHeight not provided — DecoratedWindow installs it.")
     }
 
+// Temporary diagnostic: set NUCLEUS_DEBUG_WINDOW_ACTIVE=1 to trace how the
+// chrome's active state is resolved across move / resize grabs.
+private val windowActiveDebug: Boolean =
+    System.getenv("NUCLEUS_DEBUG_WINDOW_ACTIVE") == "1"
+
 private val hiddenFromDockLogger: java.util.logging.Logger =
     java.util.logging.Logger
         .getLogger("dev.nucleusframework.window.tao.hiddenFromDock")
@@ -717,10 +722,14 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         lastFocused = focused
         // `isCompositorGrabActive` also covers interactive RESIZE grabs, which
         // the host arms from its own resize-edge hit test.
-        stateHolder.value =
-            stateHolder.value.copy(
-                active = focused || interactiveMoveActive || host.isCompositorGrabActive,
+        val masked = interactiveMoveActive || host.isCompositorGrabActive
+        if (windowActiveDebug) {
+            hiddenFromDockLogger.info(
+                "[active] focus=$focused move=$interactiveMoveActive " +
+                    "grab=${host.isCompositorGrabActive} -> ${focused || masked}",
             )
+        }
+        stateHolder.value = stateHolder.value.copy(active = focused || masked)
         // The host and a11y get the raw truth; only the chrome's visual
         // active state is held through the grab.
         host.onFocusChanged(focused)

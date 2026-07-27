@@ -1375,6 +1375,9 @@ internal class TaoComposeSceneHostLinux(
         // [onFocusChanged].
         if (compositorDragActive) {
             compositorDragActive = false
+            if (System.getenv("NUCLEUS_DEBUG_WINDOW_ACTIVE") == "1") {
+                println("[active] grab cleared by pointer motion")
+            }
             endShadowMoveSync()
             windowShadow.onFocusChanged(windowInfo.isWindowFocused)
         }
@@ -1475,6 +1478,9 @@ internal class TaoComposeSceneHostLinux(
             val direction = currentResizeDirection(lastPointerX, lastPointerY)
             if (resizeDecoration.onLeftPress(direction)) {
                 compositorDragActive = true
+                if (System.getenv("NUCLEUS_DEBUG_WINDOW_ACTIVE") == "1") {
+                    println("[active] resize grab armed dir=$direction")
+                }
                 return
             }
         }
