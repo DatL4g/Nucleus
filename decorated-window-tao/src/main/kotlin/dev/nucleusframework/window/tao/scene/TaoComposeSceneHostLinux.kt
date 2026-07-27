@@ -318,6 +318,15 @@ internal class TaoComposeSceneHostLinux(
     private var compositorDragActive = false
 
     /**
+     * Whether a compositor move or resize grab is currently in flight. Read by
+     * [dev.nucleusframework.window.tao.openDecoratedWindow] to hold the
+     * chrome's active appearance for the duration of the grab, the same way
+     * the CSD shadow does.
+     */
+    internal val isCompositorGrabActive: Boolean
+        get() = compositorDragActive
+
+    /**
      * True while a compositor **move** grab has the drop shadow in synchronized
      * mode.
      *
@@ -1366,6 +1375,9 @@ internal class TaoComposeSceneHostLinux(
         // [onFocusChanged].
         if (compositorDragActive) {
             compositorDragActive = false
+            if (System.getenv("NUCLEUS_DEBUG_WINDOW_ACTIVE") == "1") {
+                println("[active] grab cleared by pointer motion")
+            }
             endShadowMoveSync()
             windowShadow.onFocusChanged(windowInfo.isWindowFocused)
         }
@@ -1466,6 +1478,9 @@ internal class TaoComposeSceneHostLinux(
             val direction = currentResizeDirection(lastPointerX, lastPointerY)
             if (resizeDecoration.onLeftPress(direction)) {
                 compositorDragActive = true
+                if (System.getenv("NUCLEUS_DEBUG_WINDOW_ACTIVE") == "1") {
+                    println("[active] resize grab armed dir=$direction")
+                }
                 return
             }
         }
