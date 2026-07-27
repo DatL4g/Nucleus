@@ -73,3 +73,24 @@ public fun Modifier.windowDragArea(
                 }
             }
     }
+
+/**
+ * Opts this subtree out of any ancestor [windowDragArea]: presses landing
+ * here never start a window move.
+ *
+ * A [windowDragArea] treats an unconsumed press as "drag the window", which
+ * interactive children normally cancel by consuming it. Gesture detectors
+ * that only claim the pointer once it *moves* — scrollbars, sliders, resize
+ * handles, anything built on `awaitFirstDown(requireUnconsumed = false)` —
+ * leave the press unconsumed, so the window would start moving before they
+ * take over. Wrap them with this modifier instead of relying on consumption
+ * timing.
+ *
+ * The press is consumed in the main pass, after descendants have seen it, so
+ * the wrapped component keeps working normally.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+public fun Modifier.noWindowDrag(): Modifier =
+    onPointerEvent(PointerEventType.Press, PointerEventPass.Main) { event ->
+        event.changes.forEach { it.consume() }
+    }
