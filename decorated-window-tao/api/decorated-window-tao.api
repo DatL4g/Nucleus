@@ -106,6 +106,30 @@ public final class dev/nucleusframework/window/WindowChromeInsetsKt {
 	public static final fun getLocalWindowChromeInsets ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }
 
+public final class dev/nucleusframework/window/WindowControlType : java/lang/Enum {
+	public static final field Close Ldev/nucleusframework/window/WindowControlType;
+	public static final field ExitFullscreen Ldev/nucleusframework/window/WindowControlType;
+	public static final field Maximize Ldev/nucleusframework/window/WindowControlType;
+	public static final field Minimize Ldev/nucleusframework/window/WindowControlType;
+	public static final field Restore Ldev/nucleusframework/window/WindowControlType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/WindowControlType;
+	public static fun values ()[Ldev/nucleusframework/window/WindowControlType;
+}
+
+public final class dev/nucleusframework/window/WindowControlsKt {
+	public static final fun WindowControls (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/WindowControlsRenderer;Landroidx/compose/runtime/Composer;II)V
+}
+
+public abstract interface class dev/nucleusframework/window/WindowControlsRenderer {
+	public static final field Companion Ldev/nucleusframework/window/WindowControlsRenderer$Companion;
+	public abstract fun Control-5M66BK4 (Ldev/nucleusframework/window/WindowControlType;JLkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
+}
+
+public final class dev/nucleusframework/window/WindowControlsRenderer$Companion {
+	public final fun getPlatform ()Ldev/nucleusframework/window/WindowControlsRenderer;
+}
+
 public final class dev/nucleusframework/window/WindowDoubleClickAction : java/lang/Enum {
 	public static final field None Ldev/nucleusframework/window/WindowDoubleClickAction;
 	public static final field ToggleMaximize Ldev/nucleusframework/window/WindowDoubleClickAction;

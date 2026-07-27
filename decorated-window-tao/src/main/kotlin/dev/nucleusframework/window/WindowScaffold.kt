@@ -22,6 +22,7 @@ import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.utils.linux.rememberLinuxButtonLayout
 
 /**
@@ -47,7 +48,7 @@ import dev.nucleusframework.window.utils.linux.rememberLinuxButtonLayout
  * Intended to be the sole child of the `DecoratedWindow` content lambda; it
  * fills the remaining window height.
  */
-@Suppress("FunctionNaming", "LongMethod")
+@Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 public fun DecoratedWindowScope.WindowScaffold(
     modifier: Modifier = Modifier,
@@ -132,6 +133,24 @@ public fun DecoratedWindowScope.WindowScaffold(
                     },
         ) {
             titleBar?.invoke()
+        }
+    }
+
+    // Windows: push the caption height to the deco WndProc, exactly like
+    // `BasicTitleBar` does. Writing `heightHolder` alone is not enough — the
+    // host only forwards it to the native side on resize / scale changes, so
+    // a scaffold-based window would keep the 32 dp creation-time default
+    // until the user resized it (breaking the touch caption drag and the
+    // restore-from-maximized anchor). In `Overlay` mode the bar floats over
+    // the content but still occupies the same top band, so the same measured
+    // height applies; a hidden bar reserves nothing.
+    if (Platform.Current == Platform.Windows) {
+        val captionPx = with(density) { chromeInsets.titleBarHeight.roundToPx() }
+        LaunchedEffect(taoWindow, captionPx) {
+            if (!NativeTaoWindowsDecoBridge.isLoaded) return@LaunchedEffect
+            val hwnd = NativeTaoBridge.nativeHwndHandle(taoWindow.handle)
+            if (hwnd == 0L) return@LaunchedEffect
+            NativeTaoWindowsDecoBridge.nativeSetTitleBarHeight(hwnd, captionPx)
         }
     }
 
