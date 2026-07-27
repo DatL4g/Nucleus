@@ -11,6 +11,7 @@ import dev.nucleusframework.desktop.application.dsl.AotCacheCompatibility
 import dev.nucleusframework.desktop.application.dsl.AotCacheSettings
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
 import dev.nucleusframework.desktop.application.internal.validation.validatePackageVersions
 import dev.nucleusframework.desktop.application.tasks.AbstractCheckNativeDistributionRuntime
 import dev.nucleusframework.desktop.application.tasks.AbstractElectronBuilderPackageTask
@@ -86,6 +87,7 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     }
 
     validatePackageVersions()
+    validateMacBundleName()
     val commonTasks = configureCommonJvmDesktopTasks()
     configurePackagingTasks(commonTasks)
     copy(buildType = app.buildTypes.release).configurePackagingTasks(commonTasks)
@@ -823,6 +825,7 @@ private fun JvmApplicationContext.configurePackageTask(
     app.nativeDistributions.let { executables ->
         packageTask.packageName.set(packageNameProvider)
         packageTask.appName.set(project.provider { executables.appName })
+        packageTask.macBundleName.set(resolvedMacBundleNameProvider())
         // For Windows: jpackage's --description becomes the FileDescription in the .exe
         // version resource (shown as "Name" in Task Manager), so it must be the human app
         // name, not the description. Falls back to packageName when appName is unset.
@@ -941,6 +944,7 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
             )
         },
     )
+    packageTask.macBundleName.set(resolvedMacBundleNameProvider())
     packageTask.packageVersion.set(packageVersionFor(packageTask.targetFormat))
     packageTask.linuxIconFile.set(
         app.nativeDistributions.linux.iconFile

@@ -35,6 +35,21 @@ abstract class AbstractPlatformSettings {
 abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
     var packageName: String? = null
 
+    /**
+     * Name of the `.app` bundle directory, without the `.app` extension.
+     *
+     * Every macOS artifact — DMG, ZIP, PKG, the raw app image and the GraalVM bundle — ships the
+     * bundle under this exact name, so an app installed from one format can be updated from another.
+     *
+     * Defaults to [AbstractDistributions.appName], falling back to [packageName] and then to the
+     * root `packageName`. The value is sanitized the same way electron-builder sanitizes
+     * `productName`, so characters that are illegal in a filename are dropped.
+     *
+     * Note that this only renames the bundle directory: the launcher stays at
+     * `Contents/MacOS/<packageName>` and `CFBundleName` keeps using `appName`.
+     */
+    var bundleName: String? = null
+
     var packageBuildVersion: String? = null
     var dmgPackageVersion: String? = null
     var dmgPackageBuildVersion: String? = null

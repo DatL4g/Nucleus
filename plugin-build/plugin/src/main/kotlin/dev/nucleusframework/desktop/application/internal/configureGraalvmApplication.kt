@@ -1092,7 +1092,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             OS.MacOS -> {
                 val dir =
                     appTmpDir.map {
-                        it.dir("graalvm/output/${resolvedPackageNameProvider().get()}.app/Contents/MacOS")
+                        it.dir("graalvm/output/${resolvedMacBundleNameProvider().get()}.app/Contents/MacOS")
                     }
                 dir.map { it.file(imageName.get()) }
             }
@@ -1185,7 +1185,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
     packageUberJar: TaskProvider<Jar>,
 ): TaskProvider<DefaultTask> {
-    val appBundleName = resolvedPackageNameProvider().map { "$it.app" }
+    val appBundleName = resolvedMacBundleNameProvider().map { "$it.app" }
     val appBundleDir =
         appTmpDir.map { tmpDir ->
             tmpDir.dir("graalvm/output/${appBundleName.get()}/Contents")
@@ -1987,6 +1987,7 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
                 )
 
                 packageName.set(resolvedPackageNameProvider())
+                macBundleName.set(resolvedMacBundleNameProvider())
                 packageVersion.set(packageVersionFor(targetFormat))
 
                 // Only wire platform-specific icons/entitlements for the current OS

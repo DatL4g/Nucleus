@@ -131,6 +131,17 @@ private fun AbstractNativeMacApplicationPackageTask.configureNativePackageTask(
         },
     )
 
+    bundleName.set(
+        project.provider {
+            resolveMacBundleName(
+                bundleName = app.distributions.macOS.bundleName,
+                appName = app.distributions.appName,
+                packageName = app.distributions.macOS.packageName ?: app.distributions.packageName,
+                fallback = project.name,
+            )
+        },
+    )
+
     // todo: dmg package version
     packageVersion.set(
         project.provider {
