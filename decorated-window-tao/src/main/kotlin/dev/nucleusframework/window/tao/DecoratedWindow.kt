@@ -675,14 +675,33 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
     // An app-initiated interactive move hands the pointer to the compositor,
     // which reports the window as unfocused for the duration of the grab —
-    // that would flip the chrome to its inactive look mid-drag. Suppress it
-    // while the move runs; the latch clears on the next focus-gained or
-    // pointer event, neither of which can arrive before the grab ends.
+    // that would flip the chrome to its inactive look mid-drag. Mask it while
+    // the move runs.
+    //
+    // The mask is dropped when real pointer input resumes, NOT on focus-in:
+    // GNOME toggles keyboard focus *during* a move grab, and clearing on that
+    // mid-grab focus-in would unmask the focus-out that follows, leaving the
+    // chrome inactive for the rest of the drag (X11 does not toggle, which is
+    // why it only shows on Wayland). The compositor withholds pointer events
+    // for the whole grab, so their return is the reliable grab-ended signal —
+    // same rule [TaoComposeSceneHostLinux] uses for the CSD shadow.
     var interactiveMoveActive = false
-    window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
+    var lastFocused = true
+
+    fun endInteractiveMove() {
+        if (!interactiveMoveActive) return
+        interactiveMoveActive = false
+        // No focus event necessarily follows the grab, so settle the chrome on
+        // the last raw focus value we saw.
+        stateHolder.value = stateHolder.value.copy(active = lastFocused)
+    }
+    window.onPointerMoved { x, y ->
+        endInteractiveMove()
+        if (enabled) host.onPointerMove(x, y)
+    }
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p ->
-        interactiveMoveActive = false
+        endInteractiveMove()
         if (enabled) host.onPointerButton(b, p)
     }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
@@ -695,7 +714,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
-        if (focused) interactiveMoveActive = false
+        lastFocused = focused
         stateHolder.value = stateHolder.value.copy(active = focused || interactiveMoveActive)
         // The host and a11y get the raw truth; only the chrome's visual
         // active state is held through the move.
@@ -999,14 +1018,25 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     // An app-initiated interactive move runs the OS modal move loop
     // (WM_NCLBUTTONDOWN / HTCAPTION), during which the window can be reported
     // as unfocused — that would flip the chrome to its inactive look
-    // mid-drag. Suppress it while the move runs; the latch clears on the next
-    // focus-gained or pointer event, neither of which can arrive before the
-    // loop ends.
+    // mid-drag. Mask it while the move runs, dropping the mask when real
+    // pointer input resumes (the loop swallows it until it ends) rather than
+    // on focus-in, which some compositors toggle mid-grab. Same rule as the
+    // Linux path.
     var interactiveMoveActive = false
-    window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
+    var lastFocused = true
+
+    fun endInteractiveMove() {
+        if (!interactiveMoveActive) return
+        interactiveMoveActive = false
+        stateHolder.value = stateHolder.value.copy(active = lastFocused)
+    }
+    window.onPointerMoved { x, y ->
+        endInteractiveMove()
+        if (enabled) host.onPointerMove(x, y)
+    }
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p ->
-        interactiveMoveActive = false
+        endInteractiveMove()
         if (enabled) host.onPointerButton(b, p)
     }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
@@ -1016,7 +1046,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
-        if (focused) interactiveMoveActive = false
+        lastFocused = focused
         // When focus moves to an embedded child HWND (e.g., WebView2 on
         // Windows), Tao reports the main HWND as unfocused, but for app
         // purposes the window is still in active use — keep the chrome's
