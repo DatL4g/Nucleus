@@ -156,14 +156,19 @@ internal class WindowControlAction(
 internal enum class WindowControlSlot { Minimize, Maximize, Close }
 
 /**
- * Platform button order, edge-most first — matching what [BasicTitleBar]
- * injects today. On Linux the desktop environment owns the layout, so the
- * order is read from the same GNOME/KDE settings `WindowControlsLinux` uses.
+ * Platform button order, in [Row] order (leading → trailing) — unlike
+ * [BasicTitleBar], which feeds its measure policy an edge-most-first list. On
+ * Linux the desktop environment owns the layout, so the order is read from the
+ * same GNOME/KDE settings `WindowControlsLinux` uses; `LinuxButtonLayout.buttons`
+ * is edge-most first, which for a right-side layout is the reverse of what the
+ * row needs (a left-side layout already has its edge-most button leading).
  */
 @Composable
 private fun windowControlSlots(): List<WindowControlSlot> =
     if (Platform.Current == Platform.Linux) {
-        rememberLinuxButtonLayout().buttons.map { button ->
+        val layout = rememberLinuxButtonLayout()
+        val ordered = if (layout.controlsOnRight) layout.buttons.reversed() else layout.buttons
+        ordered.map { button ->
             when (button) {
                 LinuxTitleBarButton.CLOSE -> WindowControlSlot.Close
                 LinuxTitleBarButton.MAXIMIZE -> WindowControlSlot.Maximize
