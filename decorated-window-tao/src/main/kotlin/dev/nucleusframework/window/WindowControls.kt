@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -134,7 +135,11 @@ public fun DecoratedWindowScope.WindowControls(
         )
 
     CompositionLocalProvider(LocalLayoutDirection provides controlDir) {
-        Row(modifier = modifier.fillMaxHeight()) {
+        // Center vertically like core's [TitleBarLayoutPolicy] does: the
+        // Windows caption buttons fill the height themselves, but the
+        // GNOME/KDE ones are fixed-size boxes and would otherwise hang from
+        // the top of a bar taller than the button.
+        Row(modifier = modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
             for (action in actions) {
                 renderer.Control(action.type, state, action.onClick)
             }
