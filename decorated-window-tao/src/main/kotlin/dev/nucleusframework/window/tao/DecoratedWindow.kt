@@ -673,17 +673,32 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         host.detach()
     }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
+    // An app-initiated interactive move hands the pointer to the compositor,
+    // which reports the window as unfocused for the duration of the grab —
+    // that would flip the chrome to its inactive look mid-drag. Suppress it
+    // while the move runs; the latch clears on the next focus-gained or
+    // pointer event, neither of which can arrive before the grab ends.
+    var interactiveMoveActive = false
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
-    window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
+    window.onPointerButton { b, p ->
+        interactiveMoveActive = false
+        if (enabled) host.onPointerButton(b, p)
+    }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
-    window.onDragWindow { host.onNativeWindowDragStarted() }
+    window.onDragWindow {
+        interactiveMoveActive = true
+        host.onNativeWindowDragStarted()
+    }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
-        stateHolder.value = stateHolder.value.copy(active = focused)
+        if (focused) interactiveMoveActive = false
+        stateHolder.value = stateHolder.value.copy(active = focused || interactiveMoveActive)
+        // The host and a11y get the raw truth; only the chrome's visual
+        // active state is held through the move.
         host.onFocusChanged(focused)
         if (a11yController.nativeViewHandle != 0L) {
             // Forward focus state to AccessKit so AT-SPI's STATE_ACTIVE flag
@@ -981,15 +996,27 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
     window.onSizeMoveChanged { host.onResizeLoopChanged(it) }
+    // An app-initiated interactive move runs the OS modal move loop
+    // (WM_NCLBUTTONDOWN / HTCAPTION), during which the window can be reported
+    // as unfocused — that would flip the chrome to its inactive look
+    // mid-drag. Suppress it while the move runs; the latch clears on the next
+    // focus-gained or pointer event, neither of which can arrive before the
+    // loop ends.
+    var interactiveMoveActive = false
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
-    window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
+    window.onPointerButton { b, p ->
+        interactiveMoveActive = false
+        if (enabled) host.onPointerButton(b, p)
+    }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
+    window.onDragWindow { interactiveMoveActive = true }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
+        if (focused) interactiveMoveActive = false
         // When focus moves to an embedded child HWND (e.g., WebView2 on
         // Windows), Tao reports the main HWND as unfocused, but for app
         // purposes the window is still in active use — keep the chrome's
@@ -999,6 +1026,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         // false on macOS), so this is safe to share across paths.
         val effective =
             focused ||
+                interactiveMoveActive ||
                 (
                     NativeTaoWindowsNativeViewBridge.isLoaded &&
                         NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle)
