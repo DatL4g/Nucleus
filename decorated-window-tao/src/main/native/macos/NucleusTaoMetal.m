@@ -114,6 +114,14 @@ static const char kTaoTransparentModeKey = 16;
 #define TAO_TRANSPARENCY_REGIONS 1
 #define TAO_TRANSPARENCY_FULL    2
 
+// The two transparency requests are tracked separately — a full-window glass
+// backdrop and one or more glass regions can be active at the same time, and
+// whichever ends first must not drop the window back to opaque under the
+// other. The effective mode is recomputed from both; FULL wins because it is
+// the only one that also makes the window itself non-opaque.
+static const char kTaoWantsFullGlassKey = 20;
+static const char kTaoWantsRegionGlassKey = 21;
+
 // Same metrics as decorated-window-jni's applyConstraints — keeps the
 // traffic-lights at the same offsets Apple's own apps use.
 static const float kMinHeightForFullSize = 28.0f;
@@ -383,11 +391,30 @@ static void taoApplyWindowTransparencyMode(NSWindow *win, NSView *view, int mode
     // the System Settings-style desktop-tinted backdrop for its
     // behind-window materials instead of live window compositing.
     win.opaque = (mode == TAO_TRANSPARENCY_FULL) ? NO : YES;
+    // The CAMetalLayer is only ever made non-opaque, never opaque again: a
+    // live layer keeps already-issued opaque drawables, and the first frames
+    // after flipping back render alpha-0 pixels as solid black. Leaving it
+    // non-opaque costs nothing once the window itself is opaque again — the
+    // window background is painted underneath — and it lets a transparency
+    // mode be turned off and on freely, which the region ref-counting relies
+    // on.
     NucleusTaoMetalAttachment *att = attachmentForWindow(win);
-    if (att != NULL && att->layer != nil) {
-        att->layer.opaque = (mode == TAO_TRANSPARENCY_OFF) ? YES : NO;
+    if (att != NULL && att->layer != nil && mode != TAO_TRANSPARENCY_OFF) {
+        att->layer.opaque = NO;
     }
     applyStoredWindowBackground(win, view);
+}
+
+static void taoRecomputeTransparency(NSWindow *win, NSView *view) {
+    NSNumber *full = objc_getAssociatedObject(win, &kTaoWantsFullGlassKey);
+    NSNumber *regions = objc_getAssociatedObject(win, &kTaoWantsRegionGlassKey);
+    int mode = TAO_TRANSPARENCY_OFF;
+    if (full != nil && full.boolValue) {
+        mode = TAO_TRANSPARENCY_FULL;
+    } else if (regions != nil && regions.boolValue) {
+        mode = TAO_TRANSPARENCY_REGIONS;
+    }
+    taoApplyWindowTransparencyMode(win, view, mode);
 }
 
 // ── Replacement traffic-light buttons for fullscreen ────────────────────
@@ -1508,9 +1535,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeApplyLargeCorne
  * Compose scene renders transparent pixels — the render loop clears to alpha 0
  * while glass is active (TaoComposeSceneHost.glassBackgroundState).
  *
- * On macOS 26 (Tahoe) the material renders with the system's Liquid Glass
- * appearance. NSGlassEffectView is deliberately not used here: it blends with
- * content behind the view *inside* the window, not behind the window itself.
+ * On macOS 26 (Tahoe) the backdrop is a real NSGlassEffectView — resolved by
+ * name so the binary still runs on older systems — which with a non-opaque
+ * window samples the desktop behind it. Earlier systems fall back to the
+ * classic behind-window NSVisualEffectView material.
+ *
+ * Known OS issue: macOS 26.2 caches the glass backdrop and misses updates from
+ * windows moving underneath (Apple dev forums thread 810314).
  */
 JNIEXPORT jboolean JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetGlassBackground(
@@ -1567,14 +1598,18 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetGlassBackgro
                 NSColor *tint = (tintArgb != 0) ? colorFromArgb(tintArgb) : nil;
                 [backdrop setValue:tint forKey:@"tintColor"];
             }
-            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_FULL);
+            objc_setAssociatedObject(win, &kTaoWantsFullGlassKey, @YES,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            taoRecomputeTransparency(win, view);
         } else {
             if (existing != nil) {
                 [existing removeFromSuperview];
                 objc_setAssociatedObject(win, &kTaoGlassViewKey, nil,
                                          OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }
-            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_OFF);
+            objc_setAssociatedObject(win, &kTaoWantsFullGlassKey, @NO,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            taoRecomputeTransparency(win, view);
         }
         ok = JNI_TRUE;
     };
@@ -1596,9 +1631,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowTransp
     dispatch_block_t apply = ^{
         NSWindow *win = view.window;
         if (win == nil) return;
-        taoApplyWindowTransparencyMode(
-            win, view,
-            enabled == JNI_TRUE ? TAO_TRANSPARENCY_REGIONS : TAO_TRANSPARENCY_OFF);
+        objc_setAssociatedObject(win, &kTaoWantsRegionGlassKey,
+                                 enabled == JNI_TRUE ? @YES : @NO,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        taoRecomputeTransparency(win, view);
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_sync(dispatch_get_main_queue(), apply);
@@ -1770,26 +1806,32 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetGlassRegionF
             region.layer.cornerRadius = (CGFloat)cornerRadius;
             region.layer.cornerCurve = kCACornerCurveContinuous;
         }
-        [CATransaction commit];
+
+        // Inside the same transaction: the pane thickness drives the split
+        // view's own layout, and left outside it AppKit animates that layout
+        // while the container frame snaps — the material edge would trail the
+        // clip by several frames for the whole resize.
         NSSplitViewController *split =
             objc_getAssociatedObject(region, &kTaoGlassRegionSplitVcKey);
-        if (split == nil) return;
-        NSNumber *kind = objc_getAssociatedObject(region, &kTaoGlassRegionKindKey);
-        BOOL inspector = kind != nil &&
-            kind.intValue == TAO_GLASS_REGION_KIND_INSPECTOR;
+        if (split != nil) {
+            NSNumber *kind = objc_getAssociatedObject(region, &kTaoGlassRegionKindKey);
+            BOOL inspector = kind != nil &&
+                kind.intValue == TAO_GLASS_REGION_KIND_INSPECTOR;
 
-        // The split view spans the window; grow the material pane so its
-        // inner edge lines up with the region's inner edge — the container
-        // clips everything outside the region rect.
-        NSSplitViewItem *paneItem =
-            inspector ? split.splitViewItems.lastObject
-                      : split.splitViewItems.firstObject;
-        CGFloat thickness =
-            inspector ? superview.bounds.size.width - (CGFloat)x
-                      : (CGFloat)x + (CGFloat)w;
-        if (thickness < 1.0) thickness = 1.0;
-        paneItem.minimumThickness = thickness;
-        paneItem.maximumThickness = thickness;
+            // The split view spans the window; grow the material pane so its
+            // inner edge lines up with the region's inner edge — the container
+            // clips everything outside the region rect.
+            NSSplitViewItem *paneItem =
+                inspector ? split.splitViewItems.lastObject
+                          : split.splitViewItems.firstObject;
+            CGFloat thickness =
+                inspector ? superview.bounds.size.width - (CGFloat)x
+                          : (CGFloat)x + (CGFloat)w;
+            if (thickness < 1.0) thickness = 1.0;
+            paneItem.minimumThickness = thickness;
+            paneItem.maximumThickness = thickness;
+        }
+        [CATransaction commit];
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_sync(dispatch_get_main_queue(), apply);

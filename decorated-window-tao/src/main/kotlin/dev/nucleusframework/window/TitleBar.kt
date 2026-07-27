@@ -9,7 +9,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -21,11 +20,9 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -260,11 +257,6 @@ public fun DecoratedWindowScope.BasicTitleBar(
         }
     }
 
-    val viewConfig = LocalViewConfiguration.current
-
-    var lastPress by remember { mutableLongStateOf(0L) }
-
-    @OptIn(ExperimentalComposeUiApi::class)
     val rootModifier =
         Modifier
             // macOS only — slide the title bar down when the system menu bar
@@ -273,47 +265,11 @@ public fun DecoratedWindowScope.BasicTitleBar(
             .let {
                 if (isMacOS) it.offset(y = menuBarOffset).zIndex(if (menuBarOffset > 0.dp) 1f else 0f) else it
             }.then(modifier)
-            .titleBarHitTestHandler(taoWindow)
-            .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
-                // Suppress the double-click → toggle-maximize gesture while the
-                // window is fullscreen. On macOS `[NSWindow zoom:]` exits
-                // fullscreen, so without this guard a double-click anywhere in
-                // the title bar would unexpectedly leave fullscreen — and with
-                // `[setMovable:NO]` AppKit no longer handles that itself.
-                if (currentState.isFullscreen) return@onPointerEvent
-                // Touch has no PointerButton — Compose leaves `button` null for
-                // touch presses (the Linux scene host sends touch contacts via the
-                // multi-pointer `sendPointerEvent` overload with no button), so the
-                // mouse-centric Primary gate would never match a finger tap. Linux
-                // (Wayland) is the only backend that routes title-bar touch to
-                // Compose: macOS has no touchscreen, and on Windows the native
-                // WndProc captures caption touch and lets the OS handle double-tap.
-                // A single touch contact is the touch-equivalent of a primary click.
-                val isPrimaryOrTouch =
-                    this.currentEvent.button == PointerButton.Primary ||
-                        (
-                            Platform.Current == Platform.Linux &&
-                                this.currentEvent.changes.any { it.type == PointerType.Touch }
-                        )
-                if (
-                    isPrimaryOrTouch &&
-                    this.currentEvent.changes.any { !it.isConsumed }
-                ) {
-                    val now = System.currentTimeMillis()
-                    if (now - lastPress in
-                        viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis &&
-                        (taoWindow.isMaximized || taoWindow.isResizable)
-                    ) {
-                        taoWindow.setMaximized(!taoWindow.isMaximized)
-                        // Cancel any in-flight touch drag — the second press
-                        // armed one with the pre-toggle maximize state, and
-                        // a tiny finger jitter would otherwise run
-                        // `SetWindowPos` on the now-toggled window.
-                        taoWindow.cancelWindowsTitleBarTouchDrag()
-                    }
-                    lastPress = now
-                }
-            }
+            // The whole bar drags the window, and a double-click toggles
+            // maximize; interactive children opt out by consuming the press.
+            // This is the same public modifier a custom `WindowScaffold` chrome
+            // uses, so the two can never drift apart.
+            .windowDragArea()
 
     val overlayHolder = LocalFullscreenTitleBarHolder.current
     val useOverlay =
