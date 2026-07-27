@@ -59,13 +59,16 @@ public fun DecoratedWindowScope.WindowBackdrop(style: WindowBackdropStyle) {
                     nsView != 0L &&
                         NativeMetalBridge.nativeSetGlassBackground(nsView, true, tintArgb)
                 }
-        // Flip the transparent-clear mode only when the native side actually
-        // installed the glass view — an opaque window cleared to alpha 0
-        // would just show black.
-        if (applied) glassState?.value = true
+        // Register as a transparency holder rather than driving the mode
+        // directly: a `windowGlassRegion` may be active at the same time, and
+        // whichever of the two goes away first must not put the window back to
+        // opaque under the other. Only flip once the native side has actually
+        // installed the glass view — an opaque window cleared to alpha 0 would
+        // just show black.
+        if (applied) WindowTransparencyMode.acquire(taoWindow, glassState)
         onDispose {
             if (applied) {
-                glassState?.value = false
+                WindowTransparencyMode.release(taoWindow, glassState)
                 val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
                 if (nsView != 0L) {
                     NativeMetalBridge.nativeSetGlassBackground(nsView, false, 0)

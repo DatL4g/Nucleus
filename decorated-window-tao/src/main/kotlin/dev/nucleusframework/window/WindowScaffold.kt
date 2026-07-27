@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -134,6 +135,17 @@ public fun DecoratedWindowScope.WindowScaffold(
         ) {
             titleBar?.invoke()
         }
+    }
+
+    // Keep the shared height channel in sync with what the bar actually
+    // occupies. `barSlot`'s onSizeChanged cannot do it alone: when the bar is
+    // hidden the slot is not composed at all, so the last measured value would
+    // linger — and the host re-pushes it to native on every resize / scale
+    // change (`syncTitleBarHeight`), re-arming a caption zone over content and
+    // centring the macOS traffic-lights against a bar that is not there.
+    // `BasicTitleBar` does the same in its overlay branch.
+    SideEffect {
+        if (hideBar) heightHolder.value = 0f
     }
 
     // Windows: push the caption height to the deco WndProc, exactly like

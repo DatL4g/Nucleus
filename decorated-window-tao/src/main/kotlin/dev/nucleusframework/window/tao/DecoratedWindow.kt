@@ -685,42 +685,42 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     // why it only shows on Wayland). The compositor withholds pointer events
     // for the whole grab, so their return is the reliable grab-ended signal —
     // same rule [TaoComposeSceneHostLinux] uses for the CSD shadow.
-    var interactiveMoveActive = false
     var lastFocused = true
 
-    fun endInteractiveMove() {
-        if (!interactiveMoveActive) return
-        interactiveMoveActive = false
-        // No focus event necessarily follows the grab, so settle the chrome on
-        // the last raw focus value we saw.
-        stateHolder.value = stateHolder.value.copy(active = lastFocused)
+    // The host owns the grab state for BOTH interactive moves and resizes (it
+    // arms `compositorDragActive` from `dragWindow()` and from its own
+    // resize-edge hit test), so read it instead of tracking a second flag —
+    // a move-only flag left resize grabs unmasked.
+    fun chromeActive(focused: Boolean) = focused || host.isCompositorGrabActive
+
+    // Settle the chrome once real pointer input resumes: that is the host's own
+    // grab-ended signal, and it is the only moment we get, since no focus event
+    // necessarily follows the grab. Runs AFTER the host has processed the event
+    // so its flag is already cleared.
+    fun settleAfterGrab() {
+        val settled = chromeActive(lastFocused)
+        if (stateHolder.value.isActive != settled) {
+            stateHolder.value = stateHolder.value.copy(active = settled)
+        }
     }
     window.onPointerMoved { x, y ->
-        endInteractiveMove()
         if (enabled) host.onPointerMove(x, y)
+        settleAfterGrab()
     }
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p ->
-        endInteractiveMove()
         if (enabled) host.onPointerButton(b, p)
+        settleAfterGrab()
     }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
-    window.onDragWindow {
-        interactiveMoveActive = true
-        host.onNativeWindowDragStarted()
-    }
+    window.onDragWindow { host.onNativeWindowDragStarted() }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
         lastFocused = focused
-        // `isCompositorGrabActive` also covers interactive RESIZE grabs, which
-        // the host arms from its own resize-edge hit test.
-        stateHolder.value =
-            stateHolder.value.copy(
-                active = focused || interactiveMoveActive || host.isCompositorGrabActive,
-            )
+        stateHolder.value = stateHolder.value.copy(active = chromeActive(focused))
         // The host and a11y get the raw truth; only the chrome's visual
         // active state is held through the grab.
         host.onFocusChanged(focused)
@@ -1019,37 +1019,43 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.detach()
     }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
-    // An app-initiated interactive move runs the OS modal move loop
-    // (WM_NCLBUTTONDOWN / HTCAPTION), during which the window can be reported
-    // as unfocused — that would flip the chrome to its inactive look
-    // mid-drag. Mask it while the move runs, dropping the mask when real
-    // pointer input resumes (the loop swallows it until it ends) rather than
-    // on focus-in, which some compositors toggle mid-grab. Same rule as the
-    // Linux path.
-    var interactiveMoveActive = false
+    // The OS modal move / resize loop (WM_NCLBUTTONDOWN + HTCAPTION, or a
+    // resize border) can report the window as unfocused while it runs, which
+    // would flip the chrome to its inactive look mid-drag. Mask it for exactly
+    // the duration of the loop.
+    var inSizeMoveLoop = false
     var lastFocused = true
 
-    fun endInteractiveMove() {
-        if (!interactiveMoveActive) return
-        interactiveMoveActive = false
-        stateHolder.value = stateHolder.value.copy(active = lastFocused)
-    }
-    window.onPointerMoved { x, y ->
-        endInteractiveMove()
-        if (enabled) host.onPointerMove(x, y)
-    }
+    // Focus alone does not decide the chrome's look: focus moving to an
+    // embedded child HWND (e.g. WebView2) leaves the window in active use, and
+    // the size/move loop masks a transient loss. Both `onFocusChanged` and the
+    // settle below go through this, so they can never disagree.
+    fun chromeActive(focused: Boolean) =
+        focused ||
+            inSizeMoveLoop ||
+            (
+                NativeTaoWindowsNativeViewBridge.isLoaded &&
+                    NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle)
+            )
+    window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
-    window.onPointerButton { b, p ->
-        endInteractiveMove()
-        if (enabled) host.onPointerButton(b, p)
-    }
+    window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
-    window.onDragWindow { interactiveMoveActive = true }
-    // WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE — covers the modal MOVE and RESIZE
-    // loops alike, so it is the precise mask window for the chrome's active
-    // appearance (the loop can report the window as unfocused while it runs).
+    // WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE brackets the modal MOVE and RESIZE
+    // loops exactly, so it is the only mask signal needed here — unlike Linux,
+    // no pointer-driven fallback is required, and using one would be harmful:
+    // the loop can deliver mouse moves, which would drop the mask on the first
+    // sample, one frame into the drag.
     window.onSizeMoveChanged { active ->
-        if (active) interactiveMoveActive = true else endInteractiveMove()
+        inSizeMoveLoop = active
+        // No focus event necessarily follows the loop, so settle the chrome on
+        // its way out.
+        if (!active) {
+            val settled = chromeActive(lastFocused)
+            if (stateHolder.value.isActive != settled) {
+                stateHolder.value = stateHolder.value.copy(active = settled)
+            }
+        }
         host.onResizeLoopChanged(active)
     }
     window.onKeyEvent { type, vk, loc, mods, cp ->
@@ -1065,14 +1071,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         // window tree (Alt-Tab to another app, etc.). The bridge below
         // is no-op on platforms where its DLL isn't loaded (isLoaded is
         // false on macOS), so this is safe to share across paths.
-        val effective =
-            focused ||
-                interactiveMoveActive ||
-                (
-                    NativeTaoWindowsNativeViewBridge.isLoaded &&
-                        NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle)
-                )
-        stateHolder.value = stateHolder.value.copy(active = effective)
+        stateHolder.value = stateHolder.value.copy(active = chromeActive(focused))
         host.onFocusChanged(focused)
     }
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState

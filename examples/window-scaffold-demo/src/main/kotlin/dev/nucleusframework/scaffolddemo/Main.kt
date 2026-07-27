@@ -153,6 +153,11 @@ private fun DemoToolbar(
             Modifier
                 .fillMaxWidth()
                 .height(52.dp)
+                // Always paints: the window surface is cleared to transparent
+                // while glass is active, so an unpainted bar would show the
+                // desktop through it — translucent over the glass, opaque
+                // otherwise.
+                .background(Color.White.copy(alpha = if (glass) 0.15f else 0.08f))
                 .windowDragArea()
                 .padding(insets.controlsInsets)
                 .padding(horizontal = 12.dp),

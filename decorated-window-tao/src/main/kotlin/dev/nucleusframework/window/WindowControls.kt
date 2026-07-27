@@ -10,8 +10,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
+import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.deco.LinuxWindowControl
@@ -97,7 +99,10 @@ public fun interface WindowControlsRenderer {
  * ```
  *
  * On macOS this reserves the traffic-light footprint (see
- * [WindowControlsRenderer.Platform]) rather than drawing anything.
+ * [WindowControlsRenderer.Platform]) rather than drawing anything — so a
+ * chrome should reserve their space *either* by placing this composable *or*
+ * by padding itself with [LocalWindowChromeInsets]'s `controlsInsets`, never
+ * both, or the gap is counted twice.
  */
 @Suppress("FunctionNaming")
 @Composable
@@ -112,10 +117,22 @@ public fun DecoratedWindowScope.WindowControls(
     val window = taoScope.window
     val state = taoScope.state
 
-    // macOS draws nothing: AppKit owns the traffic-lights. Reserve the space
-    // the window scaffold says they occupy so surrounding chrome lines up.
+    val controlDir = direction.resolve()
+
+    // macOS draws nothing: AppKit owns the traffic-lights. Reserve their
+    // footprint instead, derived from the same title-bar height the native
+    // side centres them against — not from [LocalWindowChromeInsets], which is
+    // only populated inside a [WindowScaffold] and would silently reserve
+    // nothing anywhere else.
     if (Platform.Current == Platform.MacOS && renderer === WindowControlsRenderer.Platform) {
-        val insets = LocalWindowChromeInsets.current.controlsInsets
+        val barHeight = LocalRequestedTitleBarHeight.current.value.dp
+        val insets =
+            titleBarPadding(
+                measuredHeight = barHeight,
+                isFullscreen = state.isFullscreen,
+                controlIsRtl = controlDir == LayoutDirection.Rtl,
+                linuxControlsOnRight = null,
+            )
         val reserved =
             maxOf(
                 insets.calculateLeftPadding(LayoutDirection.Ltr),
@@ -125,7 +142,6 @@ public fun DecoratedWindowScope.WindowControls(
         return
     }
 
-    val controlDir = direction.resolve()
     val actions =
         windowControlActions(
             window = window,
@@ -245,8 +261,12 @@ private object PlatformWindowControlsRenderer : WindowControlsRenderer {
         val style = LocalTitleBarStyle.current
         when (Platform.Current) {
             Platform.Linux -> LinuxWindowControl(type, state, style, Modifier, onClick)
-            // macOS never reaches here (handled in [WindowControls]); anything
-            // else gets the Windows caption buttons as the sane default.
+            // Nothing to draw: the traffic-lights belong to the window server.
+            // [WindowControls] normally short-circuits before reaching a
+            // renderer at all, but a custom renderer delegating here to reuse
+            // the stock artwork would otherwise get Windows caption buttons
+            // painted over the real buttons.
+            Platform.MacOS -> Unit
             else -> WindowsWindowControl(type, state, style, onClick)
         }
     }

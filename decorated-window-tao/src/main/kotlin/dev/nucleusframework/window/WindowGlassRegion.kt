@@ -1,6 +1,7 @@
 package dev.nucleusframework.window
 
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,7 +80,26 @@ public fun Modifier.windowGlassRegion(
 
         val density = LocalDensity.current
         var regionPtr by remember { mutableStateOf(0L) }
-        var lastBounds by remember { mutableStateOf(Rect.Zero) }
+        // Last bounds seen by layout, and the last ones actually pushed. The
+        // guard keeps the JNI traffic down during a resize; the effect below
+        // covers the cases layout alone cannot signal.
+        var bounds by remember { mutableStateOf<Rect?>(null) }
+        var pushedBounds by remember { mutableStateOf<Rect?>(null) }
+
+        fun push(rect: Rect) {
+            val ptr = regionPtr
+            if (ptr == 0L) return
+            val scale = density.density
+            NativeMetalBridge.nativeSetGlassRegionFrame(
+                ptr,
+                rect.left / scale,
+                rect.top / scale,
+                rect.width / scale,
+                rect.height / scale,
+                cornerRadius.value,
+            )
+            pushedBounds = rect
+        }
 
         DisposableEffect(window, kind) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
@@ -96,58 +116,68 @@ public fun Modifier.windowGlassRegion(
             }
         }
 
+        // A re-created pane (a new [kind]) or a new [cornerRadius] must reach
+        // native even when nothing moved: layout would not run again, so the
+        // fresh region would keep NSZeroRect and stay invisible.
+        LaunchedEffect(regionPtr, cornerRadius) {
+            bounds?.let { push(it) }
+        }
+
+        // Pushed straight from layout rather than from an effect: the material
+        // has to land in the same frame as the Compose bounds, or it visibly
+        // trails the panel during a live resize.
         Modifier.onGloballyPositioned { coordinates ->
-            val ptr = regionPtr
-            if (ptr == 0L) return@onGloballyPositioned
-            val bounds = coordinates.boundsInWindow()
-            if (bounds != lastBounds) {
-                lastBounds = bounds
-                val scale = density.density
-                NativeMetalBridge.nativeSetGlassRegionFrame(
-                    ptr,
-                    bounds.left / scale,
-                    bounds.top / scale,
-                    bounds.width / scale,
-                    bounds.height / scale,
-                    cornerRadius.value,
-                )
-            }
+            val rect = coordinates.boundsInWindow()
+            bounds = rect
+            if (rect != pushedBounds) push(rect)
         }
     }
 
 /**
- * Tracks active glass regions per window: the first region ever flips the
- * window into transparent mode (and the render loop into alpha-0 clears).
+ * Ref-counts the active glass regions of each window: the first one flips the
+ * window into transparent mode (and the render loop into alpha-0 clears), the
+ * last one to go restores the opaque themed background.
  *
- * The mode is deliberately LATCHED — it is never turned back off when the
- * count drops to zero. Regions come and go with composition (sidebar
- * collapse/expand animations recreate them constantly), and flipping a live
- * `CAMetalLayer` back and forth between opaque and non-opaque leaves stale
- * opaque drawables behind: the first frames after re-enabling render alpha-0
- * pixels as solid black. Keeping the layer non-opaque is visually free (the
- * window itself stays opaque and themed) and avoids the churn entirely.
- * Runs on the Tao main thread only — no synchronization needed.
+ * This is safe to toggle repeatedly because the native side only ever makes
+ * the `CAMetalLayer` non-opaque, never opaque again — flipping a live layer
+ * back left stale opaque drawables and rendered the first frames black, which
+ * is what an earlier latch-forever version worked around at the cost of
+ * leaving windows stuck transparent.
+ *
+ * Runs on the Tao main thread only, so no synchronization is needed.
  */
 internal object WindowTransparencyMode {
-    private val latched = HashSet<Long>()
+    private val counts = HashMap<Long, Int>()
 
     fun acquire(
         window: TaoWindow,
         glassState: MutableState<Boolean>?,
     ) {
-        if (latched.add(window.handle)) {
-            val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
+        val handle = window.handle
+        val next = (counts[handle] ?: 0) + 1
+        counts[handle] = next
+        if (next == 1) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(handle)
             if (nsView != 0L) NativeMetalBridge.nativeSetWindowTransparencyMode(nsView, true)
             glassState?.value = true
         }
     }
 
-    @Suppress("UNUSED_PARAMETER")
     fun release(
         window: TaoWindow,
         glassState: MutableState<Boolean>?,
     ) {
-        // Latched on purpose — see the class KDoc. The set only holds one
-        // Long per window that ever had a region; not worth reclaiming.
+        val handle = window.handle
+        val next = (counts[handle] ?: 1) - 1
+        if (next > 0) {
+            counts[handle] = next
+            return
+        }
+        // Drop the entry rather than keeping a zero: handles are native
+        // pointers and can be recycled by a later window.
+        counts.remove(handle)
+        val nsView = NativeTaoBridge.nativeNsViewHandle(handle)
+        if (nsView != 0L) NativeMetalBridge.nativeSetWindowTransparencyMode(nsView, false)
+        glassState?.value = false
     }
 }
