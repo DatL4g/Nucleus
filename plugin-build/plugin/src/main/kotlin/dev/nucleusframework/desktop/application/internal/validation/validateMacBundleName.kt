@@ -5,9 +5,12 @@
 
 package dev.nucleusframework.desktop.application.internal.validation
 
+import dev.nucleusframework.desktop.application.dsl.AbstractDistributions
+import dev.nucleusframework.desktop.application.dsl.AbstractMacOSPlatformSettings
 import dev.nucleusframework.desktop.application.internal.JvmApplicationContext
 import dev.nucleusframework.desktop.application.internal.macBundleNameWarnings
 import dev.nucleusframework.desktop.application.internal.resolveMacBundleName
+import org.gradle.api.Project
 
 /**
  * Warns about configurations whose macOS `.app` bundle name is ambiguous.
@@ -17,15 +20,25 @@ import dev.nucleusframework.desktop.application.internal.resolveMacBundleName
  */
 internal fun JvmApplicationContext.validateMacBundleName() {
     val dist = app.nativeDistributions
-    val mac = dist.macOS
-    val resolved =
-        resolveMacBundleName(
-            bundleName = mac.bundleName,
-            appName = dist.appName,
-            packageName = mac.packageName ?: dist.packageName,
-            fallback = project.name,
+    validateMacBundleName(project, dist, dist.macOS)
+}
+
+/** Shared by the JVM and the Kotlin/Native pipelines, which resolve the same bundle name. */
+internal fun validateMacBundleName(
+    project: Project,
+    distributions: AbstractDistributions,
+    macOS: AbstractMacOSPlatformSettings,
+) {
+    val resolved = resolveMacBundleName(distributions, macOS, project.name)
+    val warnings =
+        macBundleNameWarnings(
+            bundleName = macOS.bundleName,
+            appName = distributions.appName,
+            macPackageName = macOS.packageName,
+            packageName = distributions.packageName,
+            resolved = resolved,
         )
-    for (warning in macBundleNameWarnings(mac.bundleName, dist.appName, mac.packageName, resolved)) {
+    for (warning in warnings) {
         project.logger.warn(warning)
     }
 }

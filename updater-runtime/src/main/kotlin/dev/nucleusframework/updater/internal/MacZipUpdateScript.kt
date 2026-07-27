@@ -27,10 +27,18 @@ internal fun buildMacZipUpdateScript(
     logFile: String,
     restart: Boolean,
     selfDelete: Boolean = true,
-): String {
-    val relaunch = if (restart) "open \"\$TARGET\"" else "echo \"Relaunch skipped\""
-    val selfDeleteCmd = if (selfDelete) "rm -f \"\$0\"" else "true"
-    return """
+): String = scriptPreamble(zipFile, appPath, installDir, appPid, logFile) + scriptSwap(restart, selfDelete)
+
+/** Setup, staging extraction and bundle identification — everything before the swap. */
+@Suppress("LongParameterList")
+private fun scriptPreamble(
+    zipFile: String,
+    appPath: String,
+    installDir: String,
+    appPid: Long,
+    logFile: String,
+): String =
+    """
         |#!/usr/bin/env bash
         |set -euo pipefail
         |
@@ -44,8 +52,20 @@ internal fun buildMacZipUpdateScript(
         |echo "--- nucleus update ${'$'}(date) ---"
         |
         |STAGE_DIR="${'$'}INSTALL_DIR/.nucleus-update-${'$'}${'$'}"
-        |cleanup() { rm -rf "${'$'}STAGE_DIR"; }
-        |trap cleanup EXIT
+        |BACKUP=""
+        |TARGET="${'$'}APP_PATH"
+        |
+        |# Runs on every exit path, including an interrupt between the two renames below: if the
+        |# installed bundle was moved aside and nothing took its place, put it back. Leaving the
+        |# machine without an application is the one outcome this script must never produce.
+        |cleanup() {
+        |    if [ -n "${'$'}BACKUP" ] && [ -d "${'$'}BACKUP" ] && [ ! -d "${'$'}TARGET" ]; then
+        |        echo "Restoring the previous bundle after an interrupted update"
+        |        mv "${'$'}BACKUP" "${'$'}TARGET" || true
+        |    fi
+        |    rm -rf "${'$'}STAGE_DIR"
+        |}
+        |trap cleanup EXIT INT TERM
         |
         |# Wait for the app process to fully exit before touching its bundle.
         |while kill -0 "${'$'}APP_PID" 2>/dev/null; do
@@ -58,7 +78,9 @@ internal fun buildMacZipUpdateScript(
         |mkdir -p "${'$'}STAGE_DIR"
         |ditto -x -k "${'$'}ZIP_FILE" "${'$'}STAGE_DIR"
         |
-        |NEW_APP="${'$'}(/usr/bin/find "${'$'}STAGE_DIR" -maxdepth 2 -name '*.app' -type d | head -n 1)"
+        |# -print -quit rather than a pipe into head: under pipefail a killed `find` surfaces as
+        |# exit 141 and errexit would abort here, before any diagnostic is logged.
+        |NEW_APP="${'$'}(/usr/bin/find "${'$'}STAGE_DIR" -maxdepth 2 -name '*.app' -type d -print -quit)"
         |if [ -z "${'$'}NEW_APP" ] || [ ! -f "${'$'}NEW_APP/Contents/Info.plist" ]; then
         |    echo "No .app bundle found in ${'$'}ZIP_FILE — keeping the installed application"
         |    exit 1
@@ -73,7 +95,6 @@ internal fun buildMacZipUpdateScript(
         |
         |# Same identifier: keep the installed path so the Dock, login items and aliases stay valid.
         |# Different identifier: the app was renamed on purpose, adopt the new name and drop the old one.
-        |TARGET="${'$'}APP_PATH"
         |REMOVE_OLD=0
         |if [ -n "${'$'}CURRENT_BUNDLE_ID" ] && [ -n "${'$'}NEW_BUNDLE_ID" ] &&
         |    [ "${'$'}CURRENT_BUNDLE_ID" != "${'$'}NEW_BUNDLE_ID" ]; then
@@ -84,6 +105,23 @@ internal fun buildMacZipUpdateScript(
         |fi
         |echo "Installing to: ${'$'}TARGET"
         |
+    """.trimMargin()
+
+/** The swap itself, plus quarantine removal, relaunch and cleanup. */
+private fun scriptSwap(
+    restart: Boolean,
+    selfDelete: Boolean,
+): String {
+    // A failed relaunch must not abort the script under errexit: the new version is already
+    // installed at that point, and aborting would skip the cleanup below and report a failure.
+    val relaunch =
+        if (restart) {
+            "open \"\$TARGET\" || echo \"Relaunch failed; the update itself succeeded\""
+        } else {
+            "echo \"Relaunch skipped\""
+        }
+    val selfDeleteCmd = if (selfDelete) "rm -f \"\$0\"" else "true"
+    return """
         |# Swap through a backup so a failed move can be rolled back.
         |BACKUP="${'$'}TARGET.nucleus-old-${'$'}${'$'}"
         |if [ -d "${'$'}TARGET" ]; then
@@ -97,6 +135,7 @@ internal fun buildMacZipUpdateScript(
         |    exit 1
         |fi
         |rm -rf "${'$'}BACKUP"
+        |BACKUP=""
         |
         |if [ "${'$'}REMOVE_OLD" = "1" ] && [ -d "${'$'}APP_PATH" ]; then
         |    echo "Removing the previous bundle: ${'$'}APP_PATH"

@@ -87,11 +87,13 @@ internal data class JvmApplicationContext(
      * - Linux: linux.packageName > root packageName > project.name
      * - Windows: windows.packageName > root packageName > project.name
      *
-     * This drives the native output/bundle directory name (e.g. the `.app` bundle
-     * on macOS). It lets the root [packageNameProvider] stay ASCII-safe for Debian/RPM
-     * package names while macOS uses a localized bundle name (e.g. a Hebrew display
-     * name), keeping the installed bundle name identical to the one shipped in the
-     * update archive so the auto-updater can relaunch it.
+     * This drives the native output directory name on Linux and Windows. It lets the root
+     * [packageNameProvider] stay ASCII-safe for Debian/RPM package names while a platform uses a
+     * localized name.
+     *
+     * On macOS it names the launcher and the `.icns` only — the `.app` bundle directory is named by
+     * [resolvedMacBundleNameProvider], which every macOS backend shares so the DMG and the ZIP ship
+     * the same bundle.
      */
     fun resolvedPackageNameProvider(): Provider<String> =
         project.provider {
@@ -116,12 +118,7 @@ internal data class JvmApplicationContext(
             if (currentOS != OS.MacOS) {
                 return@provider resolvedPackageNameProvider().get()
             }
-            resolveMacBundleName(
-                bundleName = dist.macOS.bundleName,
-                appName = dist.appName,
-                packageName = dist.macOS.packageName ?: dist.packageName,
-                fallback = project.name,
-            )
+            resolveMacBundleName(dist, dist.macOS, project.name)
         }
 
     inline fun <reified T : Any> provider(noinline fn: () -> T): Provider<T> = project.provider(fn)

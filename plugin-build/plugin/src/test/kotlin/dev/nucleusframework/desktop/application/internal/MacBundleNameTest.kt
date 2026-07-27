@@ -84,6 +84,7 @@ class MacBundleNameTest {
                 bundleName = null,
                 appName = "D\u00E9mo",
                 macPackageName = null,
+                packageName = null,
                 resolved = "De\u0301mo",
             ),
         )
@@ -167,6 +168,27 @@ class MacBundleNameTest {
     }
 
     @Test
+    fun `the resolved name is a fixed point of sanitizeFileName`() {
+        // electron-builder sanitizes our productName again on its way to productFilename, so a name
+        // that is not a fixed point would come back shorter than the directory we named — the DMG
+        // and the ZIP would disagree once more. Truncation is what can expose a trailing dot.
+        val names =
+            listOf(
+                "Nucleus Demo",
+                "My/App: Beta",
+                "Demo. ",
+                "A".repeat(200) + ". " + "B".repeat(200),
+                ("Beta 1. ").repeat(60),
+                "Démo Nucléus",
+            )
+        for (name in names) {
+            val resolved =
+                resolveMacBundleName(bundleName = null, appName = name, packageName = null, fallback = "demo")
+            assertEquals("not a fixed point: $resolved", resolved, sanitizeFileName(resolved))
+        }
+    }
+
+    @Test
     fun `truncation matches npm sanitize-filename`() {
         // sanitize-filename truncates to 255 UTF-8 bytes on a character boundary.
         assertEquals(255, sanitizeFileName("a".repeat(300)).length)
@@ -184,6 +206,7 @@ class MacBundleNameTest {
                 bundleName = null,
                 appName = "Nucleus Demo",
                 macPackageName = null,
+                packageName = null,
                 resolved = "Nucleus Demo",
             ),
         )
@@ -196,6 +219,7 @@ class MacBundleNameTest {
                 bundleName = null,
                 appName = "Nucleus Demo",
                 macPackageName = "Localized Name",
+                packageName = null,
                 resolved = "Nucleus Demo",
             )
         assertEquals(1, warnings.size)
@@ -211,6 +235,7 @@ class MacBundleNameTest {
                 bundleName = null,
                 appName = null,
                 macPackageName = "NucleusDemo",
+                packageName = null,
                 resolved = "NucleusDemo",
             ),
         )
@@ -224,6 +249,7 @@ class MacBundleNameTest {
                 bundleName = "Legacy",
                 appName = "Nucleus Demo",
                 macPackageName = "Other",
+                packageName = null,
                 resolved = "Legacy",
             ),
         )
@@ -236,9 +262,38 @@ class MacBundleNameTest {
                 bundleName = null,
                 appName = "My/App",
                 macPackageName = null,
+                packageName = null,
                 resolved = "MyApp",
             )
         assertEquals(1, warnings.size)
         assertTrue(warnings.single().contains("illegal"))
+    }
+
+    @Test
+    fun `warns when the sanitized name came from packageName alone`() {
+        val warnings =
+            macBundleNameWarnings(
+                bundleName = null,
+                appName = null,
+                macPackageName = null,
+                packageName = "My/App",
+                resolved = "MyApp",
+            )
+        assertEquals(1, warnings.size)
+        assertTrue(warnings.single().contains("illegal"))
+    }
+
+    @Test
+    fun `a blank bundleName does not suppress the macOS packageName warning`() {
+        val warnings =
+            macBundleNameWarnings(
+                bundleName = "   ",
+                appName = "Nucleus Demo",
+                macPackageName = "Localized Name",
+                packageName = null,
+                resolved = "Nucleus Demo",
+            )
+        assertEquals(1, warnings.size)
+        assertTrue(warnings.single().contains("macOS.bundleName"))
     }
 }

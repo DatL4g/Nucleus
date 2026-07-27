@@ -36,6 +36,7 @@ import dev.nucleusframework.desktop.application.internal.files.mangledName
 import dev.nucleusframework.desktop.application.internal.files.normalizedPath
 import dev.nucleusframework.desktop.application.internal.files.transformJar
 import dev.nucleusframework.desktop.application.internal.javaOption
+import dev.nucleusframework.desktop.application.internal.renameMacAppBundle
 import dev.nucleusframework.desktop.application.internal.validation.validate
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.clearDirs
@@ -649,18 +650,15 @@ abstract class AbstractJPackageTask
         private fun renameMacAppDirIfNeeded() {
             val jpackageAppDir = destinationDir.ioFile.resolve("${packageName.get()}.app")
             val target = macAppDir
-            if (jpackageAppDir == target || !jpackageAppDir.isDirectory) return
-
-            if (target.exists()) {
-                target.deleteRecursively()
+            val renamed =
+                try {
+                    renameMacAppBundle(from = jpackageAppDir, to = target)
+                } catch (e: IllegalStateException) {
+                    throw GradleException(e.message ?: "Unable to rename the app bundle", e)
+                }
+            if (renamed) {
+                logger.info("Renamed app bundle to the resolved macOS bundle name: ${target.name}")
             }
-            if (!jpackageAppDir.renameTo(target)) {
-                throw GradleException(
-                    "Unable to rename the app bundle to the resolved macOS bundle name: " +
-                        "${jpackageAppDir.absolutePath} -> ${target.absolutePath}",
-                )
-            }
-            logger.info("Renamed app bundle to the resolved macOS bundle name: ${target.name}")
         }
 
         @Suppress("NestedBlockDepth")

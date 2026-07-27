@@ -212,20 +212,28 @@ class MacZipUpdateScriptTest {
             setExecutable(true)
         }
         File(contents, "marker.txt").writeText(marker)
-        val identifierEntry =
-            bundleId?.let { "\t<key>CFBundleIdentifier</key>\n\t<string>$it</string>\n" }.orEmpty()
-        File(contents, "Info.plist").writeText(
-            """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-            <dict>
-            $identifierEntry	<key>CFBundleExecutable</key>
-            	<string>launcher</string>
-            </dict>
-            </plist>
-            """.trimIndent(),
-        )
+        // Assembled line by line rather than through trimIndent(): the interpolated identifier is
+        // itself multi-line, and trimIndent() runs after interpolation, so its indentation would
+        // decide how much is stripped from every other line and quietly mangle the plist.
+        val plist =
+            buildString {
+                appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
+                appendLine(
+                    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" " +
+                        "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
+                )
+                appendLine("""<plist version="1.0">""")
+                appendLine("<dict>")
+                if (bundleId != null) {
+                    appendLine("\t<key>CFBundleIdentifier</key>")
+                    appendLine("\t<string>$bundleId</string>")
+                }
+                appendLine("\t<key>CFBundleExecutable</key>")
+                appendLine("\t<string>launcher</string>")
+                appendLine("</dict>")
+                appendLine("</plist>")
+            }
+        File(contents, "Info.plist").writeText(plist)
         return app
     }
 

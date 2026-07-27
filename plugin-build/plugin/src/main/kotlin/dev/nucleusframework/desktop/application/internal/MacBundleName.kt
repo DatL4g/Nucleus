@@ -5,6 +5,10 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.dsl.AbstractDistributions
+import dev.nucleusframework.desktop.application.dsl.AbstractMacOSPlatformSettings
+import java.io.File
+import java.nio.file.Files
 import java.text.Normalizer
 
 /**
@@ -12,6 +16,24 @@ import java.text.Normalizer
  * (e.g. `packageName = "..."`, which `sanitize-filename` strips entirely).
  */
 private const val FALLBACK_BUNDLE_NAME = "app"
+
+/**
+ * Resolves the macOS `.app` bundle directory name from a DSL configuration.
+ *
+ * Single entry point for every caller — the JVM pipeline, the Kotlin/Native pipeline and the
+ * configuration-time validation — so the precedence can never drift between them.
+ */
+internal fun resolveMacBundleName(
+    distributions: AbstractDistributions,
+    macOS: AbstractMacOSPlatformSettings,
+    projectName: String,
+): String =
+    resolveMacBundleName(
+        bundleName = macOS.bundleName,
+        appName = distributions.appName,
+        packageName = macOS.packageName ?: distributions.packageName,
+        fallback = projectName,
+    )
 
 /**
  * Resolves the macOS `.app` bundle directory name (without the `.app` suffix).
@@ -51,6 +73,49 @@ private fun macBundleNameCandidates(
 ): List<String> = listOfNotNull(bundleName, appName, packageName, fallback).filter { it.isNotBlank() }
 
 /**
+ * Renames the macOS `.app` bundle [from] jpackage's output name [to] the resolved bundle name.
+ *
+ * macOS volumes are case- and normalization-insensitive, so when the two names differ only in case
+ * or in Unicode normalization, [to] already resolves to the very bundle jpackage just produced.
+ * Deleting it to make room would erase the app image, which is why the existing destination is only
+ * cleared when it is a genuinely different directory. A plain rename still rewrites the stored name
+ * to the requested form in both cases.
+ *
+ * Returns true when the bundle was renamed, false when there was nothing to do.
+ */
+internal fun renameMacAppBundle(
+    from: File,
+    to: File,
+): Boolean {
+    if (!from.isDirectory) return false
+    if (from.absolutePath == to.absolutePath) return false
+
+    val sameEntry = to.exists() && Files.isSameFile(from.toPath(), to.toPath())
+    if (to.exists() && !sameEntry) {
+        to.deleteRecursively()
+    }
+    if (!sameEntry) {
+        if (!from.renameTo(to)) {
+            error("Unable to rename the app bundle: ${from.absolutePath} -> ${to.absolutePath}")
+        }
+        return true
+    }
+
+    // `rename(2)` succeeds without doing anything when both paths resolve to the same entry, which
+    // is what an insensitive volume reports for a case- or normalization-only difference. Going
+    // through a temporary name is how the requested spelling actually reaches the volume.
+    val staging = File(to.parentFile, ".nucleus-bundle-rename-${System.nanoTime()}")
+    if (!from.renameTo(staging)) {
+        error("Unable to rename the app bundle: ${from.absolutePath} -> ${staging.absolutePath}")
+    }
+    if (!staging.renameTo(to)) {
+        staging.renameTo(from)
+        error("Unable to rename the app bundle: ${from.absolutePath} -> ${to.absolutePath}")
+    }
+    return true
+}
+
+/**
  * Reports configurations where the resolved macOS bundle name is not the one the build script most
  * likely intended, so the ambiguity is settled explicitly via `macOS.bundleName` instead of silently.
  *
@@ -64,10 +129,16 @@ internal fun macBundleNameWarnings(
     bundleName: String?,
     appName: String?,
     macPackageName: String?,
+    packageName: String?,
     resolved: String,
 ): List<String> =
     buildList {
-        val requested = bundleName?.takeIf { it.isNotBlank() } ?: appName?.takeIf { it.isNotBlank() }
+        val explicitBundleName = bundleName?.takeIf { it.isNotBlank() }
+        val requested =
+            explicitBundleName
+                ?: appName?.takeIf { it.isNotBlank() }
+                ?: macPackageName?.takeIf { it.isNotBlank() }
+                ?: packageName?.takeIf { it.isNotBlank() }
         // Compared in NFD: the resolved name is decomposed to match what HFS+ stores, and that
         // difference alone must not be reported as a sanitization.
         if (requested != null && Normalizer.normalize(requested, Normalizer.Form.NFD) != resolved) {
@@ -78,11 +149,13 @@ internal fun macBundleNameWarnings(
             )
         }
         val macName = macPackageName?.takeIf { it.isNotBlank() }
-        if (bundleName == null && macName != null && Normalizer.normalize(macName, Normalizer.Form.NFD) != resolved) {
+        if (explicitBundleName == null && macName != null &&
+            Normalizer.normalize(macName, Normalizer.Form.NFD) != resolved
+        ) {
             add(
                 "w: macOS.packageName (\"$macName\") no longer names the .app bundle directory; " +
-                    "every macOS artifact now ships \"$resolved.app\" (from appName) so the DMG and the ZIP " +
-                    "stay interchangeable for auto-update. Set macOS.bundleName = \"$macName\" to keep the " +
+                    "every macOS artifact now ships \"$resolved.app\" so the DMG and the ZIP stay " +
+                    "interchangeable for auto-update. Set macOS.bundleName = \"$macName\" to keep the " +
                     "previous bundle name.",
             )
         }
@@ -101,7 +174,14 @@ private const val MAX_FILE_NAME_BYTES = 255
 private const val UTF8_CONTINUATION_MASK = 0xC0
 private const val UTF8_CONTINUATION_MARKER = 0x80
 
-/** Kotlin equivalent of electron-builder's `sanitizeFileName`, used to derive `productFilename`. */
+/**
+ * Kotlin equivalent of electron-builder's `sanitizeFileName`, used to derive `productFilename`.
+ *
+ * Unlike the npm original this is idempotent: truncation can expose a trailing dot or space that the
+ * original would leave in place, and electron-builder sanitizes our `productName` a second time on
+ * its way to `productFilename`. A name that is not a fixed point here would come back out of
+ * electron-builder shorter than the directory we named, silently breaking the invariant.
+ */
 internal fun sanitizeFileName(input: String): String {
     val sanitized =
         input
@@ -110,7 +190,7 @@ internal fun sanitizeFileName(input: String): String {
             .replace(ONLY_DOTS, "")
             .replace(WINDOWS_RESERVED, "")
             .replace(WINDOWS_TRAILING, "")
-    return truncateUtf8Bytes(sanitized, MAX_FILE_NAME_BYTES)
+    return truncateUtf8Bytes(sanitized, MAX_FILE_NAME_BYTES).replace(WINDOWS_TRAILING, "")
 }
 
 /** Truncates to at most [maxBytes] UTF-8 bytes without splitting a multi-byte character. */

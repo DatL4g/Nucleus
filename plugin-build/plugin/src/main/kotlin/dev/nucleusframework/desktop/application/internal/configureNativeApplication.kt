@@ -10,6 +10,7 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.tasks.AbstractNativeMacApplicationPackageAppDirTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNativeMacApplicationPackageDmgTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNativeMacApplicationPackageTask
+import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
 import dev.nucleusframework.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
@@ -29,6 +30,8 @@ internal fun configureNativeApplication(
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
 ) {
     if (currentOS != OS.MacOS) return
+
+    validateMacBundleName(project, app.distributions, app.distributions.macOS)
 
     for (target in app._targets) {
         configureNativeApplication(project, app, target, unpackDefaultResources)
@@ -133,12 +136,7 @@ private fun AbstractNativeMacApplicationPackageTask.configureNativePackageTask(
 
     bundleName.set(
         project.provider {
-            resolveMacBundleName(
-                bundleName = app.distributions.macOS.bundleName,
-                appName = app.distributions.appName,
-                packageName = app.distributions.macOS.packageName ?: app.distributions.packageName,
-                fallback = project.name,
-            )
+            resolveMacBundleName(app.distributions, app.distributions.macOS, project.name)
         },
     )
 
