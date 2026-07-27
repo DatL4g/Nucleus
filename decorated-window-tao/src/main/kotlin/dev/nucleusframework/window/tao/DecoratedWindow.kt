@@ -715,9 +715,14 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
         lastFocused = focused
-        stateHolder.value = stateHolder.value.copy(active = focused || interactiveMoveActive)
+        // `isCompositorGrabActive` also covers interactive RESIZE grabs, which
+        // the host arms from its own resize-edge hit test.
+        stateHolder.value =
+            stateHolder.value.copy(
+                active = focused || interactiveMoveActive || host.isCompositorGrabActive,
+            )
         // The host and a11y get the raw truth; only the chrome's visual
-        // active state is held through the move.
+        // active state is held through the grab.
         host.onFocusChanged(focused)
         if (a11yController.nativeViewHandle != 0L) {
             // Forward focus state to AccessKit so AT-SPI's STATE_ACTIVE flag
@@ -1014,7 +1019,6 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.detach()
     }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
-    window.onSizeMoveChanged { host.onResizeLoopChanged(it) }
     // An app-initiated interactive move runs the OS modal move loop
     // (WM_NCLBUTTONDOWN / HTCAPTION), during which the window can be reported
     // as unfocused — that would flip the chrome to its inactive look
@@ -1041,6 +1045,13 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
     window.onDragWindow { interactiveMoveActive = true }
+    // WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE — covers the modal MOVE and RESIZE
+    // loops alike, so it is the precise mask window for the chrome's active
+    // appearance (the loop can report the window as unfocused while it runs).
+    window.onSizeMoveChanged { active ->
+        if (active) interactiveMoveActive = true else endInteractiveMove()
+        host.onResizeLoopChanged(active)
+    }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }
