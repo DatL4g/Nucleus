@@ -310,9 +310,9 @@ internal fun ApplicationScope.openDecoratedWindow(
             // TaoComposeSceneHost.attach() instead.
             skipTaskbar = hiddenFromDock,
             transparent = transparent,
-            // Tao defaults undecorated windows to a DWM drop shadow (and
-            // grows the outer rect for its inset). Borderless overlays must
-            // opt out or the ghost still shows a soft contour.
+            // Tao defaults borderless windows to a drop shadow (DWM on
+            // Windows, NSWindow.hasShadow on macOS). Overlays must opt out
+            // or the ghost still shows a soft contour.
             undecoratedShadow = !undecorated,
         )
 
@@ -417,7 +417,10 @@ internal fun ApplicationScope.openDecoratedWindow(
     // Single source of truth shared with the host (which feeds it as a top
     // inset to the PlatformContext) and the TitleBar composable (which
     // updates it via SideEffect from its requested height).
-    val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 28f }
+    // Borderless overlays have no TitleBar chrome — keep the caption zone at 0
+    // (parity with the Windows path).
+    val titleBarHeightState =
+        host.titleBarHeightDpState.also { it.value = if (undecorated) 0f else 28f }
 
     val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, ColumnScope by this {
@@ -630,7 +633,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     // Kill switch: NUCLEUS_TAO_LINUX_SHADOW=0. See docs/linux-csd-shadow-subsurface.md.
     // Fully borderless overlays (`undecorated`) drop the shadow too.
     host.decorationShadowEnabled =
-        !undecorated && System.getenv("NUCLEUS_TAO_LINUX_SHADOW") != "0"
+        !undecorated &&
+        System.getenv("NUCLEUS_TAO_LINUX_SHADOW") != "0"
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────

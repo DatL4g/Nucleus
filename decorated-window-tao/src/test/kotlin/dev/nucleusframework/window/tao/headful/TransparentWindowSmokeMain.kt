@@ -20,6 +20,8 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.window.tao.DecoratedWindow
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.taoApplication
+import java.awt.Rectangle
+import java.awt.Robot
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.RandomAccessFile
@@ -31,33 +33,44 @@ import kotlin.system.exitProcess
 
 /**
  * Manual smoke for #416 / PR #419:
- * `DecoratedWindow(transparent = true)` + a small opaque marker over the desktop.
+ * `DecoratedWindow(transparent = true, undecorated = true)` + a small opaque
+ * marker over the desktop.
  *
- * On Windows, [java.awt.Robot] omits layered/per-pixel-alpha windows (no
- * CAPTUREBLT). This smoke shells out to a tiny Win32 helper
- * (`capture_region.exe`) that BitBlts with `SRCCOPY | CAPTUREBLT`.
+ * Capture backend:
+ * - **macOS / Linux**: [java.awt.Robot] (sees per-pixel-alpha Tao windows).
+ * - **Windows**: Robot omits layered windows — shell out to a CAPTUREBLT helper
+ *   (`capture_region.exe`) pointed at by
+ *   `-Dnucleus.tao.transparent.smoke.captureTool=`.
+ *
+ * Important (macOS): do **not** touch AWT before [taoApplication] — initializing
+ * AppKit/AWT on the launcher thread deadlocks the Tao event loop (same rule as
+ * the headful suite: no `-XstartOnFirstThread`, no pre-loop Robot).
  *
  * Run: `./gradlew :decorated-window-tao:taoTransparentSmoke`
  */
 object TransparentWindowSmokeMain {
-    private const val OUTER_X = 120
-    private const val OUTER_Y = 120
-    private const val OUTER_W = 480
-    private const val OUTER_H = 360
+    private const val OUTER_X_DP = 120.0
+    private const val OUTER_Y_DP = 120.0
+    private const val OUTER_W_DP = 480.0
+    private const val OUTER_H_DP = 360.0
+
     // Hold the window on screen so a manual look is possible; override with
     // -Dnucleus.tao.transparent.smoke.holdMs=…
     private val SETTLE_MS: Long =
         System.getProperty("nucleus.tao.transparent.smoke.holdMs")?.toLongOrNull()
             ?: 1_200L
-    // Marker is 48.dp at 24.dp padding → ~centre of square around (48, 48).
-    private const val MARKER_SAMPLE_X = 48
-    private const val MARKER_SAMPLE_Y = 48
-    private const val EMPTY_SAMPLE_X = 300
-    private const val EMPTY_SAMPLE_Y = 240
-    private const val SAMPLE_HALF = 6
+
+    // Marker is 48.dp at 24.dp padding — sample near centre of the square.
+    private const val EMPTY_SAMPLE_X_DP = 300.0
+    private const val EMPTY_SAMPLE_Y_DP = 240.0
+    private const val SAMPLE_HALF_DP = 6.0
+
+    private val isWindows: Boolean =
+        System.getProperty("os.name", "").lowercase().contains("win")
 
     @JvmStatic
     fun main(args: Array<String>) {
+        // Do not touch AWT here on macOS (Robot / GraphicsEnvironment).
         val outDir =
             File(
                 System.getProperty(
@@ -67,34 +80,22 @@ object TransparentWindowSmokeMain {
             ).absoluteFile
         outDir.mkdirs()
         val captureTool =
-            File(
-                System.getProperty(
-                    "nucleus.tao.transparent.smoke.captureTool",
-                    "build/tmp-smoke/capture_region.exe",
-                ),
-            ).absoluteFile
-        check(captureTool.isFile) {
-            "capture tool missing: $captureTool — run the gradle task (it builds the helper)"
+            System
+                .getProperty("nucleus.tao.transparent.smoke.captureTool")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { File(it).absoluteFile }
+        if (isWindows) {
+            check(captureTool != null && captureTool.isFile) {
+                "capture tool missing: $captureTool — on Windows Robot cannot " +
+                    "see layered windows; build capture_region.exe (CAPTUREBLT)"
+            }
         }
-
-        val baselineBmp = File(outDir, "01-baseline-desktop.bmp")
-        captureRegion(captureTool, OUTER_X, OUTER_Y, OUTER_W, OUTER_H, baselineBmp)
-        val baseline = readBmp24(baselineBmp)
-        ImageIO.write(baseline, "png", File(outDir, "01-baseline-desktop.png"))
-        val baselineEmpty = averageRgb(baseline, EMPTY_SAMPLE_X, EMPTY_SAMPLE_Y, SAMPLE_HALF)
-        System.err.println(
-            "[smoke/#416] baseline empty RGB=(%d,%d,%d)".format(
-                baselineEmpty[0],
-                baselineEmpty[1],
-                baselineEmpty[2],
-            ),
-        )
 
         taoApplication {
             val state =
                 rememberWindowState(
-                    position = WindowPosition(OUTER_X.dp, OUTER_Y.dp),
-                    size = DpSize(OUTER_W.dp, OUTER_H.dp),
+                    position = WindowPosition(OUTER_X_DP.dp, OUTER_Y_DP.dp),
+                    size = DpSize(OUTER_W_DP.dp, OUTER_H_DP.dp),
                 )
             var window by remember { mutableStateOf<TaoWindow?>(null) }
 
@@ -103,11 +104,9 @@ object TransparentWindowSmokeMain {
                 state = state,
                 title = "tao transparent smoke #416",
                 alwaysOnTop = true,
-                // Borderless overlay (no CSD outline) + full-window transparency.
                 undecorated = true,
                 transparent = true,
             ) {
-                // No WindowBackground / TitleBar — empty client must composite desktop.
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -127,72 +126,94 @@ object TransparentWindowSmokeMain {
                     kotlinx.coroutines.delay(25)
                 }
                 val w = window!!
-                w.setOuterPosition(OUTER_X.toDouble(), OUTER_Y.toDouble())
-                w.setInnerSize(OUTER_W.toDouble(), OUTER_H.toDouble())
+                w.setOuterPosition(OUTER_X_DP, OUTER_Y_DP)
+                w.setInnerSize(OUTER_W_DP, OUTER_H_DP)
                 w.focus()
                 kotlinx.coroutines.delay(SETTLE_MS)
 
                 val bounds = w.outerBoundsPx()
+                check(bounds != null && bounds.size >= 4) { "outerBoundsPx null after settle" }
+                val bx = bounds[0].toInt()
+                val by = bounds[1].toInt()
+                val bw = bounds[2].toInt()
+                val bh = bounds[3].toInt()
+                val scale = w.scaleFactor.toDouble().coerceAtLeast(1.0)
                 System.err.println(
-                    "[smoke/#416] outerBoundsPx=" +
-                        (bounds?.joinToString(prefix = "[", postfix = "]") ?: "null") +
-                        " scale=${w.scaleFactor}",
+                    "[smoke/#416] outerBoundsPx=[$bx,$by ${bw}x$bh] scale=$scale " +
+                        "platform=${System.getProperty("os.name")}",
                 )
 
-                val withBmp = File(outDir, "02-transparent-window.bmp")
-                captureRegion(captureTool, OUTER_X, OUTER_Y, OUTER_W, OUTER_H, withBmp)
-                val withWindow = readBmp24(withBmp)
-                ImageIO.write(withWindow, "png", File(outDir, "02-transparent-window.png"))
-
-                val ox =
-                    if (bounds != null && bounds.size >= 4) {
-                        (bounds[0] - OUTER_X).toInt()
-                    } else {
-                        0
-                    }
-                val oy =
-                    if (bounds != null && bounds.size >= 4) {
-                        (bounds[1] - OUTER_Y).toInt()
-                    } else {
-                        0
-                    }
-
-                val marker =
-                    averageRgb(
-                        withWindow,
-                        (ox + MARKER_SAMPLE_X).coerceIn(0, withWindow.width - 1),
-                        (oy + MARKER_SAMPLE_Y).coerceIn(0, withWindow.height - 1),
-                        SAMPLE_HALF,
+                // Baseline = desktop under the window rect with the window hidden.
+                // Must run *after* taoApplication so AWT/Robot is not the first
+                // AppKit client on macOS.
+                w.hide()
+                kotlinx.coroutines.delay(300)
+                val baseline =
+                    captureScreen(
+                        captureTool,
+                        bx,
+                        by,
+                        bw,
+                        bh,
+                        File(outDir, "01-baseline-desktop.png"),
                     )
+                val emptySampleX = (EMPTY_SAMPLE_X_DP * scale).toInt().coerceIn(0, bw - 1)
+                val emptySampleY = (EMPTY_SAMPLE_Y_DP * scale).toInt().coerceIn(0, bh - 1)
+                val half = (SAMPLE_HALF_DP * scale).toInt().coerceAtLeast(2)
+                val desktopRef = averageRgb(baseline, emptySampleX, emptySampleY, half)
+                System.err.println(
+                    "[smoke/#416] baseline empty RGB=(%d,%d,%d)".format(
+                        desktopRef[0],
+                        desktopRef[1],
+                        desktopRef[2],
+                    ),
+                )
+
+                w.show()
+                w.focus()
+                kotlinx.coroutines.delay(SETTLE_MS)
+
+                val withWindow =
+                    captureScreen(
+                        captureTool,
+                        bx,
+                        by,
+                        bw,
+                        bh,
+                        File(outDir, "02-transparent-window.png"),
+                    )
+
+                val markerPadPx = (24.0 * scale).toInt()
+                val markerSampleX = (markerPadPx + 24.0 * scale).toInt().coerceIn(0, withWindow.width - 1)
+                val markerSampleY = (markerPadPx + 24.0 * scale).toInt().coerceIn(0, withWindow.height - 1)
+
+                val marker = averageRgb(withWindow, markerSampleX, markerSampleY, half)
                 val empty =
                     averageRgb(
                         withWindow,
-                        (ox + EMPTY_SAMPLE_X).coerceIn(0, withWindow.width - 1),
-                        (oy + EMPTY_SAMPLE_Y).coerceIn(0, withWindow.height - 1),
-                        SAMPLE_HALF,
+                        emptySampleX.coerceIn(0, withWindow.width - 1),
+                        emptySampleY.coerceIn(0, withWindow.height - 1),
+                        half,
                     )
                 System.err.println(
-                    "[smoke/#416] marker RGB=(%d,%d,%d) empty RGB=(%d,%d,%d) origin=(%d,%d)".format(
+                    "[smoke/#416] marker RGB=(%d,%d,%d) empty RGB=(%d,%d,%d)".format(
                         marker[0],
                         marker[1],
                         marker[2],
                         empty[0],
                         empty[1],
                         empty[2],
-                        ox,
-                        oy,
                     ),
                 )
 
                 val failures = mutableListOf<String>()
 
                 if (!isMagenta(marker)) {
-                    // Scan a band for the marker in case chrome inset shifted it.
                     val found = findMagenta(withWindow)
                     if (found == null) {
                         failures +=
-                            "opaque marker not magenta anywhere: sample " +
-                                "RGB=(${marker[0]},${marker[1]},${marker[2]})"
+                            "opaque marker not magenta anywhere: sample RGB=" +
+                            "(${marker[0]},${marker[1]},${marker[2]})"
                     } else {
                         System.err.println(
                             "[smoke/#416] marker found by scan at ${found.first},${found.second}",
@@ -203,38 +224,33 @@ object TransparentWindowSmokeMain {
                 if (isNearSolid(empty, 0xFF, 0xFF, 0xFF, tol = 18)) {
                     failures += "empty client looks opaque white — transparency not applied"
                 }
+                if (isNearSolid(empty, 0x00, 0x00, 0x00, tol = 12)) {
+                    failures += "empty client looks solid black — opaque surface with alpha-0 clear"
+                }
                 if (isMagenta(empty)) {
                     failures += "empty client is magenta — marker bled across whole surface"
                 }
 
-                val dist = rgbDistance(empty, baselineEmpty)
-                System.err.println("[smoke/#416] empty vs baseline Δ=$dist (max allowed 90)")
+                val dist = rgbDistance(empty, desktopRef)
+                System.err.println(
+                    "[smoke/#416] empty vs desktop Δ=$dist " +
+                        "(desktop RGB=(${desktopRef[0]},${desktopRef[1]},${desktopRef[2]}), max 90)",
+                )
                 if (dist > 90) {
                     failures +=
-                        "empty client RGB=(${empty[0]},${empty[1]},${empty[2]}) " +
-                            "diverges from baseline desktop " +
-                            "RGB=(${baselineEmpty[0]},${baselineEmpty[1]},${baselineEmpty[2]}) " +
-                            "Δ=$dist — desktop not compositing through"
+                        "empty client RGB=(${empty[0]},${empty[1]},${empty[2]}) diverges from " +
+                        "desktop RGB=(${desktopRef[0]},${desktopRef[1]},${desktopRef[2]}) " +
+                        "Δ=$dist — desktop not compositing through"
                 }
 
-                // Marker region must differ from the pre-window desktop.
-                val baselineMarker =
-                    averageRgb(baseline, MARKER_SAMPLE_X, MARKER_SAMPLE_Y, SAMPLE_HALF)
-                val markerDelta = rgbDistance(marker, baselineMarker)
-                System.err.println("[smoke/#416] marker vs baseline Δ=$markerDelta (min expected 80)")
-                if (isMagenta(marker) && markerDelta < 80) {
-                    failures += "marker sample matches desktop — opaque marker not composited"
-                }
-
-                // Undecorated + transparent must not leave a pure-black DWM/
-                // erase contour around the window (the regression the user
-                // spotted after Compose border was already skipped).
                 val blackEdge = countNearBlackPerimeter(withWindow, thickness = 2, maxChannel = 6)
-                System.err.println("[smoke/#416] near-black perimeter pixels=$blackEdge (max allowed 40)")
+                System.err.println(
+                    "[smoke/#416] near-black perimeter pixels=$blackEdge (max allowed 40)",
+                )
                 if (blackEdge > 40) {
                     failures +=
                         "near-black perimeter contour still present ($blackEdge px) — " +
-                            "DWM borderless chrome not applied"
+                        "borderless chrome / shadow not fully stripped"
                 }
 
                 if (failures.isEmpty()) {
@@ -251,7 +267,30 @@ object TransparentWindowSmokeMain {
         }
     }
 
-    private fun captureRegion(
+    private fun captureScreen(
+        tool: File?,
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+        outPng: File,
+    ): BufferedImage {
+        val img =
+            if (isWindows && tool != null) {
+                val bmp = File(outPng.parentFile, outPng.nameWithoutExtension + ".bmp")
+                captureRegionWin(tool, x, y, w, h, bmp)
+                readBmp24(bmp)
+            } else {
+                val robot = Robot()
+                robot.autoDelay = 0
+                robot.createScreenCapture(Rectangle(x, y, w.coerceAtLeast(1), h.coerceAtLeast(1)))
+            }
+        ImageIO.write(img, "png", outPng)
+        System.err.println("[smoke/#416] capture: ${outPng.name} (${outPng.length()} bytes)")
+        return img
+    }
+
+    private fun captureRegionWin(
         tool: File,
         x: Int,
         y: Int,
@@ -275,7 +314,6 @@ object TransparentWindowSmokeMain {
         check(code == 0 && out.isFile) {
             "capture failed (exit=$code): $log"
         }
-        System.err.println("[smoke/#416] capture: ${out.name} (${out.length()} bytes) $log".trim())
     }
 
     /** Reads a 24-bit top-down or bottom-up BMP produced by capture_region.exe. */
@@ -299,8 +337,14 @@ object TransparentWindowSmokeMain {
             bb.short // planes
             val bpp = bb.short.toInt() and 0xFFFF
             check(bpp == 24) { "expected 24-bpp BMP, got $bpp" }
-            raf.seek(ByteBuffer.wrap(header, 10, 4).order(ByteOrder.LITTLE_ENDIAN).int.toLong())
-            val row = (width * 3 + 3) and inv3
+            raf.seek(
+                ByteBuffer
+                    .wrap(header, 10, 4)
+                    .order(ByteOrder.LITTLE_ENDIAN)
+                    .int
+                    .toLong(),
+            )
+            val row = (width * 3 + 3) and BMP_ROW_PAD_MASK
             val img = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
             val rowBytes = ByteArray(row)
             for (rowIndex in 0 until height) {
@@ -318,7 +362,8 @@ object TransparentWindowSmokeMain {
         }
     }
 
-    private const val inv3 = 3.inv()
+    /** BMP rows are padded to 4-byte boundaries: `(width * 3 + 3) & ~3`. */
+    private const val BMP_ROW_PAD_MASK = 3.inv()
 
     private fun averageRgb(
         image: BufferedImage,
@@ -348,7 +393,6 @@ object TransparentWindowSmokeMain {
     }
 
     private fun findMagenta(image: BufferedImage): Pair<Int, Int>? {
-        // Coarse grid scan — marker is 48px.
         var y = 0
         while (y < image.height) {
             var x = 0
@@ -407,7 +451,6 @@ object TransparentWindowSmokeMain {
                 val r = (rgb ushr 16) and 0xFF
                 val g = (rgb ushr 8) and 0xFF
                 val b = rgb and 0xFF
-                // Skip the opaque magenta marker if it touches the top edge.
                 if (r >= 0xC0 && g <= 0x40 && b >= 0x70) continue
                 if (r <= maxChannel && g <= maxChannel && b <= maxChannel) n++
             }

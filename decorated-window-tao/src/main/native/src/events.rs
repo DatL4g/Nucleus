@@ -271,9 +271,10 @@ pub(crate) enum UserEvent {
         // of this flag (canonical visual); the flag still controls whether the
         // host starts with an alpha-0 clear and keeps the top-level non-opaque.
         transparent: bool,
-        // Windows: `WindowBuilderExtWindows::with_undecorated_shadow`. Tao
-        // defaults true (DWM drop shadow + outer-rect inset). False for
-        // borderless overlays. Ignored on other platforms.
+        // Drop shadow for borderless windows. Windows:
+        // `with_undecorated_shadow` (DWM + outer-rect inset). macOS:
+        // `with_has_shadow` (NSWindow). False for borderless overlays.
+        // Ignored on Linux (CSD shadow is host-gated).
         undecorated_shadow: bool,
     },
     SetVisible {

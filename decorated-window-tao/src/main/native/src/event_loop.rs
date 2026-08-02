@@ -215,19 +215,27 @@ pub(crate) fn run_event_loop_blocking() {
                             .with_skip_taskbar(skip_taskbar)
                             .with_undecorated_shadow(undecorated_shadow);
                     }
-                    #[cfg(not(target_os = "windows"))]
-                    let _ = undecorated_shadow;
+                    // macOS: NSWindow.hasShadow — same intent as Windows
+                    // undecorated_shadow. Borderless transparent overlays
+                    // pass false so AppKit does not draw a soft contour.
+                    #[cfg(target_os = "macos")]
+                    {
+                        use tao::platform::macos::WindowBuilderExtMacOS;
+                        builder = builder.with_has_shadow(undecorated_shadow);
+                        let _ = skip_taskbar;
+                    }
                     // Linux: GTK skip-taskbar + skip-pager hints
                     // (_NET_WM_STATE_SKIP_TASKBAR). Effective on X11 and
                     // XWayland; silently ignored on native Wayland, which has
                     // no client-side taskbar opt-out protocol.
+                    // Undecorated shadow is a Win/mac concept; Linux uses the
+                    // CSD shadow subsurface gated separately in the host.
                     #[cfg(target_os = "linux")]
                     {
                         use tao::platform::unix::WindowBuilderExtUnix;
                         builder = builder.with_skip_taskbar(skip_taskbar);
+                        let _ = undecorated_shadow;
                     }
-                    #[cfg(target_os = "macos")]
-                    let _ = skip_taskbar;
                     // Linux: build cursor-following overlays as GTK_WINDOW_POPUP
                     // transient children — on Wayland GDK maps them as
                     // `wl_subsurface`s, the only client-positionable window
