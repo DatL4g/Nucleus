@@ -267,6 +267,7 @@ internal object ChromeReviewHeadfulCases {
 
                 val b = requireNotNull(bounds())
                 val scale = window.scaleFactor.coerceAtLeast(1f)
+
                 // Physical client-ish coords from outer bounds (Tao is undecorated).
                 fun px(
                     dpX: Float,
