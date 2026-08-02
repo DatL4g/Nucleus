@@ -401,8 +401,8 @@ public final class dev/nucleusframework/window/tao/TaoApplication {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoApplication;
 	public final fun exit ()V
-	public final fun openWindow (Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZ)Ldev/nucleusframework/window/tao/TaoWindow;
-	public static synthetic fun openWindow$default (Ldev/nucleusframework/window/tao/TaoApplication;Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZILjava/lang/Object;)Ldev/nucleusframework/window/tao/TaoWindow;
+	public final fun openWindow (Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZ)Ldev/nucleusframework/window/tao/TaoWindow;
+	public static synthetic fun openWindow$default (Ldev/nucleusframework/window/tao/TaoApplication;Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZILjava/lang/Object;)Ldev/nucleusframework/window/tao/TaoWindow;
 	public final fun run (Lkotlin/jvm/functions/Function1;)V
 }
 
