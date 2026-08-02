@@ -1372,6 +1372,18 @@ internal class TaoComposeSceneHostWindows(
     }
 
     /**
+     * Clear colour for the next present: backdrop tint while a system material
+     * is armed, otherwise the resolved clear (alpha-0 for fully transparent
+     * windows, themed otherwise).
+     */
+    private fun resolveClientClearArgb(): Int =
+        if (transparentBackgroundState.value) {
+            backdropTintArgbState.value
+        } else {
+            clearColorArgbState.value
+        }
+
+    /**
      * Reverts an active backdrop and presents one last opaque themed frame,
      * synchronously. Called from [TaoWindow.onPrepareClose] / [TaoWindow.requestClose]
      * on the **confirmed destroy** path only — not from cancelable
@@ -1390,18 +1402,6 @@ internal class TaoComposeSceneHostWindows(
      *
      * Idempotent; a later detach() finds nothing to do.
      */
-    /**
-     * Clear colour for the next present: backdrop tint while a system material
-     * is armed, otherwise the resolved clear (alpha-0 for fully transparent
-     * windows, themed otherwise).
-     */
-    private fun resolveClientClearArgb(): Int =
-        if (transparentBackgroundState.value) {
-            backdropTintArgbState.value
-        } else {
-            clearColorArgbState.value
-        }
-
     fun prepareClose() {
         if (hwnd == 0L || !transparentBackgroundState.value) return
         NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)

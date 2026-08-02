@@ -142,8 +142,7 @@ internal class WindowClearColorLayers(
         if (contentWriters.remove(key) != null) push()
     }
 
-    private fun coerce(argb: Int): Int =
-        if (fullyTransparent && ((argb ushr 24) and 0xFF) == 0xFF) 0 else argb
+    private fun coerce(argb: Int): Int = if (fullyTransparent && ((argb ushr 24) and 0xFF) == 0xFF) 0 else argb
 
     private fun push() {
         hostClearColor.value = resolved
