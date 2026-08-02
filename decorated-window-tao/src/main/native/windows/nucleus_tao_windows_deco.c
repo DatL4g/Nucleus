@@ -695,18 +695,14 @@ static LRESULT CALLBACK decoWndProc(
     case WM_MENUCHAR:
         return MAKELRESULT(0, MNC_CLOSE);
 
-    /* The close animation snapshots the window as-is. With a backdrop active
-     * that snapshot is semi-transparent tint over a material DWM is about to
-     * drop, which composites towards black — a dark flash on close, worst on
-     * light themes. Revert to a plain opaque themed window first, so the
-     * fade-out shows the theme colour. Only covers the WM_CLOSE path
-     * (Alt+F4, native SC_CLOSE); programmatic closes go straight to
-     * DestroyWindow, which is why nativePrepareClose exists for the Kotlin
-     * side to call first. */
-    case WM_CLOSE: {
-        revertBackdropForClose(hwnd, state);
+    /* WM_CLOSE is cancelable: Tao turns it into CLOSE_REQUESTED and does not
+     * DestroyWindow until the app confirms via requestClose. Reverting the
+     * backdrop here permanently killed Mica on "Save before quit?" → Cancel
+     * while WindowsBackdrop was still composed. The opaque last frame is
+     * prepared on the confirmed destroy path only (nativePrepareClose from
+     * TaoWindow.requestClose / host.prepareClose). */
+    case WM_CLOSE:
         break;
-    }
 
     case WM_NCDESTROY: {
         if (state->isFullscreen) {
@@ -1043,9 +1039,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetCap
 
 /**
  * Reverts an active backdrop to a plain opaque themed window, synchronously.
- * Must be called right before a programmatic window close: that path goes
- * straight to DestroyWindow without WM_CLOSE, and the close animation would
- * otherwise snapshot semi-transparent tint fading towards black.
+ * Must be called on the confirmed destroy path (Kotlin requestClose) before
+ * DestroyWindow. Not from WM_CLOSE: that message is cancelable (Tao emits
+ * CLOSE_REQUESTED only), and a permanent revert there left Mica dead after
+ * "Cancel" while the Compose backdrop holder was still live.
  */
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativePrepareClose(

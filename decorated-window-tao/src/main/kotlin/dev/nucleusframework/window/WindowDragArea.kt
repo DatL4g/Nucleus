@@ -86,8 +86,10 @@ public fun Modifier.windowDragArea(
  * take over. Wrap them with this modifier instead of relying on consumption
  * timing.
  *
- * The press is consumed in the main pass, after descendants have seen it, so
- * the wrapped component keeps working normally.
+ * The press is consumed in the Main pass so an ancestor [windowDragArea]
+ * (which arms on Final, after Main) sees it already claimed. Descendants of
+ * this modifier still receive the press on Main first (Main is root → leaf),
+ * so the wrapped component keeps working normally.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 public fun Modifier.noWindowDrag(): Modifier =

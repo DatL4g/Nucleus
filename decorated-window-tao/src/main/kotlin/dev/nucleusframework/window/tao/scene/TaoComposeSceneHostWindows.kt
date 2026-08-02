@@ -1293,9 +1293,11 @@ internal class TaoComposeSceneHostWindows(
 
     /**
      * Reverts an active backdrop and presents one last opaque themed frame,
-     * synchronously. Called on the close path, while the window and its EGL
-     * surface are still alive — the close animation snapshots the window
-     * as-is, and a backdrop's semi-transparent tint would fade towards black.
+     * synchronously. Called from [TaoWindow.onPrepareClose] / [TaoWindow.requestClose]
+     * on the **confirmed destroy** path only — not from cancelable
+     * [TaoWindow.onCloseRequested] (caption X, Alt+F4), where a permanent
+     * teardown would leave a still-composed [dev.nucleusframework.window.WindowsBackdrop]
+     * dead after the user cancels.
      *
      * While a backdrop is active the render loop clears to the tint layer over
      * the DWM material (often alpha 0 for Mica — the raw material shows through).

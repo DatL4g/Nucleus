@@ -93,9 +93,11 @@ internal object NativeTaoWindowsDecoBridge {
 
     /**
      * Reverts an active backdrop to a plain opaque themed window,
-     * synchronously. Called right before a programmatic close: that path goes
-     * straight to `DestroyWindow` without `WM_CLOSE`, and the close animation
-     * would otherwise snapshot semi-transparent tint fading towards black.
+     * synchronously. Called from the confirmed destroy path
+     * ([TaoWindow.requestClose]) before `DestroyWindow`. Not on cancelable
+     * `WM_CLOSE` / [TaoWindow.requestUserClose] — those must leave a live
+     * [dev.nucleusframework.window.WindowsBackdrop] intact until destroy is
+     * confirmed, otherwise "Cancel" permanently de-mica's the window.
      */
     @JvmStatic
     external fun nativePrepareClose(hwnd: Long)

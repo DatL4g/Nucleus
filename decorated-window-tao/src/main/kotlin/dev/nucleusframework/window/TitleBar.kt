@@ -444,6 +444,12 @@ private fun macTrafficLightInset(height: Dp): Dp {
 // Press → mark pendingDrag (no consumption). Move while pending → start the
 // native window drag. Consumed Press → enter `inUserControl` and skip drag.
 //
+// Pointer pass is Final (leaf → root), not Main: Main walks root → leaf, so
+// this handler would arm pendingDrag *before* a child could claim the press
+// (`clickable`, `noWindowDrag`, etc.). Final runs after Main, so consumption
+// by descendants is already visible — which is what makes `noWindowDrag` and
+// interactive chrome children actually opt out of the window move.
+//
 // On macOS this is the *only* path that drags the window — AppKit's native
 // title-bar drag is disabled by `[NSWindow setMovable:NO]` in
 // `nativeConfigureChrome`, so clicks in the title bar reach Compose
@@ -463,7 +469,7 @@ internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
             // running even if Compose's pointer pipeline routing is disrupted
             // by the layout-size change of a `maximized → floating` restore.
             while (ctx.isActive) {
-                val event = awaitPointerEvent(PointerEventPass.Main)
+                val event = awaitPointerEvent(PointerEventPass.Final)
                 event.changes.forEach {
                     val isTouch = it.type == androidx.compose.ui.input.pointer.PointerType.Touch
                     if (!it.isConsumed && !inUserControl) {

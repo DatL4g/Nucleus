@@ -76,6 +76,16 @@ public class TaoWindow internal constructor(
     @Volatile
     private var closeRequestedListener: (() -> Unit)? = null
 
+    /**
+     * Fires once, synchronously, at the start of [requestClose] — before the
+     * native destroy — so the host can present an opaque last frame (backdrop
+     * teardown) while the window and its GL surface are still alive.
+     * Not invoked from [requestUserClose] / [onCloseRequested]: that path is
+     * cancelable ("Save before quit?") and must not permanently kill Mica.
+     */
+    @Volatile
+    private var prepareCloseListener: (() -> Unit)? = null
+
     private val destroyedListeners = CopyOnWriteArrayList<() -> Unit>()
 
     @Volatile
@@ -185,14 +195,18 @@ public class TaoWindow internal constructor(
     }
 
     public fun requestClose() {
-        // Programmatic closes skip WM_CLOSE entirely (Tao destroys the HWND
-        // directly), so the backdrop must be reverted to an opaque themed
-        // window here — otherwise the close animation snapshots the
-        // semi-transparent tint fading towards black.
-        if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
-            val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
-            if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
-        }
+        // Actual destroy path (not the cancelable close-*request*). Present an
+        // opaque themed frame first: a live backdrop's translucent clear would
+        // composite towards black in the close animation. The host listener
+        // also flips the Compose clear path; the native fallback covers raw
+        // TaoWindow usage with no host attached.
+        prepareCloseListener?.invoke()
+            ?: run {
+                if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+                    val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+                    if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
+                }
+            }
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
@@ -202,6 +216,11 @@ public class TaoWindow internal constructor(
      * the title-bar close button so the user's `onCloseRequest` callback runs
      * and gets a chance to call `exitApplication()` — bypassing it via
      * [requestClose] destroys the window but leaves the event loop running.
+     *
+     * Does **not** tear down a [dev.nucleusframework.window.WindowsBackdrop]:
+     * the request is cancelable, and a permanent native revert here would leave
+     * a still-composed backdrop dead after "Cancel". The opaque last frame is
+     * prepared in [requestClose] once destroy is confirmed.
      */
     public fun requestUserClose() {
         closeRequestedListener?.invoke()
@@ -545,6 +564,15 @@ public class TaoWindow internal constructor(
 
     public fun onCloseRequested(block: () -> Unit) {
         closeRequestedListener = block
+    }
+
+    /**
+     * Host hook: present the opaque close frame before [requestClose] destroys
+     * the window. Wired by the Windows DecoratedWindow host only. See
+     * [requestClose].
+     */
+    internal fun onPrepareClose(block: () -> Unit) {
+        prepareCloseListener = block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */

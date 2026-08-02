@@ -1140,15 +1140,14 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 )
         }
     }
-    // The close animation snapshots the window as-is. With a backdrop active
-    // that snapshot is semi-transparent tint fading towards black — revert to
-    // the opaque theme colour and present it, synchronously, while the window
-    // and EGL surface are still alive (detach() runs after DestroyWindow, far
-    // too late to steer the snapshot).
-    window.onCloseRequested {
-        host.prepareClose()
-        onCloseRequest()
-    }
+    // Close *request* is cancelable ("Save before quit?" → Cancel). Do not
+    // tear down a live WindowsBackdrop here — that left the window permanently
+    // de-mica'd while the composable was still composed. The opaque last frame
+    // is prepared on the confirmed destroy path ([TaoWindow.requestClose] →
+    // [onPrepareClose]), while the window and EGL surface are still alive
+    // (detach() runs after DestroyWindow, far too late to steer the snapshot).
+    window.onPrepareClose { host.prepareClose() }
+    window.onCloseRequested { onCloseRequest() }
     window.onDestroyed {
         a11yController.dispose()
         host.detach()
