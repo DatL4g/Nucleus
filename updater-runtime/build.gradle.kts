@@ -32,6 +32,15 @@ kotlin {
     }
 }
 
+// Forward the opt-in `nucleus.e2e.*` properties to the test JVM so MacRealArtifactUpdateTest can be
+// pointed at DMG/ZIP artifacts produced by a real packaging run. Read through the provider API so
+// the values stay a declared configuration-cache input instead of being baked into the cache entry.
+val e2eProperties = providers.systemPropertiesPrefixedBy("nucleus.e2e.")
+
+tasks.withType<Test>().configureEach {
+    systemProperties(e2eProperties.get())
+}
+
 mavenPublishing {
     coordinates("dev.nucleusframework", "nucleus.updater-runtime", publishVersion)
 

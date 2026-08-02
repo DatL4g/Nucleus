@@ -209,52 +209,18 @@ internal object PlatformInstaller {
             resolveCurrentAppBundle()
                 ?: error("Cannot resolve current .app bundle from java.home")
         val installDir = appBundle.parentFile
-        val appName = appBundle.name
-        val appPath = File(installDir, appName).absolutePath
-        val pid = ProcessHandle.current().pid()
+        val tmpDir = System.getProperty("java.io.tmpdir")
 
-        val relaunchCmd =
-            if (restart) {
-                "\n# Relaunch the app\nopen \"\$APP_PATH\"\n"
-            } else {
-                ""
-            }
-
-        // Write a shell script that will:
-        // 1. Wait for our process to actually die
-        // 2. Replace the app bundle
-        // 3. Remove quarantine and optionally relaunch
-        val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.sh")
+        val script = File(tmpDir, "nucleus-update.sh")
         script.writeText(
-            """
-            |#!/usr/bin/env bash
-            |set -e
-            |
-            |ZIP_FILE="${zipFile.absolutePath}"
-            |APP_PATH="$appPath"
-            |INSTALL_DIR="${installDir.absolutePath}"
-            |APP_PID=$pid
-            |
-            |# Wait for the app process to fully exit
-            |while kill -0 "${'$'}APP_PID" 2>/dev/null; do
-            |    sleep 0.5
-            |done
-            |
-            |# Remove old app bundle
-            |if [ -d "${'$'}APP_PATH" ]; then
-            |    rm -rf "${'$'}APP_PATH"
-            |fi
-            |
-            |# Extract the ZIP
-            |ditto -x -k "${'$'}ZIP_FILE" "${'$'}INSTALL_DIR"
-            |
-            |# Remove quarantine attribute
-            |xattr -r -d com.apple.quarantine "${'$'}APP_PATH" 2>/dev/null || true
-            |$relaunchCmd
-            |# Clean up
-            |rm -f "${'$'}ZIP_FILE"
-            |rm -f "${'$'}{0}"
-            """.trimMargin(),
+            buildMacZipUpdateScript(
+                zipFile = zipFile.absolutePath,
+                appPath = appBundle.absolutePath,
+                installDir = installDir.absolutePath,
+                appPid = ProcessHandle.current().pid(),
+                logFile = File(tmpDir, "nucleus-update.log").absolutePath,
+                restart = restart,
+            ),
         )
         script.setExecutable(true)
 

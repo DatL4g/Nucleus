@@ -51,12 +51,17 @@ internal class ElectronBuilderConfigGenerator {
         dmgBackgroundOverride: File? = null,
         dmgWindowOverride: DmgWindowOverride? = null,
         nsisProtocolInclude: File? = null,
+        macBundleName: String? = null,
     ): String {
         val yaml = StringBuilder()
 
         // --- Common settings ---
+        // On macOS the product name must equal the prepackaged bundle's directory name: the DMG
+        // target stages the app as `${productFilename}.app` while the ZIP target archives the
+        // directory verbatim, so any mismatch ships two differently named bundles for one release.
         val resolvedProductName =
-            distributions.appName ?: distributions.packageName ?: executableName
+            macBundleName?.takeIf { currentOS == OS.MacOS && it.isNotBlank() }
+                ?: distributions.appName ?: distributions.packageName ?: executableName
                 ?: error(
                     "No appName, packageName, or executableName available for electron-builder config",
                 )
