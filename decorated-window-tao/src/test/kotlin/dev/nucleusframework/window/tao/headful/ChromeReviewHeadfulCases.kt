@@ -227,10 +227,15 @@ internal object ChromeReviewHeadfulCases {
             name = "noWindowDrag blocks ancestor windowDragArea",
             // Robot needs a real desktop session; skip headless CI if no display.
             skip = {
-                if (java.awt.GraphicsEnvironment.isHeadless()) {
-                    "no display for Robot probe"
-                } else {
-                    null
+                when {
+                    java.awt.GraphicsEnvironment.isHeadless() -> "no display for Robot probe"
+                    // Hosted runners have no Accessibility grant, so AWT Robot
+                    // cannot inject input: on macOS `new Robot()` blocks until
+                    // the suite watchdog halts the JVM, and on Linux/Windows the
+                    // positive control never arms so the case only ever reports
+                    // INCONCLUSIVE. Keep it for local runs, where it is real.
+                    System.getenv("CI") != null -> "AWT Robot cannot inject input on hosted CI runners"
+                    else -> null
                 }
             },
             content = {

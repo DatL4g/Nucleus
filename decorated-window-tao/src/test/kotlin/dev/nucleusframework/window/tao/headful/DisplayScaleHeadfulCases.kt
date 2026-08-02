@@ -43,6 +43,8 @@ import kotlin.math.roundToInt
 internal object DisplayScaleHeadfulCases {
     private val isMac: Boolean get() = Platform.Current == Platform.MacOS
 
+    private val isLinux: Boolean get() = Platform.Current == Platform.Linux
+
     fun all(): List<TaoWindowTestCase> =
         listOf(
             scaleChangeWithSuggestedSize(),
@@ -101,6 +103,12 @@ internal object DisplayScaleHeadfulCases {
         val metrics = SceneMetrics()
         return TaoWindowTestCase(
             name = "#418 scale change plus the loop's suggested size keeps the scene coherent",
+            // Not on the GTK host: `onResized` there re-reads the live scale
+            // from `nativeScaleFactor` and applies it before sizing the scene
+            // (TaoComposeSceneHostLinux, the live-DPI hack), so it immediately
+            // overwrites an injected scale with the real 1.0 and the probe can
+            // never observe the pairing it is testing.
+            skip = { if (isLinux) "GTK host re-derives the scale from the live query" else null },
             content = { SceneMetricsProbe(metrics) },
             driver = {
                 awaitUntil("window mapped") { bounds() != null }
