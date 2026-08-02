@@ -71,7 +71,8 @@ def find_match(measured, spec):
     candidates = [
         m
         for m in measured
-        if (not spec.get("role") or m["role"] == spec["role"]) and name_matches(m["name"], spec)
+        if (not spec.get("role") or m["role"] == ap.canonical_role(spec["role"]))
+        and name_matches(m["name"], spec)
     ]
     if not candidates:
         return None
@@ -85,7 +86,7 @@ def find_match(measured, spec):
 def diff_node(spec, m):
     """Returns the list of property mismatches for one expected node."""
     problems = []
-    if spec.get("role") and m["role"] != spec["role"]:
+    if spec.get("role") and m["role"] != ap.canonical_role(spec["role"]):
         problems.append(f"role expected={spec['role']} actual={m['role']}")
     for state in spec.get("statesAll", []):
         if state not in m["states"]:
@@ -135,7 +136,8 @@ def check_strict_extra(reporter, expected, measured):
         if len(m["name"]) <= 2:
             continue
         covered = any(
-            (not spec.get("role") or m["role"] == spec["role"]) and name_matches(m["name"], spec)
+            (not spec.get("role") or m["role"] == ap.canonical_role(spec["role"]))
+            and name_matches(m["name"], spec)
             for spec in specs
         )
         if not covered:

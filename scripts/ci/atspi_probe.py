@@ -42,6 +42,16 @@ INTERACTIVE_ROLES = frozenset(
 # content golden.
 CHROME_NAMES = frozenset({"Close", "Maximize", "Minimize", "Restore", "Clear"})
 
+# at-spi2-core renamed a few role strings; probes and goldens compare the
+# canonical form so the same fixture works on an Ubuntu runner and on a
+# rolling desktop. (ATSPI_ROLE_PUSH_BUTTON prints as "push button" on
+# at-spi2-core <= 2.54 and as "button" on newer releases.)
+ROLE_ALIASES = {"push button": "button"}
+
+
+def canonical_role(role):
+    return ROLE_ALIASES.get(role, role)
+
 
 def state_names(node):
     """Sorted AT-SPI state names (e.g. 'enabled', 'focusable') for a node."""
@@ -78,7 +88,7 @@ def attributes(node):
 
 def role_name(node):
     try:
-        return node.getRoleName()
+        return canonical_role(node.getRoleName())
     except Exception:
         return ""
 
