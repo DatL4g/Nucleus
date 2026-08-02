@@ -130,6 +130,19 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Optional
         val executableName: Property<String> = objects.nullableProperty()
 
+        /**
+         * Name of the macOS `.app` bundle directory, without the `.app` extension.
+         *
+         * electron-builder's DMG target stages the bundle under `${productFilename}.app` while its
+         * ZIP target archives the prepackaged directory as-is, so the two formats only ship the same
+         * bundle name when the prepackaged directory is already named after `productFilename`. This
+         * task therefore renames its working copy to `<macBundleName>.app` and pins `productName` to
+         * the same value, making `basename(prepackaged) == productFilename` hold by construction.
+         */
+        @get:Input
+        @get:Optional
+        val macBundleName: Property<String> = objects.nullableProperty()
+
         @get:Input
         val targetArch: Property<String> =
             objects.notNullProperty<String>().apply {
@@ -231,8 +244,9 @@ abstract class AbstractElectronBuilderPackageTask
             val outputDir = destinationDir.ioFile.apply { mkdirs() }
 
             // Create a task-private copy of the app image so parallel tasks don't
-            // interfere when modifying .cfg files or signing the bundle.
-            val workingAppDir = copyAppImage(originalAppDir, outputDir, logger)
+            // interfere when modifying .cfg files or signing the bundle. On macOS the copy is
+            // renamed to the resolved bundle name so every format ships the same .app.
+            val workingAppDir = copyAppImage(originalAppDir, outputDir, resolveWorkingAppDirName(originalAppDir), logger)
 
             ensureResourcesDirForElectronBuilder(workingAppDir)
             bundleUpdatePublicKey(workingAppDir, dist)
@@ -429,6 +443,7 @@ abstract class AbstractElectronBuilderPackageTask
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
                     nsisProtocolInclude = nsisProtocolInclude,
+                    macBundleName = macBundleName.orNull,
                 )
             val configFile = File(outputDir, "electron-builder.yml")
             configFile.writeText(configContent)
@@ -592,8 +607,11 @@ abstract class AbstractElectronBuilderPackageTask
             val metadata =
                 buildString {
                     appendLine("{")
+                    // Mirrors the config generator: the bundle name wins so a DMG rebuilt from this
+                    // metadata on another machine stages the same .app the ZIP already ships.
                     val resolvedProductName =
-                        distributions.appName ?: distributions.packageName ?: executableName.orNull
+                        macBundleName.orNull?.takeIf { it.isNotBlank() }
+                            ?: distributions.appName ?: distributions.packageName ?: executableName.orNull
                     appendLine("  \"productName\": ${jsonStr(resolvedProductName)},")
                     appendLine("  \"appId\": ${jsonStr(appId)},")
                     appendLine("  \"copyright\": ${jsonStr(distributions.copyright)},")
@@ -1873,7 +1891,7 @@ abstract class AbstractElectronBuilderPackageTask
          * Resolves the actual app directory inside the jpackage app-image output.
          *
          * jpackage produces: `<destinationDir>/<packageName>` on Linux/Windows
-         *                  or `<destinationDir>/<packageName>.app` on macOS.
+         *                  or `<destinationDir>/<macBundleName>.app` on macOS.
          */
         private fun resolveAppImageDir(): File {
             val root = appImageRoot.ioFile
@@ -1882,10 +1900,14 @@ abstract class AbstractElectronBuilderPackageTask
             }
 
             val name = packageName.get()
+            val bundleName = macBundleName.orNull?.takeIf { it.isNotBlank() }
 
-            // Try platform-specific name, then plain name, then single-child fallback
+            // Try the macOS bundle name, then the platform-specific name, then the plain name,
+            // then fall back to the single child directory.
             val resolved =
                 when {
+                    currentOS == OS.MacOS && bundleName != null && root.resolve("$bundleName.app").isDirectory ->
+                        root.resolve("$bundleName.app")
                     currentOS == OS.MacOS && root.resolve("$name.app").isDirectory ->
                         root.resolve("$name.app")
                     root.resolve(name).isDirectory -> root.resolve(name)
@@ -1894,8 +1916,21 @@ abstract class AbstractElectronBuilderPackageTask
 
             return resolved ?: throw GradleException(
                 "Unable to locate app image directory. " +
-                    "Expected '$name' or '$name.app' inside: ${root.absolutePath}",
+                    "Expected '$name' or '${bundleName ?: name}.app' inside: ${root.absolutePath}",
             )
+        }
+
+        /**
+         * Name the task-private copy of the app image must carry.
+         *
+         * On macOS this is `<macBundleName>.app`, which electron-builder's ZIP target archives
+         * verbatim and its DMG target reproduces via `productFilename`. Elsewhere the source name is
+         * kept as-is.
+         */
+        private fun resolveWorkingAppDirName(source: File): String {
+            if (currentOS != OS.MacOS) return source.name
+            val bundleName = macBundleName.orNull?.takeIf { it.isNotBlank() } ?: return source.name
+            return "$bundleName.app"
         }
 
         /**
@@ -1941,10 +1976,11 @@ internal fun resolveLinuxExecutableName(
 private fun copyAppImage(
     source: File,
     outputDir: File,
+    destinationName: String,
     logger: Logger,
 ): File {
     val workingRoot = File(outputDir, ".app-image")
-    val destination = File(workingRoot, source.name)
+    val destination = File(workingRoot, destinationName)
     if (destination.exists()) {
         deleteWithRetry(destination, logger)
     }
