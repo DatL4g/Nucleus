@@ -98,10 +98,6 @@ public class TaoWindow internal constructor(
     // show() and disabled once — on the first native redraw after show. Gating
     // on this flag keeps the disable off the per-frame redraw path.
     private var startupEraseActive = false
-
-    // Last background ARGB pushed to native, so the per-recomposition SideEffect
-    // only crosses the JNI boundary when the themed color actually changes.
-    private var lastBackgroundArgb: Int? = null
     private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
 
     @Volatile
@@ -189,6 +185,14 @@ public class TaoWindow internal constructor(
     }
 
     public fun requestClose() {
+        // Programmatic closes skip WM_CLOSE entirely (Tao destroys the HWND
+        // directly), so the backdrop must be reverted to an opaque themed
+        // window here — otherwise the close animation snapshots the
+        // semi-transparent tint fading towards black.
+        if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+            val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+            if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
+        }
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
@@ -496,16 +500,6 @@ public class TaoWindow internal constructor(
     /** Multi-cast: fires on every native window move. [xPx]/[yPx] are physical pixels. */
     public fun onMoved(block: (xPx: Int, yPx: Int) -> Unit) {
         movedListeners += block
-    }
-
-    internal fun setBackgroundColor(argb: Int) {
-        if (Platform.Current != Platform.Windows || !NativeTaoWindowsDecoBridge.isLoaded) return
-        if (argb == lastBackgroundArgb) return
-        val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
-        if (hwnd != 0L) {
-            NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(hwnd, argb)
-            lastBackgroundArgb = argb
-        }
     }
 
     private fun setStartupBackgroundEraseEnabled(enabled: Boolean) {

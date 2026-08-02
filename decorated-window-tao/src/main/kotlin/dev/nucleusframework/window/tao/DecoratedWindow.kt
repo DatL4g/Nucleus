@@ -32,6 +32,7 @@ import dev.nucleusframework.window.GlobalModalDialogCount
 import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.LocalTitleBarInfo
 import dev.nucleusframework.window.TitleBarInfo
+import dev.nucleusframework.window.internal.isDark
 import dev.nucleusframework.window.tao.a11y.TaoSemanticsObserver
 import dev.nucleusframework.window.tao.deco.FullscreenOverlayHost
 import dev.nucleusframework.window.tao.deco.FullscreenTitleBarHolder
@@ -75,8 +76,51 @@ private val hiddenFromDockLogger: java.util.logging.Logger =
  * and rounded corners back to transparent after rendering, so the drop shadow
  * is unaffected. Defaults to opaque white until the first composition.
  */
-internal val LocalRequestedClearColor =
-    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
+internal val LocalWindowClearColorLayers =
+    staticCompositionLocalOf<WindowClearColorLayers?> { null }
+
+/** Opaque white — the clear colour before any style or content publishes one. */
+private const val DEFAULT_CLEAR_ARGB = 0xFFFFFFFF.toInt()
+
+/**
+ * The window's clear colour as two explicit layers with one resolver.
+ *
+ * The hoisted window style writes the [style layer][setStyle]
+ * (`DecoratedWindowComposable`); `WindowBackground` and `TitleBar` write the
+ * [content layer][setContent], which outranks it. Every write re-resolves
+ * `content ?: style` into the host state *synchronously, inside the caller's
+ * SideEffect* — so the first composition has fully themed the host before the
+ * window's first blocking render and `show()`, and no writer can race another
+ * into the host state: priority is structural, not an accident of
+ * recomposition order.
+ *
+ * Runs on the Tao main thread only, so no synchronization is needed.
+ */
+internal class WindowClearColorLayers(
+    private val hostClearColor: androidx.compose.runtime.MutableState<Int>,
+) {
+    private var style: Int = DEFAULT_CLEAR_ARGB
+    private var content: Int? = null
+
+    val resolved: Int get() = content ?: style
+
+    /** The resolved colour as observable snapshot state (the host state itself). */
+    val observableResolved: androidx.compose.runtime.State<Int> get() = hostClearColor
+
+    fun setStyle(argb: Int) {
+        style = argb
+        push()
+    }
+
+    fun setContent(argb: Int?) {
+        content = argb
+        push()
+    }
+
+    private fun push() {
+        hostClearColor.value = resolved
+    }
+}
 
 /**
  * Holds whether a native system material is showing through this window (see
@@ -87,6 +131,36 @@ internal val LocalRequestedClearColor =
  */
 internal val LocalRequestedGlassBackground =
     staticCompositionLocalOf<androidx.compose.runtime.MutableState<Boolean>?> { null }
+
+/**
+ * Holds whether the client area must stay transparent so a DWM system backdrop
+ * shows through (see `WindowsBackdrop`). Backed by the Windows host's
+ * `transparentBackgroundState`: while `true`, the render loop clears the Skia
+ * surface to alpha 0 instead of the window background colour. Windows only —
+ * `null` elsewhere.
+ */
+internal val LocalRequestedTransparentBackground =
+    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Boolean>?> { null }
+
+/**
+ * ARGB the render loop clears to while a backdrop is active — the app's tint
+ * layer over the DWM material (see the host's `backdropTintArgbState`).
+ * Written by `WindowsBackdrop`. Windows only — `null` elsewhere.
+ */
+internal val LocalBackdropComposeTint =
+    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
+
+/**
+ * Appearance forced by [dev.nucleusframework.window.WindowAppearance], for the
+ * platforms whose chrome is Compose-drawn (Windows). While `System`, the
+ * chrome derives light/dark from the window background's luminance — the same
+ * signal the native layer feeds `DWMWA_USE_IMMERSIVE_DARK_MODE`, so the
+ * Compose-drawn glyphs and the DWM material can never disagree.
+ */
+internal val LocalRequestedAppearanceOverride =
+    staticCompositionLocalOf<
+        androidx.compose.runtime.MutableState<dev.nucleusframework.window.WindowAppearanceMode>?,
+    > { null }
 
 /**
  * Exposes the [TaoWindow] backing the current `DecoratedWindow` to any
@@ -339,11 +413,12 @@ internal fun ApplicationScope.openDecoratedWindow(
             }
         }
         host.setContent {
+            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
-                LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalWindowClearColorLayers provides clearColorLayers,
                 LocalRequestedGlassBackground provides host.glassBackgroundState,
                 LocalTaoPopupHost provides host.popupHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
@@ -547,11 +622,12 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         // the X11 XID via NativeTaoBridge.nativeLinuxHandles().
         a11yController.attach()
         host.setContent {
+            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
-                LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalWindowClearColorLayers provides clearColorLayers,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
@@ -896,6 +972,21 @@ private fun ApplicationScope.openDecoratedWindowWindows(
 
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true, maximized = maximized))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
+    // Hoisted out of the composition so the initial native theme push below
+    // (before the first blocking render and show()) can read it.
+    val appearanceOverride = mutableStateOf(dev.nucleusframework.window.WindowAppearanceMode.System)
+
+    fun pushNativeTheme() {
+        if (!NativeTaoWindowsDecoBridge.isLoaded) return
+        val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+        if (hwnd == 0L) return
+        val argb = host.clearColorArgbState.value
+        NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(
+            hwnd,
+            argb,
+            resolveChromeDark(appearanceOverride.value, argb),
+        )
+    }
 
     val scopeFactory: androidx.compose.foundation.layout.ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, androidx.compose.foundation.layout.ColumnScope by this {
@@ -911,17 +1002,46 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.attach()
         a11yController.attach()
         host.setContent {
+            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
-                LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalWindowClearColorLayers provides clearColorLayers,
+                LocalRequestedTransparentBackground provides host.transparentBackgroundState,
+                LocalBackdropComposeTint provides host.backdropTintArgbState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows
                     provides host.popupHost(),
             ) {
+                // Light/dark for the whole chrome. One source of truth (the
+                // clear colour + the WindowAppearance override, both snapshot
+                // state), one resolution function, and one native call below:
+                // the Compose-drawn glyphs and the DWM material derive from
+                // the same snapshot-consistent pair, so a torn theme — glyphs
+                // on one theme, material on the other — cannot be expressed.
+                // The initial push happens synchronously after setContent
+                // (before the first blocking render and show()); this flow
+                // handles every later change.
+                val chromeIsDark =
+                    resolveChromeDark(appearanceOverride.value, host.clearColorArgbState.value)
+                LaunchedEffect(Unit) {
+                    snapshotFlow {
+                        // Both states are read inside one snapshot: the pair
+                        // can never mix an old colour with a new override.
+                        val argb = host.clearColorArgbState.value
+                        argb to resolveChromeDark(appearanceOverride.value, argb)
+                    }.collect { (argb, isDark) ->
+                        if (NativeTaoWindowsDecoBridge.isLoaded) {
+                            val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+                            if (hwnd != 0L) {
+                                NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(hwnd, argb, isDark)
+                            }
+                        }
+                    }
+                }
                 val border =
                     rememberUndecoratedWindowBorder(
                         state = stateHolder.value,
@@ -936,6 +1056,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                     }
                 CompositionLocalProvider(
                     dev.nucleusframework.window.LocalModalDialogCount provides modalCount,
+                    dev.nucleusframework.window.LocalIsDarkTheme provides chromeIsDark,
+                    LocalRequestedAppearanceOverride provides appearanceOverride,
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         FullscreenOverlayHost(
@@ -989,6 +1111,11 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 w to h
             }
         host.syncTitleBarHeight()
+        // The initial composition's SideEffects have themed the host clear
+        // colour by now (layer writes push synchronously); mirror it to the
+        // native side before the first paint — the snapshot flow above only
+        // starts once the event loop resumes, which is after show().
+        pushNativeTheme()
         // onResized renders synchronously, so this doubles as the guaranteed
         // first paint before the window is shown (no separate onRedrawRequested).
         host.onResized(initialW, initialH)
@@ -1013,7 +1140,15 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 )
         }
     }
-    window.onCloseRequested { onCloseRequest() }
+    // The close animation snapshots the window as-is. With a backdrop active
+    // that snapshot is semi-transparent tint fading towards black — revert to
+    // the opaque theme colour and present it, synchronously, while the window
+    // and EGL surface are still alive (detach() runs after DestroyWindow, far
+    // too late to steer the snapshot).
+    window.onCloseRequested {
+        host.prepareClose()
+        onCloseRequest()
+    }
     window.onDestroyed {
         a11yController.dispose()
         host.detach()
@@ -1094,3 +1229,21 @@ private fun ApplicationScope.openDecoratedWindowWindows(
 
     return window
 }
+
+/**
+ * THE resolution point for the Windows chrome's light/dark: the value it
+ * returns is provided as `LocalIsDarkTheme` (caption glyphs, hover overlays)
+ * and pushed as `DWMWA_USE_IMMERSIVE_DARK_MODE` (the backdrop material) by
+ * the same snapshot-driven flow — one function, one pair of inputs, so the
+ * two sides cannot be resolved differently.
+ */
+private fun resolveChromeDark(
+    override: dev.nucleusframework.window.WindowAppearanceMode,
+    backgroundArgb: Int,
+): Boolean =
+    when (override) {
+        dev.nucleusframework.window.WindowAppearanceMode.Dark -> true
+        dev.nucleusframework.window.WindowAppearanceMode.Light -> false
+        // Same Rec.601 luminance split the other backends use.
+        dev.nucleusframework.window.WindowAppearanceMode.System -> Color(backgroundArgb).isDark()
+    }

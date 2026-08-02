@@ -37,8 +37,8 @@ import dev.nucleusframework.window.hasMacOSLargeCornerRadius
 import dev.nucleusframework.window.hasNewFullscreenControls
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
-import dev.nucleusframework.window.tao.LocalRequestedClearColor
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
+import dev.nucleusframework.window.tao.LocalWindowClearColorLayers
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.deco.LocalFullscreenTitleBarHolder
@@ -222,9 +222,15 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // On Linux the host still carves the CSD shadow margins / rounded corners
     // back to transparent after rendering, so the drop shadow is unaffected.
     val titleBarBackground by style.colors.backgroundFor(currentState)
-    val clearColorState = LocalRequestedClearColor.current
+    val clearColorLayers = LocalWindowClearColorLayers.current
     SideEffect {
-        clearColorState?.value = titleBarBackground.toArgb()
+        clearColorLayers?.setContent(titleBarBackground.toArgb())
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            // A removed TitleBar must not keep shadowing the style layer.
+            clearColorLayers?.setContent(null)
+        }
     }
 
     // Push the animated offset back to native so the AppKit traffic-light

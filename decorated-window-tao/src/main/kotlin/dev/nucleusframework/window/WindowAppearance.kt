@@ -3,6 +3,7 @@ package dev.nucleusframework.window
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.tao.LocalRequestedAppearanceOverride
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
@@ -16,9 +17,11 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
  * gets a light sidebar material under dark Compose content (and vice versa).
  * Pass the same value that drives the Compose theme.
  *
- * macOS only (Tao backend, `NSWindow.appearance`); a no-op elsewhere. The
- * window reverts to the OS setting when the composable leaves the
- * composition.
+ * On macOS this drives `NSWindow.appearance` (Tao backend). On Windows it
+ * drives the Compose-drawn chrome — caption-button glyphs and hover overlays —
+ * which otherwise follows the window background's luminance, the same signal
+ * the DWM material uses. A no-op on Linux. The window reverts to the
+ * system-derived appearance when the composable leaves the composition.
  */
 @Suppress("FunctionNaming")
 @Composable
@@ -26,7 +29,9 @@ public fun DecoratedWindowScope.WindowAppearance(mode: WindowAppearanceMode) {
     // Tao always provides a [TaoDecoratedWindowScope] at runtime — same
     // contract as `BasicTitleBar`.
     val taoWindow = (this as TaoDecoratedWindowScope).window
+    val chromeOverride = LocalRequestedAppearanceOverride.current
     DisposableEffect(taoWindow, mode) {
+        chromeOverride?.value = mode
         val supported = Platform.Current == Platform.MacOS && NativeMetalBridge.isLoaded
         if (supported) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
@@ -35,9 +40,11 @@ public fun DecoratedWindowScope.WindowAppearance(mode: WindowAppearanceMode) {
             }
         }
         onDispose {
-            // Hand the window back to the OS setting: a forced appearance that
-            // outlived its call site would keep native menus, popups, the
-            // traffic-lights and every glass region dark under light content.
+            // Hand the window back to the derived appearance: a forced one
+            // that outlived its call site would keep native menus, popups,
+            // the traffic-lights and every glass region dark under light
+            // content.
+            chromeOverride?.value = WindowAppearanceMode.System
             if (supported && mode != WindowAppearanceMode.System) {
                 val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
                 if (nsView != 0L) {

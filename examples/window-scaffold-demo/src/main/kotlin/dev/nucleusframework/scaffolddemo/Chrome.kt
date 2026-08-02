@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material3.Icon
@@ -60,9 +61,16 @@ internal fun DecoratedWindowScope.DemoToolbar(demo: DemoState) {
             Modifier
                 .fillMaxWidth()
                 .height(ToolbarHeight)
-                // Always painted: a glass region clears the Compose surface to
-                // transparent, and an unpainted strip would show the desktop.
-                .background(colors.surface)
+                // Overlay means the bar owns no pixels: the content fills the
+                // window and stays fully visible up to the top edge, with the
+                // controls floating over it — otherwise Docked and Overlay
+                // render identically and the placement switch shows nothing.
+                // Under a Windows backdrop the strip is equally unpainted so
+                // the material carries across the title bar. Docked keeps the
+                // classic opaque band.
+                .background(
+                    if (demo.backdropActive || demo.overlay) Color.Transparent else colors.surface,
+                )
                 // The whole strip moves the window; the buttons inside opt out
                 // by consuming the press.
                 .windowDragArea(),
@@ -95,9 +103,17 @@ internal fun DecoratedWindowScope.DemoToolbar(demo: DemoState) {
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconToggle(
-                checked = demo.darkTheme,
-                onCheckedChange = { demo.darkTheme = it },
+            ThemeModeButton(
+                mode = demo.themeMode,
+                resolvedDark = demo.darkTheme,
+                onCycle = {
+                    demo.themeMode =
+                        when (demo.themeMode) {
+                            ThemeMode.System -> ThemeMode.Light
+                            ThemeMode.Light -> ThemeMode.Dark
+                            ThemeMode.Dark -> ThemeMode.System
+                        }
+                },
                 modifier = Modifier.padding(end = 10.dp),
             )
             // macOS draws real traffic-lights; every other platform is fully
@@ -110,14 +126,18 @@ internal fun DecoratedWindowScope.DemoToolbar(demo: DemoState) {
 }
 
 @Composable
-private fun IconToggle(
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+private fun ThemeModeButton(
+    mode: ThemeMode,
+    resolvedDark: Boolean,
+    onCycle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    // The System state reads as "hands off": neutral chip, auto glyph. The
+    // explicit overrides get the primary tint.
+    val overridden = mode != ThemeMode.System
     val background by animateColorAsState(
-        if (checked) colors.primary.copy(alpha = 0.18f) else colors.onSurface.copy(alpha = 0.06f),
+        if (overridden) colors.primary.copy(alpha = 0.18f) else colors.onSurface.copy(alpha = 0.06f),
         label = "themeToggleBackground",
     )
     Box(
@@ -127,16 +147,28 @@ private fun IconToggle(
                 .clip(RoundedCornerShape(10.dp))
                 .background(background)
                 .selectable(
-                    selected = checked,
-                    role = Role.Switch,
-                    onClick = { onCheckedChange(!checked) },
+                    selected = overridden,
+                    role = Role.Button,
+                    onClick = onCycle,
                 ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = if (checked) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
-            contentDescription = if (checked) "Switch to light theme" else "Switch to dark theme",
-            tint = if (checked) colors.primary else colors.onSurfaceVariant,
+            imageVector =
+                when (mode) {
+                    ThemeMode.System -> Icons.Rounded.BrightnessAuto
+                    ThemeMode.Light -> Icons.Rounded.LightMode
+                    ThemeMode.Dark -> Icons.Rounded.DarkMode
+                },
+            contentDescription =
+                when (mode) {
+                    ThemeMode.System ->
+                        "Theme follows the system (currently ${if (resolvedDark) "dark" else "light"}); " +
+                            "click for light"
+                    ThemeMode.Light -> "Light theme forced; click for dark"
+                    ThemeMode.Dark -> "Dark theme forced; click to follow the system"
+                },
+            tint = if (overridden) colors.primary else colors.onSurfaceVariant,
             modifier = Modifier.size(17.dp),
         )
     }
@@ -152,7 +184,13 @@ internal fun DemoSidebar(
     contentPadding: PaddingValues,
 ) {
     val colors = MaterialTheme.colorScheme
-    val glass = demo.glassSidebar
+    // `windowGlassRegion` is a no-op off macOS, so the switch must be too:
+    // branching on it alone left the pane with neither the material nor the
+    // fallback fill everywhere else, which reads as a bug rather than a no-op.
+    val glass = demo.glassSidebar && Platform.Current == Platform.MacOS
+    // Under a Windows backdrop the pane is deliberately unpainted instead —
+    // that is what lets the material run behind it.
+    val paintsBackground = !glass && !demo.backdropActive
 
     // A floating panel, the way macOS lays its sidebars out: inset from the
     // window edges and rounded, so the material reads as its own surface
@@ -172,8 +210,10 @@ internal fun DemoSidebar(
                             cornerRadius = SidebarCorner,
                         )
                     } else {
-                        Modifier.background(colors.surfaceContainer)
+                        Modifier
                     },
+                ).then(
+                    if (paintsBackground) Modifier.background(colors.surfaceContainer) else Modifier,
                 ).padding(horizontal = 8.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {

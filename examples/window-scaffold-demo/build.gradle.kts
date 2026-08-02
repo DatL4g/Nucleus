@@ -15,6 +15,7 @@ dependencies {
     implementation(project(":decorated-window-tao"))
     implementation(project(":nucleus-application"))
     implementation(project(":core-runtime"))
+    implementation(project(":darkmode-detector"))
     implementation(project(":graalvm-runtime"))
     implementation(compose.desktop.currentOs)
     implementation("org.jetbrains.compose.material3:material3:1.9.0")

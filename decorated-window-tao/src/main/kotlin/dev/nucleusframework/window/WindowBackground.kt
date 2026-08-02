@@ -1,11 +1,11 @@
 package dev.nucleusframework.window
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import dev.nucleusframework.window.tao.LocalRequestedClearColor
-import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
+import dev.nucleusframework.window.tao.LocalWindowClearColorLayers
 
 /**
  * Sets the window's own background — the colour that shows wherever Compose
@@ -33,19 +33,25 @@ import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
  * precisely when the theme lives inside, as it must on the Tao backend where
  * every window owns its `ComposeScene`.
  */
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "UnusedReceiverParameter")
 @Composable
 public fun DecoratedWindowScope.WindowBackground(color: Color) {
-    // Tao always provides a [TaoDecoratedWindowScope] at runtime — same
-    // contract as `BasicTitleBar`.
-    val taoWindow = (this as TaoDecoratedWindowScope).window
-    val clearColorState = LocalRequestedClearColor.current
+    val layers = LocalWindowClearColorLayers.current
     val argb = color.toArgb()
     SideEffect {
-        // Drives the Skia clear on every platform, and from there the native
-        // window colour: macOS mirrors it onto the NSWindow, Windows onto the
-        // HWND brush.
-        clearColorState?.value = argb
-        taoWindow.setBackgroundColor(argb)
+        // Single write to the window's content layer; the layer resolver
+        // pushes the result into the host state synchronously, so the first
+        // composition themes the window before its first frame. Every
+        // consumer — the Skia clear, the NSWindow colour on macOS, the HWND
+        // brush + DWM caption/dark-mode on Windows — derives from that one
+        // resolved state, which is what keeps the chrome atomically themed.
+        layers?.setContent(argb)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            // Hand the window back to the hoisted style layer: a removed
+            // WindowBackground must not keep shadowing it forever.
+            layers?.setContent(null)
+        }
     }
 }

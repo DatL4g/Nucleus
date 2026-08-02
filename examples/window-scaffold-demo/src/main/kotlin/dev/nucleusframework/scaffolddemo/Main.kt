@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -15,11 +16,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.window.TitleBarPlacement
 import dev.nucleusframework.window.WindowAppearance
 import dev.nucleusframework.window.WindowAppearanceMode
 import dev.nucleusframework.window.WindowBackground
 import dev.nucleusframework.window.WindowScaffold
+import dev.nucleusframework.window.WindowsBackdrop
 import dev.nucleusframework.window.macOSLargeCornerRadius
 
 private val DemoDarkColors =
@@ -49,7 +52,11 @@ fun main() =
             minimumSize = DpSize(880.dp, 560.dp),
         ) {
             val windowScope = this
-            val demo = remember { DemoState() }
+            // ThemeMode.System (the default) follows the OS live; Light/Dark
+            // override until the title-bar button cycles back to System.
+            val systemDark = isSystemInDarkMode()
+            val demo = remember { DemoState(initialSystemInDark = systemDark) }
+            LaunchedEffect(systemDark) { demo.systemInDark = systemDark }
             val colors = if (demo.darkTheme) DemoDarkColors else DemoLightColors
 
             // The Tao backend gives every window its own ComposeScene, so the
@@ -62,6 +69,10 @@ fun main() =
                 WindowAppearance(
                     if (demo.darkTheme) WindowAppearanceMode.Dark else WindowAppearanceMode.Light,
                 )
+                // Windows 11 only, and deliberately named so. DWM composites
+                // the material behind the window; everything this app leaves
+                // unpainted shows it.
+                WindowsBackdrop(demo.backdrop, demo.backdropTint.color, demo.backdropTier)
                 WindowScaffold(
                     modifier = Modifier.macOSLargeCornerRadius(),
                     titleBar = { windowScope.DemoToolbar(demo) },
@@ -74,12 +85,14 @@ fun main() =
                 ) { contentPadding ->
                     Row(Modifier.fillMaxSize()) {
                         DemoSidebar(demo, contentPadding)
-                        // Always painted: while a glass region is active the
-                        // Compose surface is cleared to transparent, so any
-                        // unpainted area would show the desktop.
+                        // Painted by default: while a glass region is active
+                        // the Compose surface is cleared to transparent, so any
+                        // unpainted area would show the desktop. A Windows
+                        // backdrop is the one case where that is the point —
+                        // an opaque background would hide the material.
                         Surface(
                             modifier = Modifier.weight(1f).fillMaxHeight(),
-                            color = colors.background,
+                            color = if (demo.backdropActive) Color.Transparent else colors.background,
                         ) {
                             DemoContent(demo, contentPadding)
                         }

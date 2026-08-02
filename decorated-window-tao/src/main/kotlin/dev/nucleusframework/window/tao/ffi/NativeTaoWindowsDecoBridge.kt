@@ -34,13 +34,71 @@ internal object NativeTaoWindowsDecoBridge {
         heightPx: Int,
     )
 
-    /** ARGB; updates the WM_ERASEBKGND fill, DWM caption/border colors, and
-     * dark-mode flag based on luminance. */
+    /**
+     * Applies the whole window theme atomically: `WM_ERASEBKGND` fill, DWM
+     * caption/border colors, `DWMWA_USE_IMMERSIVE_DARK_MODE`, and the
+     * Windows 10 acrylic tint when that fallback is live. [isDark] arrives
+     * resolved (background luminance unless `WindowAppearance` overrides) so
+     * there is exactly one resolution point for the entire chrome.
+     */
     @JvmStatic
     external fun nativeSetBackgroundColor(
         hwnd: Long,
         argb: Int,
+        isDark: Boolean,
     )
+
+    /**
+     * Applies a system backdrop, where [style] is the
+     * `DWM_SYSTEMBACKDROP_TYPE` wire value — see
+     * [dev.nucleusframework.window.WindowsBackdropStyle]. Degrades across
+     * three tiers: `DWMWA_SYSTEMBACKDROP_TYPE` on Windows 11 22H2+,
+     * `DWMWA_MICA_EFFECT` on earlier Windows 11, and the
+     * `SetWindowCompositionAttribute` acrylic on Windows 10.
+     *
+     * [tintArgb] is the acrylic tint (Windows 10 tier only, where the material
+     * carries no colour of its own); it is ignored unless [hasTint] is true,
+     * in which case its alpha decides how much blur survives. The DWM tiers
+     * theme themselves and ignore both.
+     *
+     * Returns the tier actually showing afterwards (1 modern, 2 legacy Mica,
+     * 3 Windows 10 accent acrylic), or 0 when none is — including a style
+     * this OS cannot honour, which the caller treats as "leave the window
+     * opaque". The tier matters because the accent one carries its own tint:
+     * the Compose-side tint layer must not double it.
+     */
+    @JvmStatic
+    external fun nativeSetBackdropStyle(
+        hwnd: Long,
+        style: Int,
+        tintArgb: Int,
+        hasTint: Boolean,
+        tier: Int,
+    ): Int
+
+    /**
+     * Publishes the client-space rects (physical px) of the Compose-drawn
+     * caption buttons as 12 ints — `min(x,y,w,h), max(x,y,w,h),
+     * close(x,y,w,h)`, an all-zero quad clearing that slot. `WM_NCHITTEST`
+     * answers `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE` over them, which is what
+     * makes Windows 11 show the Snap Layouts flyout on maximize hover; the
+     * NC clicks these codes generate are forwarded back as client messages,
+     * so the buttons stay Compose-handled.
+     */
+    @JvmStatic
+    external fun nativeSetCaptionButtonRects(
+        hwnd: Long,
+        rects: IntArray,
+    )
+
+    /**
+     * Reverts an active backdrop to a plain opaque themed window,
+     * synchronously. Called right before a programmatic close: that path goes
+     * straight to `DestroyWindow` without `WM_CLOSE`, and the close animation
+     * would otherwise snapshot semi-transparent tint fading towards black.
+     */
+    @JvmStatic
+    external fun nativePrepareClose(hwnd: Long)
 
     @JvmStatic
     external fun nativeSetStartupBackgroundEraseEnabled(

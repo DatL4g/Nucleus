@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.DecoratedWindowState
@@ -56,6 +59,7 @@ import dev.nucleusframework.window.icons.windows.RestoreInactiveDark
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 import dev.nucleusframework.window.resolveWindowControl
 import dev.nucleusframework.window.styling.TitleBarStyle
+import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoWindow
 
 // Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so the visual
@@ -90,9 +94,12 @@ private val WindowsCloseButtonPressed = Color(0xFFF1707A)
  * hover/pressed colors, same active/inactive variants) so the two backends
  * stay visually consistent.
  *
- * Hit-testing rule: drawn entirely in Compose because the WndProc subclass
- * returns HTCLIENT for the title bar zone — DWM never repaints native buttons
- * on top, which would otherwise happen on non-JBR JDKs.
+ * Drawn and handled entirely in Compose, but each button publishes its rect
+ * to the native hit-test ([CaptionButtonHitZones]) so `WM_NCHITTEST` can
+ * answer `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE` over it — which is what makes
+ * Windows 11 show the Snap Layouts flyout on maximize hover. The native side
+ * forwards the resulting NC clicks back as client messages, so hover, press
+ * and click still run through the Compose handlers below.
  */
 @Suppress("FunctionNaming")
 @Composable
@@ -131,6 +138,29 @@ internal fun WindowsWindowControl(
 ) {
     val isDark = LocalIsDarkTheme.current
     val isCloseButton = type == WindowControlType.Close
+    val window = LocalTaoWindow.current
+
+    // Deliberately no background of their own: under a backdrop the buttons
+    // sit directly on the material, exactly like Windows 11's native caption
+    // buttons on Mica — glyph and hover overlay only.
+
+    // Feed the button's window-space rect to the native hit-test so hovering
+    // maximize shows the Windows 11 Snap Layouts flyout; clear it when the
+    // button leaves the composition.
+    val positionModifier =
+        if (window != null) {
+            Modifier.onGloballyPositioned { coordinates ->
+                CaptionButtonHitZones.publish(window, type, coordinates.boundsInWindow())
+            }
+        } else {
+            Modifier
+        }
+    if (window != null) {
+        DisposableEffect(window, type) {
+            onDispose { CaptionButtonHitZones.publish(window, type, null) }
+        }
+    }
+
     WindowsCaptionButton(
         onClick = onClick,
         isDark = isDark,
@@ -139,6 +169,7 @@ internal fun WindowsWindowControl(
         contentDescription = windowsControlDescription(type),
         iconHover = if (isCloseButton) WindowsControlButtonIcons.CloseHover else null,
         isCloseButton = isCloseButton,
+        modifier = positionModifier,
     )
 }
 
@@ -239,6 +270,7 @@ private fun WindowsCaptionButton(
     contentDescription: String,
     iconHover: ImageVector? = null,
     isCloseButton: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     var hovered by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
@@ -268,7 +300,7 @@ private fun WindowsCaptionButton(
 
     Box(
         modifier =
-            Modifier
+            modifier
                 .focusable(false)
                 .fillMaxHeight()
                 .width(WINDOWS_BUTTON_WIDTH)

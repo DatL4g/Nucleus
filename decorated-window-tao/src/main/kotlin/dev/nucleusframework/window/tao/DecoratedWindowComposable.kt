@@ -172,12 +172,14 @@ public fun ApplicationScope.DecoratedWindow(
                     hiddenFromDock = hiddenFromDock,
                     initialCompositionLocalContext = compositionLocalContext,
                     content = {
-                        val taoWindow = window
                         val backgroundArgb = latestWindowBackgroundArgb.value
-                        val clearColorState = LocalRequestedClearColor.current
+                        val clearColorLayers = LocalWindowClearColorLayers.current
                         SideEffect {
-                            clearColorState?.value = backgroundArgb
-                            taoWindow.setBackgroundColor(backgroundArgb)
+                            // The hoisted style writes its own layer, never the
+                            // resolved state: `WindowBackground` / `TitleBar`
+                            // (the content layer) always outrank it, whatever
+                            // the recomposition order.
+                            clearColorLayers?.setStyle(backgroundArgb)
                         }
                         latestContent.invoke(this)
                     },

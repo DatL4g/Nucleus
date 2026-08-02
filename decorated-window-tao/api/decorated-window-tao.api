@@ -138,6 +138,31 @@ public final class dev/nucleusframework/window/WindowScaffoldKt {
 	public static final fun WindowScaffold (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/window/TitleBarPlacement;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 }
 
+public final class dev/nucleusframework/window/WindowsBackdropKt {
+	public static final fun WindowsBackdrop-cf5BqRc (Ldev/nucleusframework/window/DecoratedWindowScope;Ldev/nucleusframework/window/WindowsBackdropStyle;JLdev/nucleusframework/window/WindowsBackdropTier;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/window/WindowsBackdropStyle : java/lang/Enum {
+	public static final field Acrylic Ldev/nucleusframework/window/WindowsBackdropStyle;
+	public static final field Default Ldev/nucleusframework/window/WindowsBackdropStyle;
+	public static final field Mica Ldev/nucleusframework/window/WindowsBackdropStyle;
+	public static final field MicaAlt Ldev/nucleusframework/window/WindowsBackdropStyle;
+	public static final field None Ldev/nucleusframework/window/WindowsBackdropStyle;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/WindowsBackdropStyle;
+	public static fun values ()[Ldev/nucleusframework/window/WindowsBackdropStyle;
+}
+
+public final class dev/nucleusframework/window/WindowsBackdropTier : java/lang/Enum {
+	public static final field Auto Ldev/nucleusframework/window/WindowsBackdropTier;
+	public static final field LegacyMica Ldev/nucleusframework/window/WindowsBackdropTier;
+	public static final field Modern Ldev/nucleusframework/window/WindowsBackdropTier;
+	public static final field Windows10Acrylic Ldev/nucleusframework/window/WindowsBackdropTier;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/WindowsBackdropTier;
+	public static fun values ()[Ldev/nucleusframework/window/WindowsBackdropTier;
+}
+
 public abstract interface class dev/nucleusframework/window/tao/ApplicationScope {
 	public abstract fun exitApplication ()V
 	public abstract fun getTaoApplication ()Ldev/nucleusframework/window/tao/TaoApplication;

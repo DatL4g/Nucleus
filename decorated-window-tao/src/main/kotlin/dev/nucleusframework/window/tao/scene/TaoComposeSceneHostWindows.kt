@@ -92,6 +92,29 @@ internal class TaoComposeSceneHostWindows(
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
         androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
 
+    /**
+     * Whether the client area must stay transparent — set while a DWM system
+     * backdrop is applied (see `WindowsBackdrop`). The render loop then clears
+     * to alpha 0 instead of [clearColorArgbState], so the backdrop shows
+     * wherever Compose paints nothing.
+     *
+     * The Windows counterpart of the macOS host's `glassBackgroundState`;
+     * unlike macOS the surface needs no native flag to carry alpha — the ANGLE
+     * swapchain already presents it (verified on the child render surface).
+     */
+    val transparentBackgroundState: androidx.compose.runtime.MutableState<Boolean> =
+        androidx.compose.runtime.mutableStateOf(false)
+
+    /**
+     * ARGB the render loop clears to while [transparentBackgroundState] is
+     * active — the app's tint layer over the DWM material, composited by the
+     * per-pixel-alpha swapchain. `0` (fully transparent) shows the raw
+     * material; an app-themed translucent colour is what keeps Acrylic — whose
+     * DWM tint is a generic system grey — coherent with the app's palette.
+     */
+    val backdropTintArgbState: androidx.compose.runtime.MutableState<Int> =
+        androidx.compose.runtime.mutableStateOf(0)
+
     /** App-level pre-dispatch hook. See [TaoComposeSceneHost.previewKeyHandler]. */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
 
@@ -927,7 +950,16 @@ internal class TaoComposeSceneHostWindows(
             // via [LocalRequestedClearColor]) so a Compose region without an
             // explicit background matches the chrome color — aligned with the
             // macOS / Linux Tao hosts and the AWT backends.
-            surface.canvas.clear(clearColorArgbState.value)
+            // While a system backdrop is active the clear is the app's tint
+            // layer over the DWM material (0 = raw material); otherwise the
+            // opaque themed background.
+            surface.canvas.clear(
+                if (transparentBackgroundState.value) {
+                    backdropTintArgbState.value
+                } else {
+                    clearColorArgbState.value
+                },
+            )
             sc.render(surface.canvas.asComposeCanvas(), now)
             // `flushAndSubmit` issues the glFlush that commits the frame to
             // the back buffer; the present happens below, after the overlay/
@@ -1098,10 +1130,6 @@ internal class TaoComposeSceneHostWindows(
         NativeTaoWindowsDecoBridge.nativeSetTitleBarHeight(hwnd, px)
     }
 
-    fun setTitleBarBackgroundColor(argb: Int) {
-        if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(hwnd, argb)
-    }
-
     /** Current scale factor (logical→physical multiplier). */
     fun density(): Float = scale
 
@@ -1261,6 +1289,40 @@ internal class TaoComposeSceneHostWindows(
     override fun dispatchA11yWalk(block: () -> Unit) {
         flushingDispatcher.enqueue(Runnable { block() })
         window.requestRedraw()
+    }
+
+    /**
+     * Reverts an active backdrop and presents one last opaque themed frame,
+     * synchronously. Called on the close path, while the window and its EGL
+     * surface are still alive — the close animation snapshots the window
+     * as-is, and a backdrop's semi-transparent tint would fade towards black.
+     *
+     * While a backdrop is active the render loop clears to the tint layer over
+     * the DWM material (often alpha 0 for Mica — the raw material shows through).
+     * Once [nativePrepareClose] reverts the DWM backdrop that transparent clear
+     * stops compositing over a material and reads as black during the fade-out —
+     * a dark flash, worst on light themes. Flipping
+     * [transparentBackgroundState] off for this one frame makes the clear fall
+     * back to [clearColorArgbState] (the opaque themed background), so the
+     * fade-out snapshots an opaque window.
+     *
+     * Idempotent; a later detach() finds nothing to do.
+     */
+    fun prepareClose() {
+        if (hwnd == 0L || !transparentBackgroundState.value) return
+        NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
+        // Render the close frame with the opaque themed clear, not the
+        // backdrop tint: the backdrop was just reverted above, so a transparent
+        // clear would composite as black during the fade-out.
+        transparentBackgroundState.value = false
+        // Never let a teardown render take the close down with it.
+        @Suppress("TooGenericExceptionCaught")
+        try {
+            onRedrawRequested()
+        } catch (t: RuntimeException) {
+            // Swallow: the window is being destroyed anyway.
+            val ignored = t
+        }
     }
 
     fun detach() {
