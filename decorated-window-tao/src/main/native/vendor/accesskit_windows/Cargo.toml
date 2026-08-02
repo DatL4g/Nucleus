@@ -10,10 +10,10 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
-rust-version = "1.77.2"
+edition = "2024"
+rust-version = "1.85"
 name = "accesskit_windows"
-version = "0.29.2"
+version = "0.34.0"
 authors = ["The AccessKit contributors"]
 build = false
 autolib = false
@@ -31,6 +31,7 @@ keywords = [
 categories = ["gui"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/AccessKit/accesskit"
+resolver = "2"
 
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"
@@ -45,13 +46,13 @@ name = "hello_world"
 path = "examples/hello_world.rs"
 
 [dependencies.accesskit]
-version = "0.21.1"
+version = "0.24.1"
 
 [dependencies.accesskit_consumer]
-version = "0.31.0"
+version = "0.38.0"
 
 [dependencies.hashbrown]
-version = "0.15"
+version = "0.16"
 features = ["default-hasher"]
 default-features = false
 
@@ -59,9 +60,10 @@ default-features = false
 version = "1.1.0"
 
 [dependencies.windows]
-version = "0.61.1"
+version = "0.62.0"
 features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Graphics_Gdi",
     "Win32_System_Com",
     "Win32_System_LibraryLoader",
@@ -73,7 +75,7 @@ features = [
 ]
 
 [dependencies.windows-core]
-version = "0.61.0"
+version = "0.62.0"
 
 [dev-dependencies.once_cell]
 version = "1.13.0"

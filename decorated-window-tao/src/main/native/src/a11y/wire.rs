@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use accesskit::{
     Action, CustomAction, Live, Node, NodeId, Rect, Role, TextPosition, TextSelection, Toggled,
-    Tree, TreeUpdate,
+    Tree, TreeId, TreeUpdate,
 };
 
 // ── Wire format (kept in sync with TaoA11ySnapshotSerializer.kt) ───────────
@@ -581,9 +581,13 @@ pub fn parse_snapshot(buf: &[u8]) -> Option<ParsedSnapshot> {
     let focus = focus_id
         .or(root_id)
         .unwrap_or(NodeId(0));
+    // Single-tree embedder: everything lives in the root tree. AccessKit's
+    // multi-tree support (0.23+) only matters for grafted subtrees, which the
+    // Compose bridge doesn't produce.
     let update = TreeUpdate {
         nodes,
         tree,
+        tree_id: TreeId::ROOT,
         focus,
     };
     Some(ParsedSnapshot {

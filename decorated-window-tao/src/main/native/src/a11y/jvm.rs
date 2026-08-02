@@ -18,7 +18,7 @@ pub fn forward_action_to_jvm(
     let Some(jvm) = JAVA_VM.get() else { return };
     let Ok(mut env) = jvm.attach_current_thread() else { return };
     let class_name = "dev/nucleusframework/window/tao/ffi/NativeTaoBridge";
-    let node_id = request.target.0 as i64;
+    let node_id = request.target_node.0 as i64;
 
     // Map back to the bitmask the Kotlin controller already understands.
     // Compose-side scroll handling expects a SCROLL_UP/DOWN/LEFT/RIGHT bit

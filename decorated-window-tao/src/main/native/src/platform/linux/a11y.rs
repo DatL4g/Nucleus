@@ -34,7 +34,7 @@ use std::sync::{
 };
 
 use accesskit::{
-    ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, NodeId, Rect,
+    ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, NodeId, Rect, TreeId,
     TreeUpdate,
 };
 use accesskit_unix::Adapter;
@@ -46,7 +46,6 @@ use once_cell::sync::Lazy;
 use crate::a11y::jvm::forward_action_to_jvm;
 use crate::a11y::tree::reachable_nodes;
 use crate::a11y::wire::{parse_snapshot, NodeMeta, ParsedSnapshot};
-use crate::state::JAVA_VM;
 
 // ── State management ──────────────────────────────────────────────────────
 
@@ -148,7 +147,7 @@ impl ActionHandler for ActionProxy {
                 Ok(s) => s,
                 Err(_) => return,
             };
-            let Some(meta) = st.nodes.get(&request.target) else {
+            let Some(meta) = st.nodes.get(&request.target_node) else {
                 return;
             };
             (st.handle, meta.actions, meta.custom_action_count)
@@ -470,6 +469,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     entry.adapter.update_if_active(|| TreeUpdate {
         nodes: Vec::new(),
         tree: cached_tree,
+        tree_id: TreeId::ROOT,
         focus: target,
     });
 }

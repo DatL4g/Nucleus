@@ -23,7 +23,7 @@ use std::sync::{
 };
 
 use accesskit::{
-    Action, ActionHandler, ActionRequest, ActivationHandler, NodeId, TreeUpdate,
+    Action, ActionHandler, ActionRequest, ActivationHandler, NodeId, TreeId, TreeUpdate,
 };
 use accesskit_windows::{Adapter, HWND, LPARAM, LRESULT, QueuedEvents, WPARAM};
 use jni::objects::{JByteArray, JClass};
@@ -101,7 +101,7 @@ impl ActionHandler for ActionProxy {
                 Ok(s) => s,
                 Err(_) => return,
             };
-            let Some(meta) = st.nodes.get(&request.target) else {
+            let Some(meta) = st.nodes.get(&request.target_node) else {
                 return;
             };
             (st.handle, meta.actions, meta.custom_action_count)
@@ -659,6 +659,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         entry.subclass.update_if_active(|| TreeUpdate {
             nodes: Vec::new(),
             tree: None,
+            tree_id: TreeId::ROOT,
             focus: target,
         });
     }
