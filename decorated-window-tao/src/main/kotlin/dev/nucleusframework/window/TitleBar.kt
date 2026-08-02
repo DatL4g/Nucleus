@@ -221,15 +221,17 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // the user's theme (see `DecoratedWindowBody`'s `Modifier.background`).
     // On Linux the host still carves the CSD shadow margins / rounded corners
     // back to transparent after rendering, so the drop shadow is unaffected.
+    // Keyed content stack: co-composed WindowBackground survives when this
+    // TitleBar is removed (clearContent only drops this writer).
     val titleBarBackground by style.colors.backgroundFor(currentState)
     val clearColorLayers = LocalWindowClearColorLayers.current
+    val clearColorKey = remember { Any() }
     SideEffect {
-        clearColorLayers?.setContent(titleBarBackground.toArgb())
+        clearColorLayers?.setContent(clearColorKey, titleBarBackground.toArgb())
     }
-    DisposableEffect(Unit) {
+    DisposableEffect(clearColorKey) {
         onDispose {
-            // A removed TitleBar must not keep shadowing the style layer.
-            clearColorLayers?.setContent(null)
+            clearColorLayers?.clearContent(clearColorKey)
         }
     }
 

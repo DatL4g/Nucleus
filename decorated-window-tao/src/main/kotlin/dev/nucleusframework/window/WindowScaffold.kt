@@ -107,15 +107,23 @@ public fun DecoratedWindowScope.WindowScaffold(
                     currentState.isFullscreen
             )
 
+    // When the bar is not composed (null slot or overlay auto-hide in
+    // fullscreen), reserve nothing: a non-zero controlsInsets based on the
+    // last measured height would leave a phantom traffic-light / KDE pad over
+    // full-window content (macOS fullscreen used to keep 80.dp).
     val chromeInsets =
         WindowChromeInsets(
             controlsInsets =
-                titleBarPadding(
-                    measuredHeight = titleBarHeight,
-                    isFullscreen = currentState.isFullscreen,
-                    controlIsRtl = controlIsRtl,
-                    linuxControlsOnRight = linuxLayout?.controlsOnRight,
-                ),
+                if (hideBar) {
+                    PaddingValues(0.dp)
+                } else {
+                    titleBarPadding(
+                        measuredHeight = titleBarHeight,
+                        isFullscreen = currentState.isFullscreen,
+                        controlIsRtl = controlIsRtl,
+                        linuxControlsOnRight = linuxLayout?.controlsOnRight,
+                    )
+                },
             titleBarHeight = if (hideBar) 0.dp else titleBarHeight,
         )
 

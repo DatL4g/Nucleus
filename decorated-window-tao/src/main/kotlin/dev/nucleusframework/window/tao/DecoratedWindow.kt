@@ -86,13 +86,16 @@ private const val DEFAULT_CLEAR_ARGB = 0xFFFFFFFF.toInt()
  * The window's clear colour as two explicit layers with one resolver.
  *
  * The hoisted window style writes the [style layer][setStyle]
- * (`DecoratedWindowComposable`); `WindowBackground` and `TitleBar` write the
- * [content layer][setContent], which outranks it. Every write re-resolves
- * `content ?: style` into the host state *synchronously, inside the caller's
- * SideEffect* — so the first composition has fully themed the host before the
- * window's first blocking render and `show()`, and no writer can race another
- * into the host state: priority is structural, not an accident of
- * recomposition order.
+ * (`DecoratedWindowComposable`); content writers (`WindowBackground`,
+ * `TitleBar`) stack on the [content layer][setContent], which outranks style.
+ * Each writer holds a stable key: re-`setContent` moves it to the top
+ * (last SideEffect wins while co-composed); [clearContent] removes only that
+ * writer so a surviving `WindowBackground` is restored when `TitleBar`
+ * leaves composition instead of wiping the slot to null.
+ *
+ * Every write re-resolves into the host state *synchronously, inside the
+ * caller's SideEffect* — so the first composition has fully themed the host
+ * before the window's first blocking render and `show()`.
  *
  * Runs on the Tao main thread only, so no synchronization is needed.
  */
@@ -100,9 +103,11 @@ internal class WindowClearColorLayers(
     private val hostClearColor: androidx.compose.runtime.MutableState<Int>,
 ) {
     private var style: Int = DEFAULT_CLEAR_ARGB
-    private var content: Int? = null
 
-    val resolved: Int get() = content ?: style
+    /** Insertion-ordered content writers; last entry is the active content. */
+    private val contentWriters = LinkedHashMap<Any, Int>()
+
+    val resolved: Int get() = contentWriters.values.lastOrNull() ?: style
 
     /** The resolved colour as observable snapshot state (the host state itself). */
     val observableResolved: androidx.compose.runtime.State<Int> get() = hostClearColor
@@ -112,9 +117,22 @@ internal class WindowClearColorLayers(
         push()
     }
 
-    fun setContent(argb: Int?) {
-        content = argb
+    /**
+     * Publishes [argb] as this [key]'s content contribution. Re-entry moves
+     * [key] to the top so co-composed writers resolve by SideEffect order.
+     */
+    fun setContent(
+        key: Any,
+        argb: Int,
+    ) {
+        contentWriters.remove(key)
+        contentWriters[key] = argb
         push()
+    }
+
+    /** Drops only [key]'s contribution; other content writers stay. */
+    fun clearContent(key: Any) {
+        if (contentWriters.remove(key) != null) push()
     }
 
     private fun push() {

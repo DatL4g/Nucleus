@@ -165,10 +165,10 @@ internal object NativeMetalBridge {
     /**
      * Inserts a hosted `NSSplitViewController` pane region below the content
      * view — AppKit backs it with the wallpaper-tinted system material
-     * (System Settings sidebar look). [kindOrdinal] indexes
-     * `WindowGlassRegionKind`. Returns a retained pointer (0 if the window
-     * is not ready) — position it with [nativeSetGlassRegionFrame] and
-     * release it with [nativeRemoveGlassRegion].
+     * (System Settings sidebar look). [kindOrdinal] is
+     * `WindowGlassRegionKind.nativeValue` (not enum ordinal). Returns a
+     * retained pointer (0 if the window is not ready) — position it with
+     * [nativeSetGlassRegionFrame] and release it with [nativeRemoveGlassRegion].
      */
     @JvmStatic
     external fun nativeAddGlassRegion(

@@ -96,15 +96,15 @@ static const char kTaoPassthroughViewKey = 13;
 // Last themed fallback background ARGB. Applied to NSWindow and CAMetalLayer so
 // AppKit fullscreen/title-bar animations never reveal the default white window.
 static const char kTaoBackgroundArgbKey = 14;
-// NSNumber(int): window transparency mode.
+// NSNumber(int): window transparency mode (only OFF and REGIONS are shipped).
 //   0 = opaque (normal themed background)
 //   1 = regions — the WINDOW stays opaque (WindowServer then feeds
 //       behind-window materials the desktop-tinted wallpaper backdrop, like
 //       System Settings' sidebar — real windows behind never show through),
 //       but the CAMetalLayer goes transparent so the in-window material
 //       views show wherever Compose leaves alpha-0 pixels.
-//   2 = full — window genuinely non-opaque (full-window glass backdrop:
-//       the desktop AND windows behind show through).
+// Full-window non-opaque glass was deliberately never exposed: Apple's
+// materials are for in-window panes (windowGlassRegion), not the whole window.
 static const char kTaoTransparentModeKey = 16;
 
 #define TAO_TRANSPARENCY_OFF     0
@@ -346,10 +346,9 @@ static void clearLayerBackgrounds(NSWindow *window, NSView *view) {
 
 static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
     if (window == nil) return;
-    // Transparent mode active (full-window glass backdrop or glass regions):
-    // never repaint the stored opaque color over the fallback layers — this
-    // path re-runs during fullscreen transitions and toolbar toggles, which
-    // would otherwise cover the native materials.
+    // Glass regions active: never repaint the stored opaque color over the
+    // fallback layers — this path re-runs during fullscreen transitions and
+    // toolbar toggles, which would otherwise cover the native materials.
     int mode = taoTransparencyMode(window);
     NSNumber *stored = objc_getAssociatedObject(window, &kTaoBackgroundArgbKey);
     jint argb = stored != nil ? stored.intValue : (jint)0xFFFFFFFF;
@@ -364,8 +363,7 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
     applyWindowBackgroundColor(window, view, argb);
 }
 
-// Shared by the full-window backdrop and the region API: moves the window
-// between the TAO_TRANSPARENCY_* modes.
+// Glass-region transparency path: moves the window between OFF and REGIONS.
 static void taoApplyWindowTransparencyMode(NSWindow *win, NSView *view, int mode) {
     objc_setAssociatedObject(win, &kTaoTransparentModeKey,
                              @(mode),
@@ -1559,8 +1557,9 @@ static const char kTaoGlassRegionKindKey = 18;
 /*
  * Inserts a region that renders AppKit's wallpaper-tinted material below the
  * content view, sized later via nativeSetGlassRegionFrame from Compose
- * layout coordinates. [kindOrdinal] indexes WindowGlassRegionKind
- * (0 sidebar / 1 content list / 2 inspector).
+ * layout coordinates. [kindOrdinal] is WindowGlassRegionKind.nativeValue
+ * (TAO_GLASS_REGION_KIND_*: 0 sidebar / 1 content list / 2 inspector) —
+ * not enum ordinal, so Kotlin reordering cannot swap materials.
  * Returns a CFBridgingRetain'ed pointer; release via nativeRemoveGlassRegion.
  */
 JNIEXPORT jlong JNICALL

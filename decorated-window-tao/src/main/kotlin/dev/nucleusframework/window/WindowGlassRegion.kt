@@ -27,19 +27,24 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
  * the public `NSSplitViewItem` factories, whose panes AppKit backs with the
  * desktop-tinted system material (the wallpaper shows through; windows
  * behind never do — exactly like System Settings).
+ *
+ * Wire values match `TAO_GLASS_REGION_KIND_*` in NucleusTaoMetal.m — explicit
+ * so reordering the enum entries cannot silently swap materials.
  */
-public enum class WindowGlassRegionKind {
+public enum class WindowGlassRegionKind(
+    internal val nativeValue: Int,
+) {
     /** Leading sidebar pane — what System Settings' menu column uses. */
-    Sidebar,
+    Sidebar(0),
 
     /** Content-list pane (the middle column of a three-column layout). */
-    ContentList,
+    ContentList(1),
 
     /**
      * Trailing inspector pane (macOS 14+; falls back to the content-list
      * material on older systems).
      */
-    Inspector,
+    Inspector(2),
 }
 
 /**
@@ -104,7 +109,7 @@ public fun Modifier.windowGlassRegion(
         DisposableEffect(window, kind) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
             if (nsView != 0L) {
-                regionPtr = NativeMetalBridge.nativeAddGlassRegion(nsView, kind.ordinal)
+                regionPtr = NativeMetalBridge.nativeAddGlassRegion(nsView, kind.nativeValue)
                 if (regionPtr != 0L) WindowTransparencyMode.acquire(window, glassState)
             }
             onDispose {

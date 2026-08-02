@@ -1054,6 +1054,19 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativePrepar
     revertBackdropForClose(hwnd, getState(hwnd));
 }
 
+/* Headful / e2e probe: is a DWM system backdrop currently armed on this HWND?
+ * Reads DecoState.backdropActive after nativeSetBackdropStyle / prepareClose. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsBackdropActive(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
+    DecoState *state = getState(hwnd);
+    return (state && state->backdropActive) ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetStartupBackgroundEraseEnabled(
     JNIEnv *env, jclass clazz, jlong hwndLong, jboolean enabled)

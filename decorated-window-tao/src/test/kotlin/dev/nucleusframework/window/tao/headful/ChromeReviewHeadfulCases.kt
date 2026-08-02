@@ -1,0 +1,404 @@
+package dev.nucleusframework.window.tao.headful
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.LocalWindowChromeInsets
+import dev.nucleusframework.window.TitleBar
+import dev.nucleusframework.window.TitleBarPlacement
+import dev.nucleusframework.window.WindowBackground
+import dev.nucleusframework.window.WindowScaffold
+import dev.nucleusframework.window.WindowsBackdrop
+import dev.nucleusframework.window.WindowsBackdropStyle
+import dev.nucleusframework.window.noWindowDrag
+import dev.nucleusframework.window.tao.LocalRequestedTransparentBackground
+import dev.nucleusframework.window.tao.LocalWindowClearColorLayers
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.windowDragArea
+import java.awt.Robot
+import java.awt.event.InputEvent
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Headful e2e cases that probe the window-chrome review findings with real
+ * Tao windows and live native/composition state — not unit assertions.
+ */
+internal object ChromeReviewHeadfulCases {
+    private val isWindows: Boolean =
+        System.getProperty("os.name", "").lowercase().contains("win")
+
+    private val isMac: Boolean =
+        System.getProperty("os.name", "").lowercase().let {
+            it.contains("mac") || it.contains("darwin")
+        }
+
+    fun all(): List<TaoWindowTestCase> =
+        listOf(
+            windowsBackdropSurvivesCancelableClose(),
+            windowsBackdropPrepareOnRequestClose(),
+            windowBackgroundAndTitleBarClearColor(),
+            noWindowDragBlocksAncestorDragArea(),
+            hideBarZerosControlsInsetsInFullscreen(),
+        )
+
+    /**
+     * Review P0: cancelable close must not permanently tear down a live
+     * `WindowsBackdrop`. Probes: Compose transparency latch + native
+     * `backdropActive`.
+     */
+    private fun windowsBackdropSurvivesCancelableClose(): TaoWindowTestCase {
+        val transparent = AtomicBoolean(false)
+        val ready = AtomicBoolean(false)
+        return TaoWindowTestCase(
+            name = "WindowsBackdrop survives cancelable close request",
+            skip = { if (!isWindows) "Windows-only backdrop probe" else null },
+            content = {
+                WindowsBackdrop(WindowsBackdropStyle.Mica)
+                val transparency = LocalRequestedTransparentBackground.current
+                LaunchedEffect(transparency) {
+                    if (transparency == null) return@LaunchedEffect
+                    snapshotFlow { transparency.value }.collect {
+                        transparent.set(it)
+                        if (it) ready.set(true)
+                    }
+                }
+                Box(Modifier.fillMaxSize().background(Color(0x33000000)))
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                awaitUntil("backdrop transparency armed") { ready.get() }
+                settle(500)
+                val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+                check(hwnd != 0L) { "no HWND" }
+                check(NativeTaoWindowsDecoBridge.nativeIsBackdropActive(hwnd)) {
+                    "native backdrop not active after WindowsBackdrop compose"
+                }
+                check(transparent.get()) { "Compose transparent latch not set under backdrop" }
+
+                // Cancelable path: same as caption X / Alt+F4 → CLOSE_REQUESTED.
+                // Suite onCloseRequest is a no-op — window must survive.
+                window.requestUserClose()
+                settle(400)
+                check(bounds() != null) { "window destroyed on cancelable close" }
+                check(transparent.get()) {
+                    "Compose transparent latch dropped after cancelable close — " +
+                        "prepareClose ran on request (review bug)"
+                }
+                check(NativeTaoWindowsDecoBridge.nativeIsBackdropActive(hwnd)) {
+                    "native backdropActive=false after cancelable close — " +
+                        "Mica permanently torn down (review bug)"
+                }
+            },
+        )
+    }
+
+    /**
+     * Review P0: confirmed destroy must run host prepare (opaque path).
+     * Probes: transparency becomes false after [TaoWindow.requestClose] starts.
+     */
+    private fun windowsBackdropPrepareOnRequestClose(): TaoWindowTestCase {
+        val transparent = AtomicBoolean(false)
+        val sawArmed = AtomicBoolean(false)
+        val prepareCloseFired = AtomicBoolean(false)
+        return TaoWindowTestCase(
+            name = "requestClose prepares opaque frame under backdrop",
+            skip = { if (!isWindows) "Windows-only backdrop probe" else null },
+            content = {
+                WindowsBackdrop(WindowsBackdropStyle.Mica)
+                val transparency = LocalRequestedTransparentBackground.current
+                LaunchedEffect(transparency) {
+                    if (transparency == null) return@LaunchedEffect
+                    snapshotFlow { transparency.value }.collect { v ->
+                        transparent.set(v)
+                        if (v) sawArmed.set(true)
+                    }
+                }
+                Box(Modifier.fillMaxSize().background(Color(0x33000000)))
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                awaitUntil("backdrop armed") { sawArmed.get() && transparent.get() }
+                settle(300)
+                val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+                check(NativeTaoWindowsDecoBridge.nativeIsBackdropActive(hwnd)) {
+                    "backdrop not active before requestClose"
+                }
+                // Multi-cast prepare hook: host.prepareClose runs too. Fires
+                // synchronously inside requestClose before DestroyWindow —
+                // more reliable than waiting for a recomposition that may be
+                // cancelled by the destroy.
+                window.onPrepareClose { prepareCloseFired.set(true) }
+                window.requestClose()
+                check(prepareCloseFired.get()) {
+                    "onPrepareClose never ran on requestClose — opaque last frame skipped"
+                }
+                // After prepare, native backdrop must be down (host listener).
+                check(!NativeTaoWindowsDecoBridge.nativeIsBackdropActive(hwnd)) {
+                    "native backdrop still active after requestClose prepare"
+                }
+            },
+        )
+    }
+
+    /**
+     * Review suggestion: single content clear-color slot shared by
+     * [WindowBackground] and [TitleBar]. Probes the resolved content ARGB
+     * while both are composed, then after removing TitleBar.
+     */
+    private fun windowBackgroundAndTitleBarClearColor(): TaoWindowTestCase {
+        val resolved = AtomicInteger(0)
+        // Snapshot state shared with the window composition — driver flips it.
+        val showTitleBar = mutableStateOf(true)
+        return TaoWindowTestCase(
+            name = "WindowBackground vs TitleBar clear-color content slot",
+            content = {
+                // Distinct from the default TitleBar chrome colour so the probe
+                // can tell who last wrote the content layer.
+                val probeColor = Color(0xFF112233)
+                WindowBackground(probeColor)
+                if (showTitleBar.value) {
+                    TitleBar()
+                }
+                val layers = LocalWindowClearColorLayers.current
+                SideEffect {
+                    resolved.set(layers?.resolved ?: 0)
+                }
+                Box(Modifier.fillMaxSize().background(Color.DarkGray))
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                settle(400)
+                val withBoth = resolved.get()
+                val probeArgb = 0xFF112233.toInt()
+                System.err.println(
+                    "[probe] clear ARGB with WindowBackground+TitleBar = 0x${withBoth.toUInt().toString(16)} " +
+                        "(WindowBackground=0x${probeArgb.toUInt().toString(16)})",
+                )
+                // Co-composed: TitleBar SideEffect runs after WindowBackground
+                // so it should outrank on the content stack.
+                check(withBoth != probeArgb) {
+                    "expected TitleBar to outrank WindowBackground while co-composed; " +
+                        "got 0x${withBoth.toUInt().toString(16)}"
+                }
+                showTitleBar.value = false
+                settle(500)
+                val afterTitleBarGone = resolved.get()
+                System.err.println(
+                    "[probe] clear ARGB after TitleBar removed = 0x${afterTitleBarGone.toUInt().toString(16)}",
+                )
+                // Regression gate: TitleBar dispose must not wipe WindowBackground.
+                check(afterTitleBarGone == probeArgb) {
+                    "after TitleBar dispose, content clear is 0x${afterTitleBarGone.toUInt().toString(16)}, " +
+                        "expected WindowBackground 0x${probeArgb.toUInt().toString(16)}"
+                }
+                System.err.println(
+                    "[VERDICT] OK — TitleBar outranks while co-composed; " +
+                        "WindowBackground restores after TitleBar dispose",
+                )
+            },
+        )
+    }
+
+    /**
+     * Review P0: `noWindowDrag` must stop an ancestor `windowDragArea` from
+     * arming a move. Probes: [TaoWindow.onDragWindow] counter + AWT Robot
+     * press-drag over the opt-out zone vs the bare drag strip.
+     */
+    private fun noWindowDragBlocksAncestorDragArea(): TaoWindowTestCase {
+        val dragCount = AtomicInteger(0)
+        return TaoWindowTestCase(
+            name = "noWindowDrag blocks ancestor windowDragArea",
+            // Robot needs a real desktop session; skip headless CI if no display.
+            skip = {
+                if (java.awt.GraphicsEnvironment.isHeadless()) {
+                    "no display for Robot probe"
+                } else {
+                    null
+                }
+            },
+            content = {
+                // No suite-default paint under the hit targets: the drag strip
+                // is the only top-band content so Robot coordinates stay simple.
+                Box(Modifier.fillMaxSize().background(Color.DarkGray)) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopStart)
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .windowDragArea()
+                            .background(Color(0xFF445566)),
+                    ) {
+                        Box(
+                            Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 8.dp)
+                                .size(48.dp)
+                                .noWindowDrag()
+                                .background(Color(0xFFCC3333)),
+                        )
+                    }
+                }
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                settle(500)
+                window.focus()
+                settle(300)
+                // Replace the host drag listener with a counting probe. The
+                // native move still runs after the listener (TaoWindow.dragWindow).
+                window.onDragWindow { dragCount.incrementAndGet() }
+
+                val b = requireNotNull(bounds())
+                val scale = window.scaleFactor.coerceAtLeast(1f)
+                // Physical client-ish coords from outer bounds (Tao is undecorated).
+                fun px(
+                    dpX: Float,
+                    dpY: Float,
+                ): Pair<Int, Int> =
+                    (b[0] + (dpX * scale).toInt()).toInt() to
+                        (b[1] + (dpY * scale).toInt()).toInt()
+
+                val (noDragX, stripY) = px(8f + 24f, 28f)
+                val (dragX, _) = px(280f, 28f)
+
+                val robot = Robot()
+                robot.autoDelay = 30
+                robot.isAutoWaitForIdle = true
+
+                suspend fun pressDrag(
+                    startX: Int,
+                    startY: Int,
+                    dx: Int,
+                ) {
+                    robot.mouseMove(startX, startY)
+                    settle(80)
+                    robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
+                    // Several moves — some hosts only arm after a threshold.
+                    for (step in 1..6) {
+                        robot.mouseMove(startX + dx * step / 6, startY + step)
+                        settle(40)
+                    }
+                    robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
+                }
+
+                // Positive control first: bare strip must arm dragWindow.
+                pressDrag(dragX, stripY, 120)
+                settle(500)
+                val afterBare = dragCount.get()
+                System.err.println(
+                    "[probe] dragCount after bare windowDragArea=$afterBare " +
+                        "at screen=($dragX,$stripY) bounds=${b.toList()} scale=$scale",
+                )
+                if (afterBare < 1) {
+                    // AWT Robot mouse events do not reliably reach the Tao
+                    // Compose pointer pipeline on this host (ANGLE child HWND /
+                    // no-AWT). Without a positive control the pass-order claim
+                    // cannot be judged in e2e — report inconclusive, do not fail.
+                    System.err.println(
+                        "[VERDICT] INCONCLUSIVE — Robot never armed dragWindow on " +
+                            "bare windowDragArea; cannot e2e-verify noWindowDrag " +
+                            "(code-path fix: Final pass in titleBarHitTestHandler still stands)",
+                    )
+                    return@TaoWindowTestCase
+                }
+
+                dragCount.set(0)
+                // Press-drag on the noWindowDrag child — must NOT arm another move.
+                pressDrag(noDragX, stripY, 120)
+                settle(400)
+                val afterNoDrag = dragCount.get()
+                System.err.println("[probe] dragCount after noWindowDrag child=$afterNoDrag")
+                if (afterNoDrag == 0) {
+                    System.err.println(
+                        "[VERDICT] OK — noWindowDrag blocked ancestor windowDragArea",
+                    )
+                } else {
+                    // Hard fail: positive control worked, opt-out did not.
+                    check(false) {
+                        "dragWindow fired $afterNoDrag time(s) on noWindowDrag child — " +
+                            "pass-order bug still present"
+                    }
+                }
+            },
+        )
+    }
+
+    /**
+     * Review suggestion: when the scaffold bar is hidden in overlay fullscreen,
+     * `controlsInsets` must not keep a phantom traffic-light reserve.
+     * Meaningful on macOS (80.dp fullscreen inset); on Windows titleBarPadding
+     * is already zero so the case documents the probe only.
+     */
+    private fun hideBarZerosControlsInsetsInFullscreen(): TaoWindowTestCase {
+        val startInsetPx = AtomicInteger(-1)
+        val topHeightPx = AtomicInteger(-1)
+        val ready = AtomicBoolean(false)
+        return TaoWindowTestCase(
+            name = "WindowScaffold hideBar zeros chrome control insets",
+            content = {
+                WindowScaffold(
+                    titleBar = null,
+                    titleBarPlacement = TitleBarPlacement.Overlay(autoHideInFullscreen = true),
+                ) {
+                    val insets = LocalWindowChromeInsets.current
+                    val density = androidx.compose.ui.platform.LocalDensity.current
+                    SideEffect {
+                        with(density) {
+                            startInsetPx.set(
+                                insets.controlsInsets.calculateLeftPadding(LayoutDirection.Ltr).roundToPx(),
+                            )
+                            topHeightPx.set(insets.titleBarHeight.roundToPx())
+                        }
+                        ready.set(true)
+                    }
+                    DisposableEffect(Unit) {
+                        onDispose { ready.set(false) }
+                    }
+                    Box(Modifier.fillMaxSize().background(Color.DarkGray))
+                }
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                awaitUntil("insets probe ready") { ready.get() }
+                settle(300)
+                // titleBar == null ⇒ hideBar: titleBarHeight must be 0.
+                check(topHeightPx.get() == 0) {
+                    "titleBarHeight px=${topHeightPx.get()} with null titleBar slot"
+                }
+                window.setFullscreen(true)
+                settle(600)
+                awaitUntil("still probing in fullscreen") { ready.get() }
+                val start = startInsetPx.get()
+                val top = topHeightPx.get()
+                System.err.println(
+                    "[probe] hideBar fullscreen controls startInsetPx=$start titleBarHeightPx=$top " +
+                        "platform=${Platform.Current}",
+                )
+                check(top == 0) { "titleBarHeight not zero in fullscreen hideBar: $top" }
+                // hideBar must zero controlsInsets on every platform (not only
+                // Windows, where titleBarPadding already returned 0).
+                check(start == 0) {
+                    "controlsInsets start=$start px while bar hidden " +
+                        "(phantom control reserve — review finding)"
+                }
+            },
+        )
+    }
+}

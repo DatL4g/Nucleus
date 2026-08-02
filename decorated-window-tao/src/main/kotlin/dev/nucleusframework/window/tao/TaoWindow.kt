@@ -77,14 +77,15 @@ public class TaoWindow internal constructor(
     private var closeRequestedListener: (() -> Unit)? = null
 
     /**
-     * Fires once, synchronously, at the start of [requestClose] — before the
-     * native destroy — so the host can present an opaque last frame (backdrop
+     * Fires synchronously at the start of [requestClose] — before the native
+     * destroy — so the host can present an opaque last frame (backdrop
      * teardown) while the window and its GL surface are still alive.
-     * Not invoked from [requestUserClose] / [onCloseRequested]: that path is
-     * cancelable ("Save before quit?") and must not permanently kill Mica.
+     * Multi-cast: the Windows host registers prepare, and e2e probes may add
+     * their own. Not invoked from [requestUserClose] / [onCloseRequested]:
+     * that path is cancelable ("Save before quit?") and must not permanently
+     * kill Mica.
      */
-    @Volatile
-    private var prepareCloseListener: (() -> Unit)? = null
+    private val prepareCloseListeners = CopyOnWriteArrayList<() -> Unit>()
 
     private val destroyedListeners = CopyOnWriteArrayList<() -> Unit>()
 
@@ -200,13 +201,14 @@ public class TaoWindow internal constructor(
         // composite towards black in the close animation. The host listener
         // also flips the Compose clear path; the native fallback covers raw
         // TaoWindow usage with no host attached.
-        prepareCloseListener?.invoke()
-            ?: run {
-                if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
-                    val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
-                    if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
-                }
+        if (prepareCloseListeners.isEmpty()) {
+            if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+                val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+                if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
             }
+        } else {
+            for (listener in prepareCloseListeners) listener.invoke()
+        }
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
@@ -567,12 +569,12 @@ public class TaoWindow internal constructor(
     }
 
     /**
-     * Host hook: present the opaque close frame before [requestClose] destroys
-     * the window. Wired by the Windows DecoratedWindow host only. See
-     * [requestClose].
+     * Host / probe hook: present the opaque close frame before [requestClose]
+     * destroys the window. Multi-cast — the Windows DecoratedWindow host
+     * registers first; e2e probes may append. See [requestClose].
      */
     internal fun onPrepareClose(block: () -> Unit) {
-        prepareCloseListener = block
+        prepareCloseListeners += block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */

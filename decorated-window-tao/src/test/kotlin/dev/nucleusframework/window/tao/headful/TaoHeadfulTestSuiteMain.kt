@@ -130,7 +130,7 @@ public object TaoHeadfulTestSuiteMain {
                 settle()
                 check(bounds() != null) { "window must survive a handled close request" }
             },
-        )
+        ) + ChromeReviewHeadfulCases.all()
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -174,7 +174,10 @@ public object TaoHeadfulTestSuiteMain {
                         onCloseRequest = { /* cases drive their own lifecycle */ },
                         title = "tao-headful: ${case.name}",
                     ) {
+                        // Default chrome surface; cases may paint over it via
+                        // [TaoWindowTestCase.content] (scaffold, backdrop, …).
                         Box(Modifier.fillMaxSize().background(Color.DarkGray))
+                        case.content(this)
                         val w = window
                         LaunchedEffect(w) { windowHolder.value = w }
                     }

@@ -102,6 +102,14 @@ internal object NativeTaoWindowsDecoBridge {
     @JvmStatic
     external fun nativePrepareClose(hwnd: Long)
 
+    /**
+     * E2E probe: whether a DWM system backdrop is currently armed on [hwnd]
+     * (`DecoState.backdropActive`). Used by the headful suite to assert that a
+     * cancelable close request does not permanently tear down Mica/Acrylic.
+     */
+    @JvmStatic
+    external fun nativeIsBackdropActive(hwnd: Long): Boolean
+
     @JvmStatic
     external fun nativeSetStartupBackgroundEraseEnabled(
         hwnd: Long,
