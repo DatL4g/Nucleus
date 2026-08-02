@@ -96,9 +96,6 @@ static const char kTaoPassthroughViewKey = 13;
 // Last themed fallback background ARGB. Applied to NSWindow and CAMetalLayer so
 // AppKit fullscreen/title-bar animations never reveal the default white window.
 static const char kTaoBackgroundArgbKey = 14;
-// Associated NSVisualEffectView installed below the content view when the
-// behind-window glass background is enabled (see nativeSetGlassBackground).
-static const char kTaoGlassViewKey = 15;
 // NSNumber(int): window transparency mode.
 //   0 = opaque (normal themed background)
 //   1 = regions — the WINDOW stays opaque (WindowServer then feeds
@@ -112,15 +109,6 @@ static const char kTaoTransparentModeKey = 16;
 
 #define TAO_TRANSPARENCY_OFF     0
 #define TAO_TRANSPARENCY_REGIONS 1
-#define TAO_TRANSPARENCY_FULL    2
-
-// The two transparency requests are tracked separately — a full-window glass
-// backdrop and one or more glass regions can be active at the same time, and
-// whichever ends first must not drop the window back to opaque under the
-// other. The effective mode is recomputed from both; FULL wins because it is
-// the only one that also makes the window itself non-opaque.
-static const char kTaoWantsFullGlassKey = 20;
-static const char kTaoWantsRegionGlassKey = 21;
 
 // Same metrics as decorated-window-jni's applyConstraints — keeps the
 // traffic-lights at the same offsets Apple's own apps use.
@@ -363,11 +351,6 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
     // path re-runs during fullscreen transitions and toolbar toggles, which
     // would otherwise cover the native materials.
     int mode = taoTransparencyMode(window);
-    if (mode == TAO_TRANSPARENCY_FULL ||
-        objc_getAssociatedObject(window, &kTaoGlassViewKey) != nil) {
-        applyWindowBackgroundColor(window, view, (jint)0x00000000);
-        return;
-    }
     NSNumber *stored = objc_getAssociatedObject(window, &kTaoBackgroundArgbKey);
     jint argb = stored != nil ? stored.intValue : (jint)0xFFFFFFFF;
     if (mode == TAO_TRANSPARENCY_REGIONS) {
@@ -387,10 +370,10 @@ static void taoApplyWindowTransparencyMode(NSWindow *win, NSView *view, int mode
     objc_setAssociatedObject(win, &kTaoTransparentModeKey,
                              @(mode),
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    // Regions mode keeps the window opaque on purpose: an opaque window gets
-    // the System Settings-style desktop-tinted backdrop for its
-    // behind-window materials instead of live window compositing.
-    win.opaque = (mode == TAO_TRANSPARENCY_FULL) ? NO : YES;
+    // The window always stays opaque: that is precisely what makes the system
+    // give its behind-window materials the System Settings-style
+    // desktop-tinted backdrop rather than compositing whatever is behind.
+    win.opaque = YES;
     // The CAMetalLayer is only ever made non-opaque, never opaque again: a
     // live layer keeps already-issued opaque drawables, and the first frames
     // after flipping back render alpha-0 pixels as solid black. Leaving it
@@ -403,18 +386,6 @@ static void taoApplyWindowTransparencyMode(NSWindow *win, NSView *view, int mode
         att->layer.opaque = NO;
     }
     applyStoredWindowBackground(win, view);
-}
-
-static void taoRecomputeTransparency(NSWindow *win, NSView *view) {
-    NSNumber *full = objc_getAssociatedObject(win, &kTaoWantsFullGlassKey);
-    NSNumber *regions = objc_getAssociatedObject(win, &kTaoWantsRegionGlassKey);
-    int mode = TAO_TRANSPARENCY_OFF;
-    if (full != nil && full.boolValue) {
-        mode = TAO_TRANSPARENCY_FULL;
-    } else if (regions != nil && regions.boolValue) {
-        mode = TAO_TRANSPARENCY_REGIONS;
-    }
-    taoApplyWindowTransparencyMode(win, view, mode);
 }
 
 // ── Replacement traffic-light buttons for fullscreen ────────────────────
@@ -1527,101 +1498,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeApplyLargeCorne
 }
 
 /*
- * Behind-window glass background. Impossible with the AWT backends (the
- * ComposeWindow surface is opaque and AWT owns the view hierarchy); with Tao
- * we own the NSWindow, so we can make it non-opaque and slide a
- * NSVisualEffectView (behind-window blending) BELOW the content view in the
- * theme frame. The desktop / windows behind then show through wherever the
- * Compose scene renders transparent pixels — the render loop clears to alpha 0
- * while glass is active (TaoComposeSceneHost.glassBackgroundState).
- *
- * On macOS 26 (Tahoe) the backdrop is a real NSGlassEffectView — resolved by
- * name so the binary still runs on older systems — which with a non-opaque
- * window samples the desktop behind it. Earlier systems fall back to the
- * classic behind-window NSVisualEffectView material.
- *
- * Known OS issue: macOS 26.2 caches the glass backdrop and misses updates from
- * windows moving underneath (Apple dev forums thread 810314).
- */
-JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetGlassBackground(
-        JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean enabled, jint tintArgb) {
-    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
-    if (view == nil) return JNI_FALSE;
-
-    __block jboolean ok = JNI_FALSE;
-    dispatch_block_t apply = ^{
-        NSWindow *win = view.window;
-        if (win == nil) return;
-        NSView *contentView = win.contentView;
-        NSView *frameView = contentView.superview;
-        if (contentView == nil || frameView == nil) return;
-
-        NSView *existing = objc_getAssociatedObject(win, &kTaoGlassViewKey);
-        if (enabled == JNI_TRUE) {
-            NSView *backdrop = existing;
-            if (backdrop == nil) {
-                Class glassCls = NSClassFromString(@"NSGlassEffectView");
-                if (glassCls != nil) {
-                    // macOS 26+: real Liquid Glass. With the window made
-                    // non-opaque, NSGlassEffectView samples the desktop /
-                    // windows behind it — the same theme-frame injection
-                    // pattern used by qt-liquid-glass and liquid-glass-rs.
-                    // Known OS issue: macOS 26.2 caches the backdrop and
-                    // misses updates from windows moving underneath
-                    // (FB regression, see Apple dev forums thread 810314).
-                    backdrop = [[glassCls alloc] initWithFrame:frameView.bounds];
-                } else {
-                    // Pre-26 fallback: the classic behind-window material —
-                    // Apple's own degradation pattern for redesigned
-                    // materials (frosted blur, no lensing).
-                    NSVisualEffectView *vev =
-                        [[NSVisualEffectView alloc] initWithFrame:frameView.bounds];
-                    vev.blendingMode = NSVisualEffectBlendingModeBehindWindow;
-                    vev.material = NSVisualEffectMaterialUnderWindowBackground;
-                    vev.state = NSVisualEffectStateFollowsWindowActiveState;
-                    backdrop = vev;
-                }
-                backdrop.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-                [frameView addSubview:backdrop
-                           positioned:NSWindowBelow
-                           relativeTo:contentView];
-                objc_setAssociatedObject(win, &kTaoGlassViewKey, backdrop,
-                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            }
-            // The tint gives the glass its material body — an untinted
-            // regular glass over a large surface reads as plain
-            // transparency (Ghostty tints with its background color the
-            // same way). 0 = untinted. NSVisualEffectView has no tint; the
-            // selector guard makes this a no-op on the pre-26 fallback.
-            if ([backdrop respondsToSelector:@selector(setTintColor:)]) {
-                NSColor *tint = (tintArgb != 0) ? colorFromArgb(tintArgb) : nil;
-                [backdrop setValue:tint forKey:@"tintColor"];
-            }
-            objc_setAssociatedObject(win, &kTaoWantsFullGlassKey, @YES,
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            taoRecomputeTransparency(win, view);
-        } else {
-            if (existing != nil) {
-                [existing removeFromSuperview];
-                objc_setAssociatedObject(win, &kTaoGlassViewKey, nil,
-                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            }
-            objc_setAssociatedObject(win, &kTaoWantsFullGlassKey, @NO,
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            taoRecomputeTransparency(win, view);
-        }
-        ok = JNI_TRUE;
-    };
-    if ([NSThread isMainThread]) apply();
-    else                          dispatch_sync(dispatch_get_main_queue(), apply);
-    return ok;
-}
-
-/*
- * Window-level transparency toggle for the glass-region API: no backdrop is
- * inserted, callers place per-region material views instead. Ref-counting
- * lives on the Kotlin side (WindowTransparencyMode).
+ * Window-level transparency for the glass regions. The window itself stays
+ * opaque — that is precisely what makes the system hand its behind-window
+ * materials the System Settings-style desktop-tinted backdrop — while the
+ * CAMetalLayer is cleared to alpha 0 so a material inserted below the content
+ * shows through wherever Compose paints nothing. Ref-counting lives on the
+ * Kotlin side (WindowTransparencyMode).
  */
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowTransparencyMode(
@@ -1631,10 +1513,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowTransp
     dispatch_block_t apply = ^{
         NSWindow *win = view.window;
         if (win == nil) return;
-        objc_setAssociatedObject(win, &kTaoWantsRegionGlassKey,
-                                 enabled == JNI_TRUE ? @YES : @NO,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        taoRecomputeTransparency(win, view);
+        taoApplyWindowTransparencyMode(
+            win, view,
+            enabled == JNI_TRUE ? TAO_TRANSPARENCY_REGIONS : TAO_TRANSPARENCY_OFF);
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_sync(dispatch_get_main_queue(), apply);

@@ -60,32 +60,8 @@ public final class dev/nucleusframework/window/WindowAppearanceMode : java/lang/
 	public static fun values ()[Ldev/nucleusframework/window/WindowAppearanceMode;
 }
 
-public final class dev/nucleusframework/window/WindowBackdropKt {
-	public static final fun WindowBackdrop (Ldev/nucleusframework/window/DecoratedWindowScope;Ldev/nucleusframework/window/WindowBackdropStyle;Landroidx/compose/runtime/Composer;I)V
-}
-
-public abstract interface class dev/nucleusframework/window/WindowBackdropStyle {
-}
-
-public final class dev/nucleusframework/window/WindowBackdropStyle$Glass : dev/nucleusframework/window/WindowBackdropStyle {
-	public static final field $stable I
-	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (JLkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1-0d7_KjU ()J
-	public final fun copy-8_81llA (J)Ldev/nucleusframework/window/WindowBackdropStyle$Glass;
-	public static synthetic fun copy-8_81llA$default (Ldev/nucleusframework/window/WindowBackdropStyle$Glass;JILjava/lang/Object;)Ldev/nucleusframework/window/WindowBackdropStyle$Glass;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getTint-0d7_KjU ()J
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class dev/nucleusframework/window/WindowBackdropStyle$Opaque : dev/nucleusframework/window/WindowBackdropStyle {
-	public static final field $stable I
-	public static final field INSTANCE Ldev/nucleusframework/window/WindowBackdropStyle$Opaque;
-	public fun equals (Ljava/lang/Object;)Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
+public final class dev/nucleusframework/window/WindowBackgroundKt {
+	public static final fun WindowBackground-RPmYEkk (Ldev/nucleusframework/window/DecoratedWindowScope;JLandroidx/compose/runtime/Composer;I)V
 }
 
 public final class dev/nucleusframework/window/WindowChromeInsets {

@@ -1,7 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// Minimal demo for the WindowScaffold API (issue #129): full-window content
-// layouts with an overlay title bar on the Tao backend.
+// Showcase for the window chrome API (issue #129): full-window content
+// layouts, glass regions, drag areas and the platform window controls, each
+// driven live from the app itself.
 
 plugins {
     kotlin("jvm")
@@ -12,9 +13,12 @@ plugins {
 
 dependencies {
     implementation(project(":decorated-window-tao"))
+    implementation(project(":nucleus-application"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
     implementation(compose.desktop.currentOs)
+    implementation("org.jetbrains.compose.material3:material3:1.9.0")
+    implementation(libs.compose.material.icons.extended)
 }
 
 java {
