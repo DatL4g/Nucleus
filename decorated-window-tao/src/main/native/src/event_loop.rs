@@ -567,13 +567,40 @@ pub(crate) fn run_event_loop_blocking() {
                     WindowEvent::Moved(pos) => {
                         dispatch(handle, EVENT_MOVED, pos.x, pos.y);
                     }
-                    WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                    WindowEvent::ScaleFactorChanged {
+                        scale_factor,
+                        new_inner_size,
+                    } => {
                         dispatch(
                             handle,
                             EVENT_SCALE_FACTOR_CHANGED,
                             (scale_factor * 1000.0) as jint,
                             0,
                         );
+                        // macOS ONLY. A display hop leaves the NSWindow frame
+                        // in points untouched, so `windowDidResize:` never
+                        // fires and no Resized trails the scale change — the
+                        // scene and the CAMetalLayer would keep the previous
+                        // display's pixel size (#418). Forward the size tao
+                        // computed for the new scale as that missing resize.
+                        //
+                        // Do NOT lift this out of the cfg: on Windows
+                        // `new_inner_size` is deliberately the *old* physical
+                        // size whenever the window is maximized/fullscreen or
+                        // "show window contents while dragging" is off (see
+                        // `allow_resize` in tao's WM_DPICHANGED handler), so
+                        // dispatching it would publish a stale size paired
+                        // with the new scale — the very bug this fixes. The
+                        // real WM_SIZE follows there anyway.
+                        #[cfg(target_os = "macos")]
+                        dispatch(
+                            handle,
+                            EVENT_RESIZED,
+                            new_inner_size.width as jint,
+                            new_inner_size.height as jint,
+                        );
+                        #[cfg(not(target_os = "macos"))]
+                        let _ = new_inner_size;
                     }
                     WindowEvent::Focused(focused) => {
                         // WAYLAND-ONLY HACK (restore half of the one above).

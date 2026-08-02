@@ -539,6 +539,15 @@ internal class TaoComposeSceneHost(
         window.requestRedraw()
     }
 
+    /**
+     * Density-only. The physical size that goes with [newScale] arrives as the
+     * [onResized] the event loop dispatches right behind the scale change —
+     * including on a macOS display hop, where AppKit itself sends no resize
+     * (#418). Deriving the new pixel size here instead would be a guess:
+     * `scale` is seeded from `initialMacOsScaleFactor`, which takes the *max*
+     * of the window's and the primary monitor's scale, so it is not
+     * necessarily the scale `widthPx`/`heightPx` were produced at.
+     */
     fun onScaleFactorChanged(newScale: Float) {
         if (newScale == scale) return
         scale = newScale

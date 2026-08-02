@@ -161,9 +161,12 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
-    // Forward the watchdog override into the forked JVM.
+    // Forward the watchdog / case-name filter overrides into the forked JVM.
     System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
         systemProperty("nucleus.tao.headful.watchdogMillis", it)
+    }
+    System.getProperty("nucleus.tao.headful.filter")?.let {
+        systemProperty("nucleus.tao.headful.filter", it)
     }
     // NO -XstartOnFirstThread here: taoApplication marshals to the AppKit main
     // thread itself (main_thread_dispatch.m), exactly like a normal `java`
