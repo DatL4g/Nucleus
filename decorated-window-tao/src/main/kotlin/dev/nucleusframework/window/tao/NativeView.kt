@@ -278,6 +278,11 @@ private fun NsViewEmbedding(
                     lastRect[3] = hPx
                     host.setFrame(handle, xPx, yPx, wPx, hPx)
                     overlay.setBounds(xPx, yPx, wPx, hPx)
+                    // Parity with HwndEmbedding: notify the view-impl so
+                    // custom NsView hosts (child NSWindows, controller-style
+                    // APIs) can react to layout changes.
+                    view.resize(wPx, hPx)
+                    view.setBounds(xPx, yPx, wPx, hPx)
                 }
                 // Re-applied on every size change because circular mode
                 // (Infinity) needs the radius rebound to min(w,h)/2;
