@@ -348,7 +348,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
-            at-spi2-core python3-pyatspi dbus-x11
+            at-spi2-core python3-pyatspi dbus-x11 xdotool
 
       - name: Verify AT-SPI projection (Linux)
         if: runner.os == 'Linux'
@@ -366,7 +366,20 @@ jobs:
             string:org.a11y.Status string:IsEnabled variant:boolean:true
           NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
           status=0
+          # Ordered so the mutation-sensitive probe runs on a pristine tree:
+          # verify-atspi.py asserts the exact 'click counter 1' transition.
           python3 scripts/ci/verify-atspi.py || status=$?
+          python3 scripts/ci/verify-atspi-tree-golden.py --fixture a11y-tab --strict-extra \
+            --out-dir /tmp/a11y-diff || status=$?
+          python3 scripts/ci/verify-atspi-tree-golden.py --fixture complex-tab --strict-extra \
+            --out-dir /tmp/a11y-diff || status=$?
+          python3 scripts/ci/verify-atspi-all-tabs.py || status=$?
+          python3 scripts/ci/verify-atspi-events.py || status=$?
+          python3 scripts/ci/verify-atspi-keyboard.py || status=$?
+          if [ $status -ne 0 ]; then
+            echo "── tao-demo log ($(wc -l < /tmp/tao-demo.log) lines) ──"
+            cat /tmp/tao-demo.log || true
+          fi
           pkill -f dev.nucleusframework.sampletao.MainKt || true
           exit $status
 
