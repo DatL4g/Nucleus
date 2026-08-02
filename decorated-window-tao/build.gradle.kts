@@ -192,7 +192,7 @@ val smokeStandalonePanelMac by tasks.registering(JavaExec::class) {
 // Captures under build/reports/tao-transparent-smoke and pixel-checks that the
 // empty client composites the desktop. Not part of `check`.
 //
-// macOS/Linux: AWT Robot. Windows: Robot omits layered windows — point
+// macOS/X11: AWT Robot. Windows: Robot omits layered windows — point
 // `-Dnucleus.tao.transparent.smoke.captureTool=` at a CAPTUREBLT helper
 // (build/tmp-smoke/capture_region.exe).
 val taoTransparentSmoke by tasks.registering(JavaExec::class) {
@@ -200,6 +200,18 @@ val taoTransparentSmoke by tasks.registering(JavaExec::class) {
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.nucleusframework.window.tao.headful.TransparentWindowSmokeMain")
+    // Linux: pin the window to XWayland. Robot goes through the X server, so on
+    // a native Wayland session it cannot see the Tao surface (both captures come
+    // back byte-identical) and xdg-shell drops setOuterPosition, leaving the
+    // capture rect pointing at wherever the compositor did *not* put the window.
+    // Under XWayland both work. Overridable — the smoke then refuses to emit a
+    // pixel verdict on Wayland (see TransparentWindowSmokeMain).
+    if (Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC)) {
+        environment(
+            "NUCLEUS_TAO_LINUX_RENDERER",
+            providers.environmentVariable("NUCLEUS_TAO_LINUX_RENDERER").getOrElse("x11"),
+        )
+    }
     val outDir =
         layout.buildDirectory
             .dir("reports/tao-transparent-smoke")

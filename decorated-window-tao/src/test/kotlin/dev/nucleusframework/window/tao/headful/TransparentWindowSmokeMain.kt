@@ -37,7 +37,9 @@ import kotlin.system.exitProcess
  * marker over the desktop.
  *
  * Capture backend:
- * - **macOS / Linux**: [java.awt.Robot] (sees per-pixel-alpha Tao windows).
+ * - **macOS / Linux-X11**: [java.awt.Robot] (sees per-pixel-alpha Tao windows).
+ *   On Linux that means XWayland too, but *only* if the window itself is an X
+ *   client — see [checkCaptureCapableSession].
  * - **Windows**: Robot omits layered windows — shell out to a CAPTUREBLT helper
  *   (`capture_region.exe`) pointed at by
  *   `-Dnucleus.tao.transparent.smoke.captureTool=`.
@@ -56,9 +58,10 @@ object TransparentWindowSmokeMain {
 
     // Hold the window on screen so a manual look is possible; override with
     // -Dnucleus.tao.transparent.smoke.holdMs=…
-    private val SETTLE_MS: Long =
+    private val holdMs: Long? =
         System.getProperty("nucleus.tao.transparent.smoke.holdMs")?.toLongOrNull()
-            ?: 1_200L
+
+    private val SETTLE_MS: Long = holdMs ?: 1_200L
 
     // Marker is 48.dp at 24.dp padding — sample near centre of the square.
     private const val EMPTY_SAMPLE_X_DP = 300.0
@@ -68,9 +71,53 @@ object TransparentWindowSmokeMain {
     private val isWindows: Boolean =
         System.getProperty("os.name", "").lowercase().contains("win")
 
+    private val isLinux: Boolean =
+        System.getProperty("os.name", "").lowercase().contains("linux")
+
+    /**
+     * A native Wayland session defeats this probe twice over, so bail out rather
+     * than print a verdict that means nothing:
+     * - [java.awt.Robot] captures through the X server, which cannot see a
+     *   native Wayland surface — baseline and window shots come back
+     *   byte-identical, so "empty matches the desktop" passes for the wrong
+     *   reason while the opaque marker is never found.
+     * - xdg-shell has no client positioning, so `setOuterPosition` is a no-op
+     *   and the capture rect is not where the compositor mapped the window.
+     *
+     * `NUCLEUS_TAO_LINUX_RENDERER=x11` builds the window as an X client under
+     * XWayland, where both hold. The Gradle task sets it by default; this guard
+     * only fires when the main class is launched directly (IDE) or with the
+     * variable explicitly overridden. A manual look
+     * (`-Dnucleus.tao.transparent.smoke.holdMs=…`) is judged by eye, not by
+     * Robot, so it runs on Wayland regardless — only the verdict is withheld.
+     */
+    private fun checkCaptureCapableSession() {
+        if (!isLinux || System.getenv("NUCLEUS_TAO_LINUX_RENDERER") == "x11") return
+        val nativeWayland =
+            System.getenv("WAYLAND_DISPLAY") != null ||
+                System.getenv("XDG_SESSION_TYPE") == "wayland"
+        if (!nativeWayland) return
+        System.err.println(
+            "[smoke/#416] native Wayland session: AWT Robot cannot see Wayland surfaces " +
+                "and xdg-shell ignores setOuterPosition, so no pixel verdict is possible. " +
+                "Re-run with NUCLEUS_TAO_LINUX_RENDERER=x11 — what " +
+                ":decorated-window-tao:taoTransparentSmoke sets for you.",
+        )
+        if (holdMs == null) exitProcess(0)
+        System.err.println(
+            "[smoke/#416] holdMs set — showing the window for ${holdMs}ms for a manual " +
+                "look. The compositor centres it (no client positioning).",
+        )
+        manualLookOnly = true
+    }
+
+    /** Set by [checkCaptureCapableSession]: show the window, skip the pixel verdict. */
+    private var manualLookOnly = false
+
     @JvmStatic
     fun main(args: Array<String>) {
         // Do not touch AWT here on macOS (Robot / GraphicsEnvironment).
+        checkCaptureCapableSession()
         val outDir =
             File(
                 System.getProperty(
@@ -140,6 +187,11 @@ object TransparentWindowSmokeMain {
         w.setInnerSize(OUTER_W_DP, OUTER_H_DP)
         w.focus()
         kotlinx.coroutines.delay(SETTLE_MS)
+
+        if (manualLookOnly) {
+            System.err.println("[smoke/#416] manual look done — no verdict on native Wayland")
+            exitProcess(0)
+        }
 
         val bounds = w.outerBoundsPx()
         check(bounds != null && bounds.size >= 4) { "outerBoundsPx null after settle" }
