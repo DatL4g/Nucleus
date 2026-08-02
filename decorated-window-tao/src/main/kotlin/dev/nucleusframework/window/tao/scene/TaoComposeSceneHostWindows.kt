@@ -92,6 +92,29 @@ internal class TaoComposeSceneHostWindows(
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
         androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
 
+    /**
+     * Whether the client area must stay transparent — set while a DWM system
+     * backdrop is applied (see `WindowsBackdrop`). The render loop then clears
+     * to alpha 0 instead of [clearColorArgbState], so the backdrop shows
+     * wherever Compose paints nothing.
+     *
+     * The Windows counterpart of the macOS host's `glassBackgroundState`;
+     * unlike macOS the surface needs no native flag to carry alpha — the ANGLE
+     * swapchain already presents it (verified on the child render surface).
+     */
+    val transparentBackgroundState: androidx.compose.runtime.MutableState<Boolean> =
+        androidx.compose.runtime.mutableStateOf(false)
+
+    /**
+     * ARGB the render loop clears to while [transparentBackgroundState] is
+     * active — the app's tint layer over the DWM material, composited by the
+     * per-pixel-alpha swapchain. `0` (fully transparent) shows the raw
+     * material; an app-themed translucent colour is what keeps Acrylic — whose
+     * DWM tint is a generic system grey — coherent with the app's palette.
+     */
+    val backdropTintArgbState: androidx.compose.runtime.MutableState<Int> =
+        androidx.compose.runtime.mutableStateOf(0)
+
     /** App-level pre-dispatch hook. See [TaoComposeSceneHost.previewKeyHandler]. */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
 
@@ -719,6 +742,85 @@ internal class TaoComposeSceneHostWindows(
         scene?.compositionLocalContext = context
     }
 
+    /**
+     * Fullscreen-toggle pre-layout: measures + lays out the scene at the
+     * TARGET client size WITHOUT presenting anything — the draw goes into a
+     * throwaway recording canvas. Called before the toggle's geometry
+     * change so the synchronous WM_WINDOWPOSCHANGED prepare (see
+     * [NativeTaoWindowsDecoBridge.onFullscreenSizeChanged]) only has to
+     * re-draw an already-laid-out scene, which keeps it within the geometry
+     * change instead of leaving DWM a stale frame to composite. The Windows
+     * analog of the macOS `windowWillEnterFullScreen:` prepare (issue 413).
+     */
+    fun fullscreenPreLayout(
+        targetWidthPx: Int,
+        targetHeightPx: Int,
+    ) {
+        val sc = scene ?: return
+        if (targetWidthPx <= 0 || targetHeightPx <= 0) return
+        sc.size = IntSize(targetWidthPx, targetHeightPx)
+        // Apply pending snapshot writes (the chrome flip pushed just before
+        // this call) so the warmed layout already has the right chrome.
+        flushingDispatcher.drain()
+        frameClock.sendFrame(System.nanoTime())
+        flushingDispatcher.drain()
+        val recorder = org.jetbrains.skia.PictureRecorder()
+        try {
+            val canvas =
+                recorder.beginRecording(
+                    org.jetbrains.skia.Rect
+                        .makeWH(targetWidthPx.toFloat(), targetHeightPx.toFloat()),
+                )
+            sc.render(canvas.asComposeCanvas(), System.nanoTime())
+            recorder.finishRecordingAsPicture().close()
+        } finally {
+            recorder.close()
+        }
+    }
+
+    /**
+     * The fullscreen-transition render (invoked synchronously from the deco
+     * WndProc's WM_WINDOWPOSCHANGED). Presents at swap interval 0: a
+     * vsync-paced present would line up BEHIND the frames already queued in
+     * the flip-model swapchain, reaching the screen 1-3 vblanks after the
+     * geometry change no matter how early it was rendered — an interval-0
+     * present replaces the queued frame instead.
+     */
+    fun fullscreenTransitionResized(
+        widthPxNew: Int,
+        heightPxNew: Int,
+    ) {
+        if (attachmentHandle == 0L) {
+            onResized(widthPxNew, heightPxNew)
+            return
+        }
+        NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+        try {
+            if (widthPxNew != widthPx || heightPxNew != heightPx) {
+                // Resize the child + immediately present a themed clear:
+                // DWM sees the HWND resize right away but the resized
+                // swapchain's first buffer only lands at the next present —
+                // a composition falling into that gap otherwise shows an
+                // uninitialized black buffer (captured on the exit path).
+                // The sub-ms clear shrinks the gap and colours it.
+                NativeTaoGlBridge.nativeResize(attachmentHandle, widthPxNew, heightPxNew, scale)
+                val clearArgb =
+                    if (transparentBackgroundState.value) {
+                        backdropTintArgbState.value
+                    } else {
+                        clearColorArgbState.value
+                    }
+                NativeTaoGlBridge.nativeClearPresent(attachmentHandle, clearArgb)
+                // Raw GL clear-color/scissor calls happened behind Skia's
+                // state cache; resync before the Skia render below.
+                directContext?.resetGLAll()
+            }
+            onResized(widthPxNew, heightPxNew)
+        } finally {
+            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+        }
+    }
+
     fun onResized(
         widthPxNew: Int,
         heightPxNew: Int,
@@ -927,7 +1029,16 @@ internal class TaoComposeSceneHostWindows(
             // via [LocalRequestedClearColor]) so a Compose region without an
             // explicit background matches the chrome color — aligned with the
             // macOS / Linux Tao hosts and the AWT backends.
-            surface.canvas.clear(clearColorArgbState.value)
+            // While a system backdrop is active the clear is the app's tint
+            // layer over the DWM material (0 = raw material); otherwise the
+            // opaque themed background.
+            surface.canvas.clear(
+                if (transparentBackgroundState.value) {
+                    backdropTintArgbState.value
+                } else {
+                    clearColorArgbState.value
+                },
+            )
             sc.render(surface.canvas.asComposeCanvas(), now)
             // `flushAndSubmit` issues the glFlush that commits the frame to
             // the back buffer; the present happens below, after the overlay/
@@ -1098,10 +1209,6 @@ internal class TaoComposeSceneHostWindows(
         NativeTaoWindowsDecoBridge.nativeSetTitleBarHeight(hwnd, px)
     }
 
-    fun setTitleBarBackgroundColor(argb: Int) {
-        if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(hwnd, argb)
-    }
-
     /** Current scale factor (logical→physical multiplier). */
     fun density(): Float = scale
 
@@ -1261,6 +1368,42 @@ internal class TaoComposeSceneHostWindows(
     override fun dispatchA11yWalk(block: () -> Unit) {
         flushingDispatcher.enqueue(Runnable { block() })
         window.requestRedraw()
+    }
+
+    /**
+     * Reverts an active backdrop and presents one last opaque themed frame,
+     * synchronously. Called from [TaoWindow.onPrepareClose] / [TaoWindow.requestClose]
+     * on the **confirmed destroy** path only — not from cancelable
+     * [TaoWindow.onCloseRequested] (caption X, Alt+F4), where a permanent
+     * teardown would leave a still-composed [dev.nucleusframework.window.WindowsBackdrop]
+     * dead after the user cancels.
+     *
+     * While a backdrop is active the render loop clears to the tint layer over
+     * the DWM material (often alpha 0 for Mica — the raw material shows through).
+     * Once [nativePrepareClose] reverts the DWM backdrop that transparent clear
+     * stops compositing over a material and reads as black during the fade-out —
+     * a dark flash, worst on light themes. Flipping
+     * [transparentBackgroundState] off for this one frame makes the clear fall
+     * back to [clearColorArgbState] (the opaque themed background), so the
+     * fade-out snapshots an opaque window.
+     *
+     * Idempotent; a later detach() finds nothing to do.
+     */
+    fun prepareClose() {
+        if (hwnd == 0L || !transparentBackgroundState.value) return
+        NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
+        // Render the close frame with the opaque themed clear, not the
+        // backdrop tint: the backdrop was just reverted above, so a transparent
+        // clear would composite as black during the fade-out.
+        transparentBackgroundState.value = false
+        // Never let a teardown render take the close down with it.
+        @Suppress("TooGenericExceptionCaught")
+        try {
+            onRedrawRequested()
+        } catch (t: RuntimeException) {
+            // Swallow: the window is being destroyed anyway.
+            val ignored = t
+        }
     }
 
     fun detach() {

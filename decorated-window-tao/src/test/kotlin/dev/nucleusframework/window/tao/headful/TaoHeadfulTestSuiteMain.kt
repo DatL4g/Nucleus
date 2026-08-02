@@ -27,7 +27,12 @@ import kotlin.system.exitProcess
  * sequentially, each in a fresh real window. Exit code = number of failures.
  */
 public object TaoHeadfulTestSuiteMain {
-    private val cases: List<TaoWindowTestCase> =
+    // Substring match on the case name, e.g.
+    // `-Dnucleus.tao.headful.filter=#418` to run one probe on its own.
+    private val nameFilter: String? =
+        System.getProperty("nucleus.tao.headful.filter")?.takeIf { it.isNotBlank() }
+
+    private val allCases: List<TaoWindowTestCase> =
         listOf(
             TaoWindowTestCase("window maps, paints and reports a real size") {
                 awaitUntil("window mapped with non-zero outer bounds") {
@@ -130,10 +135,20 @@ public object TaoHeadfulTestSuiteMain {
                 settle()
                 check(bounds() != null) { "window must survive a handled close request" }
             },
-        )
+        ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all()
+
+    private val cases: List<TaoWindowTestCase> =
+        allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
 
     @JvmStatic
     fun main(args: Array<String>) {
+        if (cases.isEmpty()) {
+            // Distinct from the failure-count exit codes: an unmatched filter
+            // is a usage error, not "one case failed".
+            System.err.println("no headful case matches filter '$nameFilter'")
+            exitProcess(BAD_FILTER_EXIT_CODE)
+        }
+
         // The Tao loop owns the launcher thread forever; a hung case must not
         // hang CI — same watchdog pattern as TaoRuntimeResizableSmokeTest.
         val watchdogMillis =
@@ -174,7 +189,10 @@ public object TaoHeadfulTestSuiteMain {
                         onCloseRequest = { /* cases drive their own lifecycle */ },
                         title = "tao-headful: ${case.name}",
                     ) {
+                        // Default chrome surface; cases may paint over it via
+                        // [TaoWindowTestCase.content] (scaffold, backdrop, …).
                         Box(Modifier.fillMaxSize().background(Color.DarkGray))
+                        case.content(this)
                         val w = window
                         LaunchedEffect(w) { windowHolder.value = w }
                     }
@@ -258,6 +276,7 @@ public object TaoHeadfulTestSuiteMain {
     private const val WINDOW_PUBLISH_POLL_MILLIS = 25L
     private const val GLOBAL_WATCHDOG_MILLIS = 240_000L
     private const val WATCHDOG_EXIT_CODE = 42
+    private const val BAD_FILTER_EXIT_CODE = 43
     private const val RESIZE_W_DP = 640.0
     private const val RESIZE_H_DP = 480.0
     private const val RESIZE_TOLERANCE_PX = 64

@@ -4,6 +4,7 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.mutableStateOf
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
@@ -76,6 +77,17 @@ public class TaoWindow internal constructor(
     @Volatile
     private var closeRequestedListener: (() -> Unit)? = null
 
+    /**
+     * Fires synchronously at the start of [requestClose] — before the native
+     * destroy — so the host can present an opaque last frame (backdrop
+     * teardown) while the window and its GL surface are still alive.
+     * Multi-cast: the Windows host registers prepare, and e2e probes may add
+     * their own. Not invoked from [requestUserClose] / [onCloseRequested]:
+     * that path is cancelable ("Save before quit?") and must not permanently
+     * kill Mica.
+     */
+    private val prepareCloseListeners = CopyOnWriteArrayList<() -> Unit>()
+
     private val destroyedListeners = CopyOnWriteArrayList<() -> Unit>()
 
     @Volatile
@@ -98,10 +110,6 @@ public class TaoWindow internal constructor(
     // show() and disabled once — on the first native redraw after show. Gating
     // on this flag keeps the disable off the per-frame redraw path.
     private var startupEraseActive = false
-
-    // Last background ARGB pushed to native, so the per-recomposition SideEffect
-    // only crosses the JNI boundary when the themed color actually changes.
-    private var lastBackgroundArgb: Int? = null
     private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
 
     @Volatile
@@ -189,6 +197,19 @@ public class TaoWindow internal constructor(
     }
 
     public fun requestClose() {
+        // Actual destroy path (not the cancelable close-*request*). Present an
+        // opaque themed frame first: a live backdrop's translucent clear would
+        // composite towards black in the close animation. The host listener
+        // also flips the Compose clear path; the native fallback covers raw
+        // TaoWindow usage with no host attached.
+        if (prepareCloseListeners.isEmpty()) {
+            if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+                val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+                if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
+            }
+        } else {
+            for (listener in prepareCloseListeners) listener.invoke()
+        }
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
@@ -198,6 +219,11 @@ public class TaoWindow internal constructor(
      * the title-bar close button so the user's `onCloseRequest` callback runs
      * and gets a chance to call `exitApplication()` — bypassing it via
      * [requestClose] destroys the window but leaves the event loop running.
+     *
+     * Does **not** tear down a [dev.nucleusframework.window.WindowsBackdrop]:
+     * the request is cancelable, and a permanent native revert here would leave
+     * a still-composed backdrop dead after "Cancel". The opaque last frame is
+     * prepared in [requestClose] once destroy is confirmed.
      */
     public fun requestUserClose() {
         closeRequestedListener?.invoke()
@@ -432,6 +458,22 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetMinimized(handle, minimized)
     }
 
+    // Windows fullscreen toggle: invoked with (targetW, targetH, fullscreen)
+    // BEFORE the geometry change, so the render pipeline can pre-lay-out at
+    // the final size (nothing is presented). The synchronous
+    // WM_WINDOWPOSCHANGED prepare inside nativeSetFullscreen then only has
+    // to re-draw — fast enough to finish within the geometry change.
+    private val fullscreenPrepareListeners = CopyOnWriteArrayList<(Int, Int, Boolean) -> Unit>()
+
+    /**
+     * Windows only: registers the fullscreen pre-layout hook, invoked with
+     * the target client size and target state before the toggle's geometry
+     * change.
+     */
+    public fun onFullscreenPrepare(block: (width: Int, height: Int, fullscreen: Boolean) -> Unit) {
+        fullscreenPrepareListeners += block
+    }
+
     /** Borderless fullscreen on the current monitor.
      *
      * On Windows we route through the WndProc subclass (saves WINDOWPLACEMENT,
@@ -443,11 +485,28 @@ public class TaoWindow internal constructor(
         if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
             val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
             if (hwnd != 0L) {
-                NativeTaoWindowsDecoBridge.nativeSetFullscreen(hwnd, fullscreen)
+                setFullscreenWindows(hwnd, fullscreen)
                 return
             }
         }
         NativeTaoBridge.nativeSetFullscreen(handle, fullscreen)
+    }
+
+    private fun setFullscreenWindows(
+        hwnd: Long,
+        fullscreen: Boolean,
+    ) {
+        // Pre-layout is main-thread only: the prepare hook renders on this
+        // stack, and the EGL context lives on the Tao loop thread. An
+        // off-thread caller still gets a correct (if less atomic) toggle
+        // via the async RESIZED event.
+        if (Thread.currentThread() === TaoMainDispatcher.taoMainThread) {
+            val t = NativeTaoWindowsDecoBridge.nativeGetFullscreenTargetSize(hwnd, fullscreen)
+            if (t != null && t.size == 2 && t.all { it > 0 }) {
+                fullscreenPrepareListeners.forEach { it.invoke(t[0], t[1], fullscreen) }
+            }
+        }
+        NativeTaoWindowsDecoBridge.nativeSetFullscreen(hwnd, fullscreen)
     }
 
     public fun setAlwaysOnTop(alwaysOnTop: Boolean) {
@@ -498,16 +557,6 @@ public class TaoWindow internal constructor(
         movedListeners += block
     }
 
-    internal fun setBackgroundColor(argb: Int) {
-        if (Platform.Current != Platform.Windows || !NativeTaoWindowsDecoBridge.isLoaded) return
-        if (argb == lastBackgroundArgb) return
-        val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
-        if (hwnd != 0L) {
-            NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(hwnd, argb)
-            lastBackgroundArgb = argb
-        }
-    }
-
     private fun setStartupBackgroundEraseEnabled(enabled: Boolean) {
         if (Platform.Current != Platform.Windows || !NativeTaoWindowsDecoBridge.isLoaded) return
         val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
@@ -551,6 +600,15 @@ public class TaoWindow internal constructor(
 
     public fun onCloseRequested(block: () -> Unit) {
         closeRequestedListener = block
+    }
+
+    /**
+     * Host / probe hook: present the opaque close frame before [requestClose]
+     * destroys the window. Multi-cast — the Windows DecoratedWindow host
+     * registers first; e2e probes may append. See [requestClose].
+     */
+    internal fun onPrepareClose(block: () -> Unit) {
+        prepareCloseListeners += block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */

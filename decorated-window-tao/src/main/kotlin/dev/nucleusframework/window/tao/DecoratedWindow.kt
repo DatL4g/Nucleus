@@ -32,6 +32,7 @@ import dev.nucleusframework.window.GlobalModalDialogCount
 import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.LocalTitleBarInfo
 import dev.nucleusframework.window.TitleBarInfo
+import dev.nucleusframework.window.internal.isDark
 import dev.nucleusframework.window.tao.a11y.TaoSemanticsObserver
 import dev.nucleusframework.window.tao.deco.FullscreenOverlayHost
 import dev.nucleusframework.window.tao.deco.FullscreenTitleBarHolder
@@ -75,8 +76,109 @@ private val hiddenFromDockLogger: java.util.logging.Logger =
  * and rounded corners back to transparent after rendering, so the drop shadow
  * is unaffected. Defaults to opaque white until the first composition.
  */
-internal val LocalRequestedClearColor =
+internal val LocalWindowClearColorLayers =
+    staticCompositionLocalOf<WindowClearColorLayers?> { null }
+
+/** Opaque white — the clear colour before any style or content publishes one. */
+private const val DEFAULT_CLEAR_ARGB = 0xFFFFFFFF.toInt()
+
+/**
+ * The window's clear colour as two explicit layers with one resolver.
+ *
+ * The hoisted window style writes the [style layer][setStyle]
+ * (`DecoratedWindowComposable`); content writers (`WindowBackground`,
+ * `TitleBar`) stack on the [content layer][setContent], which outranks style.
+ * Each writer holds a stable key: re-`setContent` moves it to the top
+ * (last SideEffect wins while co-composed); [clearContent] removes only that
+ * writer so a surviving `WindowBackground` is restored when `TitleBar`
+ * leaves composition instead of wiping the slot to null.
+ *
+ * Every write re-resolves into the host state *synchronously, inside the
+ * caller's SideEffect* — so the first composition has fully themed the host
+ * before the window's first blocking render and `show()`.
+ *
+ * Runs on the Tao main thread only, so no synchronization is needed.
+ */
+internal class WindowClearColorLayers(
+    private val hostClearColor: androidx.compose.runtime.MutableState<Int>,
+) {
+    private var style: Int = DEFAULT_CLEAR_ARGB
+
+    /** Insertion-ordered content writers; last entry is the active content. */
+    private val contentWriters = LinkedHashMap<Any, Int>()
+
+    val resolved: Int get() = contentWriters.values.lastOrNull() ?: style
+
+    /** The resolved colour as observable snapshot state (the host state itself). */
+    val observableResolved: androidx.compose.runtime.State<Int> get() = hostClearColor
+
+    fun setStyle(argb: Int) {
+        style = argb
+        push()
+    }
+
+    /**
+     * Publishes [argb] as this [key]'s content contribution. Re-entry moves
+     * [key] to the top so co-composed writers resolve by SideEffect order.
+     */
+    fun setContent(
+        key: Any,
+        argb: Int,
+    ) {
+        contentWriters.remove(key)
+        contentWriters[key] = argb
+        push()
+    }
+
+    /** Drops only [key]'s contribution; other content writers stay. */
+    fun clearContent(key: Any) {
+        if (contentWriters.remove(key) != null) push()
+    }
+
+    private fun push() {
+        hostClearColor.value = resolved
+    }
+}
+
+/**
+ * Holds whether a native system material is showing through this window (see
+ * `Modifier.windowGlassRegion`). Backed by the host's `glassBackgroundState`:
+ * while `true`, the render loop clears the Skia surface to transparent so the
+ * material inserted below the content is visible wherever Compose paints
+ * nothing. macOS only — `null` elsewhere.
+ */
+internal val LocalRequestedGlassBackground =
+    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Boolean>?> { null }
+
+/**
+ * Holds whether the client area must stay transparent so a DWM system backdrop
+ * shows through (see `WindowsBackdrop`). Backed by the Windows host's
+ * `transparentBackgroundState`: while `true`, the render loop clears the Skia
+ * surface to alpha 0 instead of the window background colour. Windows only —
+ * `null` elsewhere.
+ */
+internal val LocalRequestedTransparentBackground =
+    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Boolean>?> { null }
+
+/**
+ * ARGB the render loop clears to while a backdrop is active — the app's tint
+ * layer over the DWM material (see the host's `backdropTintArgbState`).
+ * Written by `WindowsBackdrop`. Windows only — `null` elsewhere.
+ */
+internal val LocalBackdropComposeTint =
     staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
+
+/**
+ * Appearance forced by [dev.nucleusframework.window.WindowAppearance], for the
+ * platforms whose chrome is Compose-drawn (Windows). While `System`, the
+ * chrome derives light/dark from the window background's luminance — the same
+ * signal the native layer feeds `DWMWA_USE_IMMERSIVE_DARK_MODE`, so the
+ * Compose-drawn glyphs and the DWM material can never disagree.
+ */
+internal val LocalRequestedAppearanceOverride =
+    staticCompositionLocalOf<
+        androidx.compose.runtime.MutableState<dev.nucleusframework.window.WindowAppearanceMode>?,
+    > { null }
 
 /**
  * Exposes the [TaoWindow] backing the current `DecoratedWindow` to any
@@ -329,11 +431,13 @@ internal fun ApplicationScope.openDecoratedWindow(
             }
         }
         host.setContent {
+            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
-                LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalWindowClearColorLayers provides clearColorLayers,
+                LocalRequestedGlassBackground provides host.glassBackgroundState,
                 LocalTaoPopupHost provides host.popupHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
@@ -356,6 +460,10 @@ internal fun ApplicationScope.openDecoratedWindow(
                     }
                 }
                 LaunchedEffect(Unit) {
+                    // Always publish the themed color: the native side stores
+                    // it and applies it according to the window's transparency
+                    // mode (kept clear under a full glass backdrop, painted on
+                    // the still-opaque window when glass regions are active).
                     snapshotFlow { host.clearColorArgbState.value }.collect { argb ->
                         val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
                         if (nsView != 0L && NativeMetalBridge.isLoaded) {
@@ -532,11 +640,12 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         // the X11 XID via NativeTaoBridge.nativeLinuxHandles().
         a11yController.attach()
         host.setContent {
+            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
-                LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalWindowClearColorLayers provides clearColorLayers,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
@@ -658,9 +767,45 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         host.detach()
     }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
-    window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
+    // An app-initiated interactive move hands the pointer to the compositor,
+    // which reports the window as unfocused for the duration of the grab —
+    // that would flip the chrome to its inactive look mid-drag. Mask it while
+    // the move runs.
+    //
+    // The mask is dropped when real pointer input resumes, NOT on focus-in:
+    // GNOME toggles keyboard focus *during* a move grab, and clearing on that
+    // mid-grab focus-in would unmask the focus-out that follows, leaving the
+    // chrome inactive for the rest of the drag (X11 does not toggle, which is
+    // why it only shows on Wayland). The compositor withholds pointer events
+    // for the whole grab, so their return is the reliable grab-ended signal —
+    // same rule [TaoComposeSceneHostLinux] uses for the CSD shadow.
+    var lastFocused = true
+
+    // The host owns the grab state for BOTH interactive moves and resizes (it
+    // arms `compositorDragActive` from `dragWindow()` and from its own
+    // resize-edge hit test), so read it instead of tracking a second flag —
+    // a move-only flag left resize grabs unmasked.
+    fun chromeActive(focused: Boolean) = focused || host.isCompositorGrabActive
+
+    // Settle the chrome once real pointer input resumes: that is the host's own
+    // grab-ended signal, and it is the only moment we get, since no focus event
+    // necessarily follows the grab. Runs AFTER the host has processed the event
+    // so its flag is already cleared.
+    fun settleAfterGrab() {
+        val settled = chromeActive(lastFocused)
+        if (stateHolder.value.isActive != settled) {
+            stateHolder.value = stateHolder.value.copy(active = settled)
+        }
+    }
+    window.onPointerMoved { x, y ->
+        if (enabled) host.onPointerMove(x, y)
+        settleAfterGrab()
+    }
     window.onPointerExited { if (enabled) host.onPointerExited() }
-    window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
+    window.onPointerButton { b, p ->
+        if (enabled) host.onPointerButton(b, p)
+        settleAfterGrab()
+    }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
     window.onDragWindow { host.onNativeWindowDragStarted() }
     window.onKeyEvent { type, vk, loc, mods, cp ->
@@ -668,7 +813,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
-        stateHolder.value = stateHolder.value.copy(active = focused)
+        lastFocused = focused
+        stateHolder.value = stateHolder.value.copy(active = chromeActive(focused))
+        // The host and a11y get the raw truth; only the chrome's visual
+        // active state is held through the grab.
         host.onFocusChanged(focused)
         if (a11yController.nativeViewHandle != 0L) {
             // Forward focus state to AccessKit so AT-SPI's STATE_ACTIVE flag
@@ -842,6 +990,21 @@ private fun ApplicationScope.openDecoratedWindowWindows(
 
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true, maximized = maximized))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
+    // Hoisted out of the composition so the initial native theme push below
+    // (before the first blocking render and show()) can read it.
+    val appearanceOverride = mutableStateOf(dev.nucleusframework.window.WindowAppearanceMode.System)
+
+    fun pushNativeTheme() {
+        if (!NativeTaoWindowsDecoBridge.isLoaded) return
+        val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+        if (hwnd == 0L) return
+        val argb = host.clearColorArgbState.value
+        NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(
+            hwnd,
+            argb,
+            resolveChromeDark(appearanceOverride.value, argb),
+        )
+    }
 
     val scopeFactory: androidx.compose.foundation.layout.ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, androidx.compose.foundation.layout.ColumnScope by this {
@@ -857,17 +1020,46 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.attach()
         a11yController.attach()
         host.setContent {
+            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
-                LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalWindowClearColorLayers provides clearColorLayers,
+                LocalRequestedTransparentBackground provides host.transparentBackgroundState,
+                LocalBackdropComposeTint provides host.backdropTintArgbState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows
                     provides host.popupHost(),
             ) {
+                // Light/dark for the whole chrome. One source of truth (the
+                // clear colour + the WindowAppearance override, both snapshot
+                // state), one resolution function, and one native call below:
+                // the Compose-drawn glyphs and the DWM material derive from
+                // the same snapshot-consistent pair, so a torn theme — glyphs
+                // on one theme, material on the other — cannot be expressed.
+                // The initial push happens synchronously after setContent
+                // (before the first blocking render and show()); this flow
+                // handles every later change.
+                val chromeIsDark =
+                    resolveChromeDark(appearanceOverride.value, host.clearColorArgbState.value)
+                LaunchedEffect(Unit) {
+                    snapshotFlow {
+                        // Both states are read inside one snapshot: the pair
+                        // can never mix an old colour with a new override.
+                        val argb = host.clearColorArgbState.value
+                        argb to resolveChromeDark(appearanceOverride.value, argb)
+                    }.collect { (argb, isDark) ->
+                        if (NativeTaoWindowsDecoBridge.isLoaded) {
+                            val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+                            if (hwnd != 0L) {
+                                NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(hwnd, argb, isDark)
+                            }
+                        }
+                    }
+                }
                 val border =
                     rememberUndecoratedWindowBorder(
                         state = stateHolder.value,
@@ -882,6 +1074,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                     }
                 CompositionLocalProvider(
                     dev.nucleusframework.window.LocalModalDialogCount provides modalCount,
+                    dev.nucleusframework.window.LocalIsDarkTheme provides chromeIsDark,
+                    LocalRequestedAppearanceOverride provides appearanceOverride,
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         FullscreenOverlayHost(
@@ -935,10 +1129,67 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 w to h
             }
         host.syncTitleBarHeight()
+        // The initial composition's SideEffects have themed the host clear
+        // colour by now (layer writes push synchronously); mirror it to the
+        // native side before the first paint — the snapshot flow above only
+        // starts once the event loop resumes, which is after show().
+        pushNativeTheme()
         // onResized renders synchronously, so this doubles as the guaranteed
         // first paint before the window is shown (no separate onRedrawRequested).
         host.onResized(initialW, initialH)
         if (visible) window.show()
+    }
+
+    // Fullscreen toggle, two hooks (issue 413):
+    //  1. Pre-layout at the target size before the geometry change — warms
+    //     Compose measure/layout without presenting anything, with the
+    //     chrome already flipped to the TARGET state.
+    //  2. The synchronous prepare, invoked from the deco WndProc INSIDE the
+    //     toggle's SetWindowPos (WM_WINDOWPOSCHANGED): renders + presents
+    //     the new-size frame before the geometry change returns, so DWM
+    //     never composites the new geometry with stale content. The Windows
+    //     analog of the macOS windowWillEnter/ExitFullScreen prepare.
+    fun syncPlacementFlags() {
+        val maxNow = window.isMaximized
+        val fsNow = window.isFullscreen
+        if (stateHolder.value.isMaximized != maxNow ||
+            stateHolder.value.isFullscreen != fsNow
+        ) {
+            stateHolder.value =
+                stateHolder.value.copy(
+                    maximized = maxNow,
+                    fullscreen = fsNow,
+                )
+        }
+    }
+    // Installed lazily from the prepare (the HWND is not resolvable at
+    // window-construction time), synchronously before the toggle's geometry
+    // change — so the hook always exists by the time the prepare fires.
+    var fsSizeHookInstalled = false
+
+    fun installFullscreenSizeHook() {
+        if (fsSizeHookInstalled || !NativeTaoWindowsDecoBridge.isLoaded) return
+        val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+        if (hwnd == 0L) return
+        fsSizeHookInstalled = true
+        NativeTaoWindowsDecoBridge.setFullscreenSizeHook(hwnd) { w, h ->
+            syncPlacementFlags()
+            host.fullscreenTransitionResized(w, h)
+            host.syncTitleBarHeight()
+        }
+        window.onDestroyed {
+            NativeTaoWindowsDecoBridge.setFullscreenSizeHook(hwnd, null)
+        }
+    }
+    window.onFullscreenPrepare { w, h, fs ->
+        installFullscreenSizeHook()
+        // Chrome flags first, from the INTENT (the native flag flips later,
+        // inside nativeSetFullscreen): the warmed layout must already show
+        // the target chrome (overlay armed on enter, inline bar on exit).
+        if (stateHolder.value.isFullscreen != fs) {
+            stateHolder.value = stateHolder.value.copy(fullscreen = fs)
+        }
+        host.fullscreenPreLayout(w, h)
     }
     window.onResized { w, h ->
         host.onResized(w, h)
@@ -959,22 +1210,64 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 )
         }
     }
+    // Close *request* is cancelable ("Save before quit?" → Cancel). Do not
+    // tear down a live WindowsBackdrop here — that left the window permanently
+    // de-mica'd while the composable was still composed. The opaque last frame
+    // is prepared on the confirmed destroy path ([TaoWindow.requestClose] →
+    // [onPrepareClose]), while the window and EGL surface are still alive
+    // (detach() runs after DestroyWindow, far too late to steer the snapshot).
+    window.onPrepareClose { host.prepareClose() }
     window.onCloseRequested { onCloseRequest() }
     window.onDestroyed {
         a11yController.dispose()
         host.detach()
     }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
-    window.onSizeMoveChanged { host.onResizeLoopChanged(it) }
+    // The OS modal move / resize loop (WM_NCLBUTTONDOWN + HTCAPTION, or a
+    // resize border) can report the window as unfocused while it runs, which
+    // would flip the chrome to its inactive look mid-drag. Mask it for exactly
+    // the duration of the loop.
+    var inSizeMoveLoop = false
+    var lastFocused = true
+
+    // Focus alone does not decide the chrome's look: focus moving to an
+    // embedded child HWND (e.g. WebView2) leaves the window in active use, and
+    // the size/move loop masks a transient loss. Both `onFocusChanged` and the
+    // settle below go through this, so they can never disagree.
+    fun chromeActive(focused: Boolean) =
+        focused ||
+            inSizeMoveLoop ||
+            (
+                NativeTaoWindowsNativeViewBridge.isLoaded &&
+                    NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle)
+            )
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
     window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
     window.onPointerScroll { event -> if (enabled) host.onPointerScroll(event) }
+    // WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE brackets the modal MOVE and RESIZE
+    // loops exactly, so it is the only mask signal needed here — unlike Linux,
+    // no pointer-driven fallback is required, and using one would be harmful:
+    // the loop can deliver mouse moves, which would drop the mask on the first
+    // sample, one frame into the drag.
+    window.onSizeMoveChanged { active ->
+        inSizeMoveLoop = active
+        // No focus event necessarily follows the loop, so settle the chrome on
+        // its way out.
+        if (!active) {
+            val settled = chromeActive(lastFocused)
+            if (stateHolder.value.isActive != settled) {
+                stateHolder.value = stateHolder.value.copy(active = settled)
+            }
+        }
+        host.onResizeLoopChanged(active)
+    }
     window.onKeyEvent { type, vk, loc, mods, cp ->
         if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
+        lastFocused = focused
         // When focus moves to an embedded child HWND (e.g., WebView2 on
         // Windows), Tao reports the main HWND as unfocused, but for app
         // purposes the window is still in active use — keep the chrome's
@@ -982,13 +1275,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         // window tree (Alt-Tab to another app, etc.). The bridge below
         // is no-op on platforms where its DLL isn't loaded (isLoaded is
         // false on macOS), so this is safe to share across paths.
-        val effective =
-            focused ||
-                (
-                    NativeTaoWindowsNativeViewBridge.isLoaded &&
-                        NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle)
-                )
-        stateHolder.value = stateHolder.value.copy(active = effective)
+        stateHolder.value = stateHolder.value.copy(active = chromeActive(focused))
         host.onFocusChanged(focused)
     }
     // OS-driven minimize/restore — mirror into the scope's DecoratedWindowState
@@ -1011,3 +1298,21 @@ private fun ApplicationScope.openDecoratedWindowWindows(
 
     return window
 }
+
+/**
+ * THE resolution point for the Windows chrome's light/dark: the value it
+ * returns is provided as `LocalIsDarkTheme` (caption glyphs, hover overlays)
+ * and pushed as `DWMWA_USE_IMMERSIVE_DARK_MODE` (the backdrop material) by
+ * the same snapshot-driven flow — one function, one pair of inputs, so the
+ * two sides cannot be resolved differently.
+ */
+private fun resolveChromeDark(
+    override: dev.nucleusframework.window.WindowAppearanceMode,
+    backgroundArgb: Int,
+): Boolean =
+    when (override) {
+        dev.nucleusframework.window.WindowAppearanceMode.Dark -> true
+        dev.nucleusframework.window.WindowAppearanceMode.Light -> false
+        // Same Rec.601 luminance split the other backends use.
+        dev.nucleusframework.window.WindowAppearanceMode.System -> Color(backgroundArgb).isDark()
+    }

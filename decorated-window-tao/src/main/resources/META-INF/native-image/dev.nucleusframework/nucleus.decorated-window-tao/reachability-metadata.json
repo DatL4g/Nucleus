@@ -137,6 +137,14 @@
                         "long",
                         "float"
                     ]
+                },
+                {
+                    "name": "onFullscreenPrepare",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int"
+                    ]
                 }
             ]
         },
@@ -169,7 +177,17 @@
         },
         {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge",
-            "jniAccessible": true
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onFullscreenSizeChanged",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int"
+                    ]
+                }
+            ]
         },
         {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge",

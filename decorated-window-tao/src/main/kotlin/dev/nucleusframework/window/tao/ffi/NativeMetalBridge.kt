@@ -62,6 +62,46 @@ internal object NativeMetalBridge {
         menuBarOffsetFlows.getOrPut(nsViewPtr) { MutableStateFlow(0f) }.value = offset
     }
 
+    // ── Fullscreen transition prepare (macOS) ────────────────────────────
+    //
+    // AppKit resizes the window to its final size and snapshots it inside the
+    // `windowWillEnterFullScreen:` dispatch, then stretches that snapshot for
+    // the whole ~550ms animation. Anything rendered after the notification
+    // returns is too late — the snapshot already holds the previous, smaller
+    // buffer, which is why the content used to look frozen and undersized and
+    // then snap into place (#327).
+    //
+    // The native `willEnterFS` handler therefore calls [onFullscreenPrepare]
+    // *synchronously*, before returning, with the size the window is about to
+    // take. The host renders one blocking frame at that size so the snapshot
+    // captures the final layout; AppKit then scales it down into the current
+    // frame and grows it to 1:1 — the ramp AppKit's own apps show.
+
+    private val fullscreenPrepares = ConcurrentHashMap<Long, (Int, Int) -> Unit>()
+
+    fun setFullscreenPrepare(
+        nsViewPtr: Long,
+        block: ((widthPx: Int, heightPx: Int) -> Unit)?,
+    ) {
+        if (nsViewPtr == 0L) return
+        if (block == null) fullscreenPrepares.remove(nsViewPtr) else fullscreenPrepares[nsViewPtr] = block
+    }
+
+    /**
+     * Called from native on the macOS main thread, inside
+     * `windowWillEnterFullScreen:`. Runs on the caller's stack on purpose:
+     * the frame has to be presented before this returns.
+     */
+    @JvmStatic
+    fun onFullscreenPrepare(
+        nsViewPtr: Long,
+        widthPx: Int,
+        heightPx: Int,
+    ) {
+        if (widthPx <= 0 || heightPx <= 0) return
+        fullscreenPrepares[nsViewPtr]?.invoke(widthPx, heightPx)
+    }
+
     // ── VSync pacing (CVDisplayLink, AWT/skiko MetalVSyncer pattern) ──
     //
     // A CVDisplayLink runs continuously; [nativeVSyncWait] blocks the calling
@@ -147,6 +187,61 @@ internal object NativeMetalBridge {
     external fun nativeSetWindowBackgroundColor(
         nsViewPtr: Long,
         argb: Int,
+    )
+
+    /**
+     * Window-level transparency for the glass regions: the CAMetalLayer is
+     * cleared to alpha 0 so the system material inserted below the content
+     * shows through, while the window itself stays opaque — which is what
+     * gives those materials the desktop-tinted backdrop. Ref-counted
+     * Kotlin-side.
+     */
+    @JvmStatic
+    external fun nativeSetWindowTransparencyMode(
+        nsViewPtr: Long,
+        enabled: Boolean,
+    )
+
+    /**
+     * Inserts a hosted `NSSplitViewController` pane region below the content
+     * view — AppKit backs it with the wallpaper-tinted system material
+     * (System Settings sidebar look). [kindOrdinal] is
+     * `WindowGlassRegionKind.nativeValue` (not enum ordinal). Returns a
+     * retained pointer (0 if the window is not ready) — position it with
+     * [nativeSetGlassRegionFrame] and release it with [nativeRemoveGlassRegion].
+     */
+    @JvmStatic
+    external fun nativeAddGlassRegion(
+        nsViewPtr: Long,
+        kindOrdinal: Int,
+    ): Long
+
+    /**
+     * Region frame in points, top-left origin in Compose scene coordinates.
+     * [cornerRadius] rounds the region clip (for material behind rounded
+     * panels), 0 for a rectangular region.
+     */
+    @JvmStatic
+    external fun nativeSetGlassRegionFrame(
+        regionPtr: Long,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        cornerRadius: Float,
+    )
+
+    @JvmStatic
+    external fun nativeRemoveGlassRegion(regionPtr: Long)
+
+    /**
+     * Forces the window's `NSAppearance` so native surfaces follow the app
+     * theme rather than the system one. [mode]: 0 system, 1 light, 2 dark.
+     */
+    @JvmStatic
+    external fun nativeSetWindowAppearance(
+        nsViewPtr: Long,
+        mode: Int,
     )
 
     @JvmStatic

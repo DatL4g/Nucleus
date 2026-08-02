@@ -106,6 +106,13 @@ internal class TaoComposeSceneHost(
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
         androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
 
+    // Behind-window glass background (see NativeMetalBridge.nativeSetGlassBackground).
+    // While active, the render loop clears the Skia surface to transparent so
+    // the native glass material shows through wherever the Compose scene has
+    // no opaque pixels; the themed clear color is ignored.
+    val glassBackgroundState: androidx.compose.runtime.MutableState<Boolean> =
+        androidx.compose.runtime.mutableStateOf(false)
+
     /**
      * App-level pre-dispatch hook. Receives every Compose [KeyEvent] before it
      * reaches the scene; returning `true` consumes the event and prevents
@@ -281,6 +288,14 @@ internal class TaoComposeSceneHost(
         directContext = runOnRenderThread { DirectContext.makeMetal(devicePtr, queuePtr) }
 
         scale = initialMacOsScaleFactor(window)
+
+        // Present the fullscreen layout before AppKit snapshots the window for
+        // its transition animation. Runs re-entrantly on the AppKit main
+        // thread from inside `windowWillEnterFullScreen:` — see
+        // NativeMetalBridge.onFullscreenPrepare and #327.
+        NativeMetalBridge.setFullscreenPrepare(nsViewHandle) { targetW, targetH ->
+            prepareFullscreenFrame(targetW, targetH)
+        }
 
         // CRITICAL: provide our own MonotonicFrameClock (BroadcastFrameClock)
         // in the scene's coroutineContext. Without one, Compose's recomposer
@@ -532,6 +547,38 @@ internal class TaoComposeSceneHost(
         window.requestRedraw()
     }
 
+    /**
+     * Resizes the scene to the size the window is about to take and presents
+     * one frame synchronously. Called from AppKit's
+     * `windowWillEnterFullScreen:` (via [NativeMetalBridge.onFullscreenPrepare])
+     * so the transition snapshot holds the final layout instead of the previous
+     * one — see #327. The regular [onResized] follows right after with the same
+     * size and short-circuits.
+     */
+    private fun prepareFullscreenFrame(
+        targetWidthPx: Int,
+        targetHeightPx: Int,
+    ) {
+        if (attachmentHandle == 0L) return
+        if (targetWidthPx <= 0 || targetHeightPx <= 0) return
+        if (targetWidthPx == widthPx && targetHeightPx == heightPx) return
+        widthPx = targetWidthPx
+        heightPx = targetHeightPx
+        NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
+        scene?.size = IntSize(widthPx, heightPx)
+        updateWindowInfoSize()
+        renderFrameBlocking()
+    }
+
+    /**
+     * Density-only. The physical size that goes with [newScale] arrives as the
+     * [onResized] the event loop dispatches right behind the scale change —
+     * including on a macOS display hop, where AppKit itself sends no resize
+     * (#418). Deriving the new pixel size here instead would be a guess:
+     * `scale` is seeded from `initialMacOsScaleFactor`, which takes the *max*
+     * of the window's and the primary monitor's scale, so it is not
+     * necessarily the scale `widthPx`/`heightPx` were produced at.
+     */
     fun onScaleFactorChanged(newScale: Float) {
         if (newScale == scale) return
         scale = newScale
@@ -1137,7 +1184,7 @@ internal class TaoComposeSceneHost(
         // Clear to the current themed fallback color, not hard-coded white, so
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
         // at replay time on the recorded surface.
-        val mainClear = clearColorArgbState.value
+        val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
         val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
         val popupSurfaces = recordPopupSurfaces()
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
@@ -1235,7 +1282,7 @@ internal class TaoComposeSceneHost(
         val sc = scene ?: return
         val ctx = directContext ?: return
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
-        val mainClear = clearColorArgbState.value
+        val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
         val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
         val popupSurfaces = recordPopupSurfaces()
         TaoMainDispatcher.pump()
@@ -1252,6 +1299,9 @@ internal class TaoComposeSceneHost(
 
     fun detach() {
         shutdownA11yScheduler()
+        // Drop the transition hook before the scene goes: a late
+        // willEnterFS would otherwise re-enter a torn-down host.
+        NativeMetalBridge.setFullscreenPrepare(nsViewHandle, null)
         // Stop driving frames first: after this no new replay is submitted.
         frameDispatcher?.cancel()
         frameDispatcher = null
