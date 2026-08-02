@@ -156,6 +156,7 @@ class TaoSceneScrollTest {
     private companion object {
         const val RED = 0xFFFF0000.toInt()
         const val BLUE = 0xFF0000FF.toInt()
+
         /** Extra frameUntilIdle rounds after the reverse notch (Windows CI flake). */
         const val SYMMETRY_SETTLE_PASSES = 8
     }
