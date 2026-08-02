@@ -973,10 +973,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         if (enabled) host.onTrackpadGesture(kind, phase, x, y, value)
     }
 
-    // ── Windows accessibility (UIA) ────────────────────────────────────────
-    // Per-window UIA projection driven by the same SemanticsObserver pipeline
-    // as macOS. The controller resolves the HWND on attach via
-    // `nativeHwndHandle` and pushes the binary snapshot to nucleus_tao_a11y.dll.
+    // ── Windows accessibility (AccessKit → UIA) ────────────────────────────
+    // Per-window UIA projection via AccessKit, same wire format / SemanticsObserver
+    // pipeline as Linux. The controller resolves the HWND on attach via
+    // `nativeHwndHandle` and pushes binary snapshots into nucleus_tao.dll.
     val a11yController = TaoAccessibilityController(window.handle)
     val a11yObserver =
         TaoSemanticsObserver(

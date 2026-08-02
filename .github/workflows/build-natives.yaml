@@ -155,7 +155,6 @@ jobs:
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"
             "decorated-window-tao/nucleus_tao_gl.dll"
-            "decorated-window-tao/nucleus_tao_a11y.dll"
             "decorated-window-tao/nucleus_tao_dnd.dll"
             "decorated-window-tao/nucleus_tao_windows_native_view.dll"
             "decorated-window-tao/libEGL.dll"

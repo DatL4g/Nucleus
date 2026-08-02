@@ -47,6 +47,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "accesskit_windows"
+version = "0.29.2"
+dependencies = [
+ "accesskit",
+ "accesskit_consumer",
+ "hashbrown 0.15.5",
+ "static_assertions",
+ "windows",
+ "windows-core",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1231,6 +1243,7 @@ version = "0.1.0"
 dependencies = [
  "accesskit",
  "accesskit_unix",
+ "accesskit_windows",
  "cc",
  "gdkx11-sys",
  "glib",
@@ -1239,6 +1252,7 @@ dependencies = [
  "once_cell",
  "raw-window-handle",
  "tao",
+ "windows",
  "x11-dl",
 ]
 

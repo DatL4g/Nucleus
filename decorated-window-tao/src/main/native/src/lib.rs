@@ -21,8 +21,12 @@
 //   keymap        — Tao physical key → AWT VK mapping
 //   platform::macos     — AppKit helpers (FFI, main-thread dance, IME,
 //                         text overlay, Apple events, VoiceOver bridge)
-//   platform::windows   — HWND handle + UIA bridge (loaded from sibling DLL)
+//   platform::windows   — HWND handle + AccessKit UIA bridge
 //   platform::linux     — X11/Wayland handle, AT-SPI bridge, GDK cursor
+
+// Shared AccessKit wire decoder + JVM action upcalls (Linux + Windows).
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+mod a11y;
 
 mod cursor;
 mod event_loop;

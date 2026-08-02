@@ -13,6 +13,11 @@ tao = "0.35"
 jni = "0.21"
 once_cell = "1.20"
 
+# Shared AccessKit tree model (wire → TreeUpdate). Linux projects via
+# accesskit_unix (AT-SPI2); Windows via accesskit_windows (UIA).
+[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+accesskit = "0.21"
+
 # Tao 0.35 exposes window handles via raw-window-handle 0.6. We use it on
 # Linux to pull the underlying X11 (Xlib) or Wayland (wl_surface + wl_display)
 # pointers and hand them to the EGL helper so we can drive Skia's GL backend
@@ -35,10 +40,21 @@ glib = "0.18"
 # don't have to link libatspi / libatk / glib at runtime. We're an XWayland
 # client (GDK_BACKEND=x11) so screen-space coordinates are available through
 # the X server — `Adapter::set_root_window_bounds` works correctly.
-accesskit = "0.21"
 accesskit_unix = "0.17"
 # X11 for resolving outer/inner window geometry on every ConfigureNotify.
 x11-dl = "2"
+
+# UIA accessibility provider via AccessKit (replaces the hand-rolled
+# nucleus_tao_a11y.dll COM projector). SubclassingAdapter owns WM_GETOBJECT;
+# the same wire→TreeUpdate path as Linux feeds the tree.
+# accesskit_windows is path-patched below (UseComThreading for .NET events).
+[target.'cfg(target_os = "windows")'.dependencies]
+accesskit_windows = "0.29.2"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
 
 [build-dependencies]
 cc = "1.0"
@@ -56,6 +72,9 @@ cc = "1.0"
 tao = { path = "vendor/tao" }
 accesskit_atspi_common = { path = "vendor/accesskit_atspi_common" }
 accesskit_unix = { path = "vendor/accesskit_unix" }
+# Local fork of 0.29.2: ProviderOptions includes UseComThreading so
+# out-of-process .NET UIA clients receive PropertyChanged/Focus events.
+accesskit_windows = { path = "vendor/accesskit_windows" }
 
 # Smaller binaries for shipping inside the JAR / native-image.
 [profile.release]
