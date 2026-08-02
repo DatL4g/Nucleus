@@ -150,26 +150,11 @@ internal object NativeMetalBridge {
     )
 
     /**
-     * Toggles the behind-window glass background: the window becomes
-     * non-opaque and a backdrop view is inserted below the content view —
-     * `NSGlassEffectView` (real Liquid Glass) on macOS 26+, an
-     * `NSVisualEffectView` behind-window material as pre-26 fallback. Every
-     * fallback layer background is cleared so an alpha-cleared Compose
-     * render shows the desktop through the glass. [tintArgb] gives the
-     * glass its material body (0 = untinted, ignored by the pre-26
-     * fallback). Returns `false` when the window is not ready yet.
-     */
-    @JvmStatic
-    external fun nativeSetGlassBackground(
-        nsViewPtr: Long,
-        enabled: Boolean,
-        tintArgb: Int,
-    ): Boolean
-
-    /**
-     * Window-level transparency for the glass-region API: flips the window
-     * and CAMetalLayer between opaque themed background and transparent
-     * without inserting any backdrop view. Ref-counting is done Kotlin-side.
+     * Window-level transparency for the glass regions: the CAMetalLayer is
+     * cleared to alpha 0 so the system material inserted below the content
+     * shows through, while the window itself stays opaque — which is what
+     * gives those materials the desktop-tinted backdrop. Ref-counted
+     * Kotlin-side.
      */
     @JvmStatic
     external fun nativeSetWindowTransparencyMode(

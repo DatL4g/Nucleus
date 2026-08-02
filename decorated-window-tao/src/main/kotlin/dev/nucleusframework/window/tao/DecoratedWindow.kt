@@ -79,11 +79,11 @@ internal val LocalRequestedClearColor =
     staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
 
 /**
- * Holds whether the behind-window glass background is requested for this
- * window (see `WindowBackdrop`). Backed by the host's `glassBackgroundState`:
- * while `true`, the render loop clears the Skia surface to transparent and
- * the themed background pushes to the native window are suppressed so the
- * native glass material stays visible. macOS only — `null` elsewhere.
+ * Holds whether a native system material is showing through this window (see
+ * `Modifier.windowGlassRegion`). Backed by the host's `glassBackgroundState`:
+ * while `true`, the render loop clears the Skia surface to transparent so the
+ * material inserted below the content is visible wherever Compose paints
+ * nothing. macOS only — `null` elsewhere.
  */
 internal val LocalRequestedGlassBackground =
     staticCompositionLocalOf<androidx.compose.runtime.MutableState<Boolean>?> { null }
