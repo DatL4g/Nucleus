@@ -139,6 +139,11 @@ internal object NativeTaoBridge {
         // (`WindowBackground(Color.Transparent)` or the transparent=true
         // default style path) so the desktop shows through empty regions.
         transparent: Boolean,
+        // Windows only: DWM drop shadow for undecorated (no-native-chrome)
+        // windows. Tao defaults this to true and expands the outer rect for
+        // the shadow inset. Ghost overlays pass false
+        // (`DecoratedWindow(undecorated = true)`). Ignored on macOS/Linux.
+        undecoratedShadow: Boolean,
     )
 
     @JvmStatic

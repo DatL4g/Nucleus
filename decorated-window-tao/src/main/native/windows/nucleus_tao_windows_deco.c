@@ -146,6 +146,12 @@ typedef struct {
      * buttons stay Compose-drawn and Compose-handled: the NC mouse messages
      * for these hit codes are forwarded back as client messages. */
     RECT    captionButtonRects[3];
+    /* Fully borderless chrome (DecoratedWindow(undecorated = true) overlays /
+     * ghosts). Suppresses DWM caption+border colours and the 1px bottom
+     * frame extension that keeps the drop shadow — otherwise a transparent
+     * window still shows a 1px system contour (themed border, often black
+     * when the clear colour is alpha-0). */
+    BOOL    borderlessChrome;
 } DecoState;
 
 /* Order inside DecoState.captionButtonRects. */
@@ -180,6 +186,10 @@ static BOOL isCaptionButtonHit(WPARAM code) {
 /* DWM_WINDOW_CORNER_PREFERENCE wire values (avoid depending on a 22H2 SDK). */
 #define NUCLEUS_DWMWCP_DEFAULT    0
 #define NUCLEUS_DWMWCP_DONOTROUND 1
+#ifndef DWMWA_VISIBLE_FRAME_BORDER_THICKNESS
+/* Win11 22000+: thickness of the visible non-client border (logical px). */
+#define DWMWA_VISIBLE_FRAME_BORDER_THICKNESS 37
+#endif
 
 /* Backdrop styles below this are "no backdrop": DWMSBT_AUTO (0) leaves the
  * choice to DWM, which means none for an ordinary window, and DWMSBT_NONE (1)
@@ -373,6 +383,7 @@ static void revertBackdropForClose(HWND hwnd, DecoState *state) {
  * as a bare black line instead of the subtle system frame. */
 static void applyCaptionColors(HWND hwnd, DecoState *state) {
     BOOL backdrop = state && state->backdropActive;
+    BOOL borderless = state && state->borderlessChrome;
     COLORREF themed = state ? state->bgColor : RGB(255, 255, 255);
     COLORREF caption = backdrop ? (COLORREF)DWMWA_COLOR_NONE : themed;
     COLORREF border = backdrop ? (COLORREF)DWMWA_COLOR_DEFAULT : themed;
@@ -380,8 +391,8 @@ static void applyCaptionColors(HWND hwnd, DecoState *state) {
      * fill DWM still draws for these attributes shows as a 1px contour of
      * the wrong colour around the content — the issue-413 white edge (worst
      * with a backdrop, where the border is otherwise the light system
-     * default). */
-    if (state && state->isFullscreen) {
+     * default). Same for borderlessChrome overlays (no system frame at all). */
+    if (state && (state->isFullscreen || borderless)) {
         caption = (COLORREF)DWMWA_COLOR_NONE;
         border = (COLORREF)DWMWA_COLOR_NONE;
     }
@@ -393,15 +404,28 @@ static void applyCaptionColors(HWND hwnd, DecoState *state) {
  * keeps the 1px bottom extension that preserves the DWM drop shadow (or the
  * full sheet of glass while a DWM backdrop tier is live). Fullscreen drops
  * the 1px band: with the window covering the monitor it composites as a
- * light hairline along the bottom edge (issue 413). */
+ * light hairline along the bottom edge (issue 413).
+ *
+ * borderlessChrome uses ZERO margins on purpose. The classic {0,0,0,1}
+ * bottom extension exists *only* to keep the DWM drop shadow; sheet-of-glass
+ * {-1,-1,-1,-1} also keeps a soft system shadow around the window. Ghost
+ * overlays (`DecoratedWindow(undecorated = true)`) want neither — per-pixel
+ * transparency still works via tao's DwmEnableBlurBehindWindow empty region
+ * (`with_transparent`). */
 static void applyFrameMargins(HWND hwnd, DecoState *state) {
-    BOOL sheet = state && state->sheetOfGlass;
+    BOOL borderless = state && state->borderlessChrome;
+    BOOL sheet = state && state->sheetOfGlass && !borderless;
     BOOL fs = state && state->isFullscreen;
     MARGINS margins;
-    margins.cxLeftWidth    = sheet ? -1 : 0;
-    margins.cxRightWidth   = sheet ? -1 : 0;
-    margins.cyTopHeight    = sheet ? -1 : 0;
-    margins.cyBottomHeight = sheet ? -1 : (fs ? 0 : 1);
+    if (borderless) {
+        margins.cxLeftWidth = margins.cxRightWidth = 0;
+        margins.cyTopHeight = margins.cyBottomHeight = 0;
+    } else {
+        margins.cxLeftWidth    = sheet ? -1 : 0;
+        margins.cxRightWidth   = sheet ? -1 : 0;
+        margins.cyTopHeight    = sheet ? -1 : 0;
+        margins.cyBottomHeight = sheet ? -1 : (fs ? 0 : 1);
+    }
     DwmExtendFrameIntoClientArea(hwnd, &margins);
 }
 
@@ -589,6 +613,12 @@ static LRESULT CALLBACK decoWndProc(
      * background only for that startup gap; after the first native redraw event
      * this is disabled to avoid solid-color flicker while resizing or dragging. */
     case WM_ERASEBKGND:
+        /* Borderless transparent overlays: claim the erase and paint nothing.
+         * A solid fill would reappear as a contour; the GL surface + tao
+         * DwmEnableBlurBehindWindow empty region already present the desktop. */
+        if (state->borderlessChrome) {
+            return 1;
+        }
         /* With a backdrop, newly exposed areas must be erased to GDI black:
          * GDI writes alpha 0 on the 32bpp redirection surface, which the
          * sheet-of-glass frame composites as "show the backdrop" (the classic
@@ -971,6 +1001,59 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetTit
     if (!hwnd) return;
     DecoState *state = getState(hwnd);
     if (state) state->titleBarHeightPx = (int)heightPx;
+}
+
+/**
+ * Fully borderless chrome for overlay/ghost windows
+ * (`DecoratedWindow(undecorated = true)`).
+ *
+ * Kills every DWM source of contour / drop shadow we can:
+ *  - caption + border colours → COLOR_NONE
+ *  - frame margins → {0,0,0,0} (the 1px bottom band exists *only* for shadow)
+ *  - squared corners (no rounded AA outline)
+ *  - visible frame border thickness 0 (Win11)
+ *  - system backdrop none (no Mica/Acrylic halo)
+ *
+ * Per-pixel transparency still comes from tao's DwmEnableBlurBehindWindow
+ * empty region. Safe to call repeatedly (e.g. after show()).
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBorderlessChrome(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean borderless)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return;
+    DecoState *state = getState(hwnd);
+    if (!state) return;
+    BOOL wanted = borderless ? TRUE : FALSE;
+    state->borderlessChrome = wanted;
+    /* Backdrop sheet-of-glass would re-arm frame extension + shadow. */
+    if (wanted) {
+        state->sheetOfGlass = FALSE;
+        state->backdropActive = FALSE;
+    }
+    applyCaptionColors(hwnd, state);
+    applyFrameMargins(hwnd, state);
+
+    int corner = wanted ? NUCLEUS_DWMWCP_DONOTROUND : NUCLEUS_DWMWCP_DEFAULT;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &corner, sizeof(corner));
+
+    if (wanted) {
+        /* Win11: zero the visible 1px non-client border thickness. */
+        UINT thickness = 0;
+        DwmSetWindowAttribute(hwnd, DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
+                              &thickness, sizeof(thickness));
+        /* DWMSBT_NONE — no system material halo around the HWND. */
+        int none = 1;
+        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+                              &none, sizeof(none));
+    }
+
+    SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
+        SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 /**

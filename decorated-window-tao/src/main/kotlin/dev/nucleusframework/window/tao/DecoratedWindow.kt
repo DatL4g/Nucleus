@@ -234,8 +234,8 @@ internal fun ApplicationScope.openDecoratedWindow(
     alwaysOnTop: Boolean = false,
     maximized: Boolean = false,
     isDialog: Boolean = false,
-    // Fully borderless window: no native chrome at all — on macOS this drops the
-    // traffic-light buttons too. For overlay/ghost windows (drag previews, HUDs).
+    // Fully borderless: macOS drops traffic lights; Win/Linux skip the Compose
+    // CSD outline (and Linux CSD shadow). For overlays/ghosts (drag previews, HUDs).
     undecorated: Boolean = false,
     // Full-window per-pixel transparency (#416). Creation-time only — see
     // DecoratedWindow(transparent = …).
@@ -310,6 +310,10 @@ internal fun ApplicationScope.openDecoratedWindow(
             // TaoComposeSceneHost.attach() instead.
             skipTaskbar = hiddenFromDock,
             transparent = transparent,
+            // Tao defaults undecorated windows to a DWM drop shadow (and
+            // grows the outer rect for its inset). Borderless overlays must
+            // opt out or the ghost still shows a soft contour.
+            undecoratedShadow = !undecorated,
         )
 
     // Compose Hot Reload: the agent only auto-wraps AWT `ComposeWindow`/
@@ -337,6 +341,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             alwaysOnTop,
             maximized,
             isDialog,
+            undecorated,
             icon,
             minimumSize,
             onCloseRequest,
@@ -359,6 +364,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             alwaysOnTop,
             maximized,
             isDialog,
+            undecorated,
             icon,
             minimumSize,
             onCloseRequest,
@@ -603,6 +609,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     alwaysOnTop: Boolean,
     maximized: Boolean,
     isDialog: Boolean,
+    undecorated: Boolean,
     icon: Painter?,
     minimumSize: DpSize?,
     onCloseRequest: () -> Unit,
@@ -621,7 +628,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     // default; the host gates it to Wayland non-popup windows (X11 stays flat)
     // and it degrades to no-op if the compositor lacks wl_shm / an RGBA visual.
     // Kill switch: NUCLEUS_TAO_LINUX_SHADOW=0. See docs/linux-csd-shadow-subsurface.md.
-    host.decorationShadowEnabled = System.getenv("NUCLEUS_TAO_LINUX_SHADOW") != "0"
+    // Fully borderless overlays (`undecorated`) drop the shadow too.
+    host.decorationShadowEnabled =
+        !undecorated && System.getenv("NUCLEUS_TAO_LINUX_SHADOW") != "0"
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────
@@ -690,14 +699,20 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 // loop). See [TaoLinuxUriHandler].
                 LocalUriHandler provides TaoLinuxUriHandler,
             ) {
+                // Default: CSD outline (vanilla-style frame for custom chrome).
+                // `undecorated` = fully borderless overlay — no Compose stroke.
                 val border =
-                    rememberUndecoratedWindowBorder(
-                        state = stateHolder.value,
-                        linuxDe = linuxDe,
-                        gnomeCornerArc = 24f,
-                        kdeCornerArc = 10f,
-                        isDialog = isDialog,
-                    )
+                    if (undecorated) {
+                        Modifier
+                    } else {
+                        rememberUndecoratedWindowBorder(
+                            state = stateHolder.value,
+                            linuxDe = linuxDe,
+                            gnomeCornerArc = 24f,
+                            kdeCornerArc = 10f,
+                            isDialog = isDialog,
+                        )
+                    }
                 val modalCount =
                     remember {
                         mutableStateOf(0)
@@ -983,6 +998,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     alwaysOnTop: Boolean,
     maximized: Boolean,
     isDialog: Boolean,
+    undecorated: Boolean,
     icon: Painter?,
     minimumSize: DpSize?,
     onCloseRequest: () -> Unit,
@@ -993,7 +1009,12 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     transparent: Boolean,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
-    val host = TaoComposeSceneHostWindows(window, fullyTransparent = transparent)
+    val host =
+        TaoComposeSceneHostWindows(
+            window,
+            fullyTransparent = transparent,
+            borderlessChrome = undecorated,
+        )
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
@@ -1024,7 +1045,9 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     host.semanticsOwnerListener = a11yObserver
 
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true, maximized = maximized))
-    val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
+    // Borderless overlays have no TitleBar chrome — keep the caption zone at 0.
+    val titleBarHeightState =
+        host.titleBarHeightDpState.also { it.value = if (undecorated) 0f else 32f }
     // Hoisted out of the composition so the initial native theme push below
     // (before the first blocking render and show()) can read it.
     val appearanceOverride = mutableStateOf(dev.nucleusframework.window.WindowAppearanceMode.System)
@@ -1101,14 +1124,21 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                         }
                     }
                 }
+                // Default: CSD outline for custom chrome windows. `undecorated`
+                // means fully borderless (vanilla Compose Desktop semantics for
+                // overlays/ghosts) — do not stroke a frame.
                 val border =
-                    rememberUndecoratedWindowBorder(
-                        state = stateHolder.value,
-                        linuxDe = LinuxDesktopEnvironment.Unknown,
-                        gnomeCornerArc = 24f,
-                        kdeCornerArc = 10f,
-                        isDialog = isDialog,
-                    )
+                    if (undecorated) {
+                        Modifier
+                    } else {
+                        rememberUndecoratedWindowBorder(
+                            state = stateHolder.value,
+                            linuxDe = LinuxDesktopEnvironment.Unknown,
+                            gnomeCornerArc = 24f,
+                            kdeCornerArc = 10f,
+                            isDialog = isDialog,
+                        )
+                    }
                 val modalCount =
                     remember {
                         mutableStateOf(0)
@@ -1175,10 +1205,25 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         // native side before the first paint — the snapshot flow above only
         // starts once the event loop resumes, which is after show().
         pushNativeTheme()
+        // Theme push re-runs applyCaptionColors; reassert borderless so a
+        // transparent clear (alpha-0 → RGB black) cannot restore a DWM border.
+        if (undecorated && NativeTaoWindowsDecoBridge.isLoaded) {
+            val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+            if (hwnd != 0L) {
+                NativeTaoWindowsDecoBridge.nativeSetBorderlessChrome(hwnd, true)
+            }
+        }
         // onResized renders synchronously, so this doubles as the guaranteed
         // first paint before the window is shown (no separate onRedrawRequested).
         host.onResized(initialW, initialH)
         if (visible) window.show()
+        // DWM finalises non-client chrome on show — reassert once more.
+        if (undecorated && NativeTaoWindowsDecoBridge.isLoaded) {
+            val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+            if (hwnd != 0L) {
+                NativeTaoWindowsDecoBridge.nativeSetBorderlessChrome(hwnd, true)
+            }
+        }
     }
 
     // Fullscreen toggle, two hooks (issue 413):

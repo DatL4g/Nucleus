@@ -87,6 +87,9 @@ public object TaoApplication {
         skipTaskbar: Boolean = false,
         // Full-window per-pixel transparency (#416). Creation-time only.
         transparent: Boolean = false,
+        // Windows: DWM drop shadow on undecorated windows (tao default true).
+        // Set false for borderless overlays (`DecoratedWindow(undecorated)`).
+        undecoratedShadow: Boolean = true,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
         val window = TaoWindow(handle, isResizable = resizable, isPopup = popupOf != null)
@@ -103,6 +106,7 @@ public object TaoApplication {
             popupOf?.handle ?: 0L,
             skipTaskbar,
             transparent,
+            undecoratedShadow,
         )
         return window
     }

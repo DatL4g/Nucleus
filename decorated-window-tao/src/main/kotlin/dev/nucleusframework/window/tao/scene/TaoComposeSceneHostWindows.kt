@@ -79,6 +79,9 @@ internal class TaoComposeSceneHostWindows(
     // Full-window per-pixel transparency (#416). Creation-time; pairs with
     // tao `with_transparent` (DWM blur-behind empty region).
     private val fullyTransparent: Boolean = false,
+    // Fully borderless overlay (`DecoratedWindow(undecorated = true)`): no
+    // Compose CSD stroke and no DWM caption/border/shadow contour.
+    private val borderlessChrome: Boolean = false,
 ) : AbstractTaoComposeSceneHost() {
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
@@ -261,8 +264,20 @@ internal class TaoComposeSceneHostWindows(
         // Title-bar height is set later — the value the TitleBar composable publishes
         // via SideEffect arrives after first composition.
         scale = NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f
-        val initialTitleBarPx = (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
+        // Borderless overlays have no caption chrome: keep the deco zone at 0
+        // so we don't reserve a phantom 28px title-bar hit band.
+        val initialTitleBarPx =
+            if (borderlessChrome) {
+                0
+            } else {
+                (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
+            }
         NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
+        if (borderlessChrome) {
+            // Kill DWM 1px contour + shadow margin (Compose border is already
+            // skipped by the openDecoratedWindowWindows undecorated path).
+            NativeTaoWindowsDecoBridge.nativeSetBorderlessChrome(hwnd, true)
+        }
 
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()

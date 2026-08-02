@@ -64,7 +64,17 @@ public fun ApplicationScope.DecoratedWindow(
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
     isDialog: Boolean = false,
-    /** Fully borderless window (no traffic lights on macOS) — for overlays/ghosts. */
+    /**
+     * Fully borderless window — for overlays/ghosts (drag previews, HUDs).
+     *
+     * - macOS: drops native traffic lights / title-bar chrome.
+     * - Windows / Linux: skips the Compose CSD outline
+     *   ([rememberUndecoratedWindowBorder]); on Linux also disables the
+     *   client-side drop-shadow subsurface. Default `false` keeps the usual
+     *   custom-chrome frame.
+     *
+     * Pair with [transparent] for a vanilla-Compose-like see-through overlay.
+     */
     undecorated: Boolean = false,
     /**
      * Full-window per-pixel transparency (#416). Creation-time only.
@@ -79,6 +89,8 @@ public fun ApplicationScope.DecoratedWindow(
      * Prefer custom chrome over stock [TitleBar] when you want a mostly
      * see-through window; TitleBar paints its own bar but no longer fills the
      * empty client via the clear path.
+     *
+     * For a fully borderless ghost (no CSD outline), also pass [undecorated].
      */
     transparent: Boolean = false,
     /**

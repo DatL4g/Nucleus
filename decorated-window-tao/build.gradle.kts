@@ -188,6 +188,46 @@ val smokeStandalonePanelMac by tasks.registering(JavaExec::class) {
     jvmArgs("-XstartOnFirstThread")
 }
 
+// Manual smoke for #416: transparent DecoratedWindow + opaque marker over desktop.
+// Captures under build/reports/tao-transparent-smoke and pixel-checks that the
+// empty client composites the desktop. Not part of `check`.
+//
+// Windows: java.awt.Robot omits layered windows. Point
+// `-Dnucleus.tao.transparent.smoke.captureTool=` at a CAPTUREBLT helper
+// (built into build/tmp-smoke/capture_region.exe by the smoke setup).
+val taoTransparentSmoke by tasks.registering(JavaExec::class) {
+    description = "Manual smoke: DecoratedWindow(transparent=true) over the desktop (#416)"
+    group = "verification"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.nucleusframework.window.tao.headful.TransparentWindowSmokeMain")
+    val outDir =
+        layout.buildDirectory
+            .dir("reports/tao-transparent-smoke")
+            .get()
+            .asFile
+    val captureTool =
+        layout.buildDirectory
+            .file("tmp-smoke/capture_region.exe")
+            .get()
+            .asFile
+    systemProperty("nucleus.tao.transparent.smoke.outdir", outDir.absolutePath)
+    systemProperty("nucleus.tao.transparent.smoke.captureTool", captureTool.absolutePath)
+    // Forward hold duration so a manual look is possible, e.g.
+    // -Dnucleus.tao.transparent.smoke.holdMs=10000
+    System.getProperty("nucleus.tao.transparent.smoke.holdMs")?.let {
+        systemProperty("nucleus.tao.transparent.smoke.holdMs", it)
+    }
+    // Fail fast with a clear message if the helper is missing on Windows.
+    doFirst {
+        if (Os.isFamily(Os.FAMILY_WINDOWS) && !captureTool.isFile) {
+            error(
+                "CAPTUREBLT helper missing at ${captureTool.absolutePath}. " +
+                    "Build it once with cl against capture_region.c (see TransparentWindowSmokeMain).",
+            )
+        }
+    }
+}
+
 // ── Maven publication ──────────────────────────────────────────────────────
 
 mavenPublishing {

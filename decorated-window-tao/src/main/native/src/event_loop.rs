@@ -192,6 +192,7 @@ pub(crate) fn run_event_loop_blocking() {
                     popup_of,
                     skip_taskbar,
                     transparent,
+                    undecorated_shadow,
                 } => {
                     #[allow(unused_mut)]
                     let mut builder = WindowBuilder::new()
@@ -205,11 +206,17 @@ pub(crate) fn run_event_loop_blocking() {
                     // attribute — tao re-derives GWL_EXSTYLE from its
                     // WindowFlags on every state change, so a post-creation
                     // style poke is clobbered on the next activation.
+                    // Also wire undecorated DWM drop-shadow (tao default true;
+                    // borderless overlays pass false so no soft contour).
                     #[cfg(target_os = "windows")]
                     {
                         use tao::platform::windows::WindowBuilderExtWindows;
-                        builder = builder.with_skip_taskbar(skip_taskbar);
+                        builder = builder
+                            .with_skip_taskbar(skip_taskbar)
+                            .with_undecorated_shadow(undecorated_shadow);
                     }
+                    #[cfg(not(target_os = "windows"))]
+                    let _ = undecorated_shadow;
                     // Linux: GTK skip-taskbar + skip-pager hints
                     // (_NET_WM_STATE_SKIP_TASKBAR). Effective on X11 and
                     // XWayland; silently ignored on native Wayland, which has

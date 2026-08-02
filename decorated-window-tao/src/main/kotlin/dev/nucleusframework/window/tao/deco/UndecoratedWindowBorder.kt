@@ -22,10 +22,14 @@ import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
 private val DialogElevationStroke = Color(0x1F000000)
 
 /**
- * Returns the [Modifier.insideBorder] used by `DecoratedWindow` on
- * Linux + Windows when running undecorated (no native chrome) — same logic
- * as `decorated-window-jni`'s `DecoratedWindowBody`. macOS keeps its native
- * decorations and does not need a Compose-drawn border.
+ * Returns the [Modifier.insideBorder] used by Tao `DecoratedWindow` on
+ * Linux + Windows for the **default custom-chrome** look (no native frame —
+ * same role as `decorated-window-jni`'s `DecoratedWindowBody` border). macOS
+ * keeps native decorations and does not need this.
+ *
+ * Callers that pass `undecorated = true` (fully borderless overlays / ghosts)
+ * must **not** apply this modifier — that matches vanilla Compose Desktop
+ * `Window(undecorated = true)` (no framework-drawn contour).
  *
  * When [isDialog] is set, a faint shadow-toned stroke is layered on top so the
  * dialog reads as an elevated surface above its dimmed parent (Linux only —
