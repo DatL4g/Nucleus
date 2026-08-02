@@ -592,6 +592,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun onDestroyed (Lkotlin/jvm/functions/Function0;)V
 	public final fun onDragWindow (Lkotlin/jvm/functions/Function0;)V
 	public final fun onFocusChanged (Lkotlin/jvm/functions/Function1;)V
+	public final fun onFullscreenPrepare (Lkotlin/jvm/functions/Function3;)V
 	public final fun onKeyEvent (Ldev/nucleusframework/window/tao/TaoWindow$KeyEventListener;)V
 	public final fun onMinimizedChanged (Lkotlin/jvm/functions/Function1;)V
 	public final fun onMoved (Lkotlin/jvm/functions/Function2;)V
