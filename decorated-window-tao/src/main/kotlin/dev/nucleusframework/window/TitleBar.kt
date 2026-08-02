@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -363,16 +364,34 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // based on pointer Y. The inline slot collapses to nothing so the user
     // content fills the screen, and the deco's caption zone is zeroed so the
     // WndProc returns HTCLIENT everywhere (the overlay handles its own input).
+    //
+    // The handoff runs during COMPOSITION, not in a SideEffect: these state
+    // writes invalidate FullscreenOverlayHost's scope within the SAME frame,
+    // so the first fullscreen composition already shows a collapsed inline
+    // slot AND the armed overlay. Publishing from a SideEffect landed one
+    // frame late — a composited frame with no title bar at all mid-toggle
+    // (the issue-413 layout corruption); the LaunchedEffect-based clear on
+    // exit was likewise one frame late (a frame with both bars).
+    val latestTitleBarRendering by rememberUpdatedState(titleBarRendering)
+    val overlayContent = remember { @Composable { latestTitleBarRendering() } }
     if (useOverlay && overlayHolder != null) {
         val ctx = currentCompositionLocalContext
-        SideEffect {
-            heightHolder.value = 0f
-            overlayHolder.titleBarHeight = style.metrics.height
+        heightHolder.value = 0f
+        overlayHolder.titleBarHeight = style.metrics.height
+        if (overlayHolder.compositionLocalContext !== ctx) {
             overlayHolder.compositionLocalContext = ctx
-            overlayHolder.content = titleBarRendering
+        }
+        // Stable lambda: assigning the same instance on every recomposition
+        // keeps the holder's state from invalidating the overlay each frame.
+        if (overlayHolder.content !== overlayContent) {
+            overlayHolder.content = overlayContent
         }
     } else {
         titleBarRendering()
+        // Same-frame clear on the recomposition that turns the overlay off.
+        if (overlayHolder != null && overlayHolder.content === overlayContent) {
+            overlayHolder.content = null
+        }
     }
 
     // Push the resolved caption height to the deco WndProc on every overlay

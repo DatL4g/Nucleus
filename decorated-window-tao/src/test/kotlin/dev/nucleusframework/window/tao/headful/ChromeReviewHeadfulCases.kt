@@ -25,6 +25,7 @@ import dev.nucleusframework.window.WindowBackground
 import dev.nucleusframework.window.WindowScaffold
 import dev.nucleusframework.window.WindowsBackdrop
 import dev.nucleusframework.window.WindowsBackdropStyle
+import dev.nucleusframework.window.newFullscreenControls
 import dev.nucleusframework.window.noWindowDrag
 import dev.nucleusframework.window.tao.LocalRequestedTransparentBackground
 import dev.nucleusframework.window.tao.LocalWindowClearColorLayers
@@ -56,7 +57,94 @@ internal object ChromeReviewHeadfulCases {
             windowBackgroundAndTitleBarClearColor(),
             noWindowDragBlocksAncestorDragArea(),
             hideBarZerosControlsInsetsInFullscreen(),
+            fullscreenToggleVisualCapture(),
         )
+
+    /**
+     * Issue-413 diagnostic: captures the composited desktop with an AWT
+     * Robot while a real fullscreen enter + exit runs, and saves every frame
+     * around the transitions as PNG under `%TEMP%/fs413-capture/` for visual
+     * inspection. Never fails on the visuals — it is an instrument, not a
+     * gate: the artifact only exists as pixels DWM composites, which no
+     * geometry probe can see.
+     */
+    private fun fullscreenToggleVisualCapture(): TaoWindowTestCase =
+        TaoWindowTestCase(
+            name = "fullscreen toggle visual capture (fs413 diagnostic)",
+            skip = {
+                when {
+                    // Opt-in only: grabs dozens of full-screen BufferedImages
+                    // (~11MB each) — far too heavy for CI runners, and only
+                    // useful when a human inspects the PNGs afterwards.
+                    System.getProperty("nucleus.fs413.capture") != "true" ->
+                        "diagnostic instrument — enable with -Dnucleus.fs413.capture=true"
+                    !isWindows -> "Windows-only fullscreen diagnostic"
+                    java.awt.GraphicsEnvironment.isHeadless() -> "no display for Robot capture"
+                    else -> null
+                }
+            },
+            content = {
+                TitleBar(Modifier.newFullscreenControls())
+                // Distinctive content color so stale/blank regions stand out.
+                Box(Modifier.fillMaxSize().background(Color(0xFF203040)))
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                settle(700)
+                val robot = Robot()
+                val screen =
+                    java.awt.Rectangle(
+                        java.awt.Toolkit
+                            .getDefaultToolkit()
+                            .screenSize,
+                    )
+                val frames =
+                    java.util.Collections.synchronizedList(
+                        mutableListOf<Pair<Long, java.awt.image.BufferedImage>>(),
+                    )
+                val capturing =
+                    java.util.concurrent.atomic
+                        .AtomicBoolean(true)
+                val grabber =
+                    kotlin.concurrent.thread(name = "fs413-capture") {
+                        while (capturing.get() && frames.size < MAX_CAPTURE_FRAMES) {
+                            frames += System.nanoTime() to robot.createScreenCapture(screen)
+                        }
+                    }
+                settle(150)
+                val enterNs = System.nanoTime()
+                window.setFullscreen(true)
+                settle(800)
+                val exitNs = System.nanoTime()
+                window.setFullscreen(false)
+                settle(800)
+                capturing.set(false)
+                grabber.join()
+
+                val dir = java.io.File(System.getProperty("java.io.tmpdir"), "fs413-capture")
+                dir.mkdirs()
+                dir.listFiles()?.forEach { it.delete() }
+                var saved = 0
+                for ((i, entry) in frames.withIndex()) {
+                    val (ts, img) = entry
+                    val dtEnter = (ts - enterNs) / 1_000_000
+                    val dtExit = (ts - exitNs) / 1_000_000
+                    val nearEnter = dtEnter in -100..400
+                    val nearExit = dtExit in -100..400
+                    if (nearEnter || nearExit) {
+                        val tag = if (nearEnter) "enter${dtEnter}ms" else "exit${dtExit}ms"
+                        javax.imageio.ImageIO.write(img, "png", java.io.File(dir, "f%03d_%s.png".format(i, tag)))
+                        saved++
+                    }
+                }
+                System.err.println(
+                    "[fs413-capture] ${frames.size} frames grabbed, $saved saved to $dir " +
+                        "(enter@0ms in 'enter' tags, exit@0ms in 'exit' tags)",
+                )
+            },
+        )
+
+    private const val MAX_CAPTURE_FRAMES = 120
 
     /**
      * Review P0: cancelable close must not permanently tear down a live

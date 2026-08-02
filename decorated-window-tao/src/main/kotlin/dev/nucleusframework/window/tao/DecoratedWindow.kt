@@ -1139,6 +1139,58 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.onResized(initialW, initialH)
         if (visible) window.show()
     }
+
+    // Fullscreen toggle, two hooks (issue 413):
+    //  1. Pre-layout at the target size before the geometry change — warms
+    //     Compose measure/layout without presenting anything, with the
+    //     chrome already flipped to the TARGET state.
+    //  2. The synchronous prepare, invoked from the deco WndProc INSIDE the
+    //     toggle's SetWindowPos (WM_WINDOWPOSCHANGED): renders + presents
+    //     the new-size frame before the geometry change returns, so DWM
+    //     never composites the new geometry with stale content. The Windows
+    //     analog of the macOS windowWillEnter/ExitFullScreen prepare.
+    fun syncPlacementFlags() {
+        val maxNow = window.isMaximized
+        val fsNow = window.isFullscreen
+        if (stateHolder.value.isMaximized != maxNow ||
+            stateHolder.value.isFullscreen != fsNow
+        ) {
+            stateHolder.value =
+                stateHolder.value.copy(
+                    maximized = maxNow,
+                    fullscreen = fsNow,
+                )
+        }
+    }
+    // Installed lazily from the prepare (the HWND is not resolvable at
+    // window-construction time), synchronously before the toggle's geometry
+    // change — so the hook always exists by the time the prepare fires.
+    var fsSizeHookInstalled = false
+
+    fun installFullscreenSizeHook() {
+        if (fsSizeHookInstalled || !NativeTaoWindowsDecoBridge.isLoaded) return
+        val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+        if (hwnd == 0L) return
+        fsSizeHookInstalled = true
+        NativeTaoWindowsDecoBridge.setFullscreenSizeHook(hwnd) { w, h ->
+            syncPlacementFlags()
+            host.fullscreenTransitionResized(w, h)
+            host.syncTitleBarHeight()
+        }
+        window.onDestroyed {
+            NativeTaoWindowsDecoBridge.setFullscreenSizeHook(hwnd, null)
+        }
+    }
+    window.onFullscreenPrepare { w, h, fs ->
+        installFullscreenSizeHook()
+        // Chrome flags first, from the INTENT (the native flag flips later,
+        // inside nativeSetFullscreen): the warmed layout must already show
+        // the target chrome (overlay armed on enter, inline bar on exit).
+        if (stateHolder.value.isFullscreen != fs) {
+            stateHolder.value = stateHolder.value.copy(fullscreen = fs)
+        }
+        host.fullscreenPreLayout(w, h)
+    }
     window.onResized { w, h ->
         host.onResized(w, h)
         host.syncTitleBarHeight()

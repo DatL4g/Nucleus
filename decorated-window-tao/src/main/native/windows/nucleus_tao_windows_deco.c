@@ -87,6 +87,28 @@ typedef struct {
      * suppresses both the WM_ERASEBKGND fill and the caption/border color
      * overrides that would otherwise paint over it. */
     BOOL    backdropActive;
+    /* Set while the frame is extended to the full sheet of glass
+     * ({-1,-1,-1,-1}) for a DWM backdrop tier. Remembered so the fullscreen
+     * toggle can re-derive the correct margins for the current mode — the
+     * accent (Windows 10 acrylic) tier is backdropActive without the sheet. */
+    BOOL    sheetOfGlass;
+    /* TRUE while a fullscreen toggle's geometry change is in flight. While
+     * set, the WM_WINDOWPOSCHANGED the change generates is forwarded
+     * SYNCHRONOUSLY to the JVM (NativeTaoWindowsDecoBridge.
+     * onFullscreenSizeChanged), which renders + presents the new-size frame
+     * on this stack, before the geometry call returns — the Windows analog
+     * of the macOS windowWillEnter/ExitFullScreen prepare (NucleusTaoMetal.m
+     * willEnterFS). Rendering after SetWindowPos returned was always ≥1
+     * composited frame too late (issue 413). NOTE: hooked at
+     * WM_WINDOWPOSCHANGED, not WM_SIZE — Tao's subclass handles
+     * WINDOWPOSCHANGED without DefWindowProc, so WM_SIZE never fires here. */
+    BOOL    fsTransitionActive;
+    /* Expected final client size of the in-flight toggle: only near-final
+     * sizes are forwarded (the geometry ops also deliver intermediate
+     * frame-recalc sizes, each worth a wasted relayout). Exit is an
+     * estimate, hence the tolerance at the forward site. */
+    int     fsExpectedW;
+    int     fsExpectedH;
     /* Set when the active backdrop is the Windows 10 accent-policy acrylic
      * rather than a DWM one. DWM tints its own materials from the OS theme,
      * but the accent policy takes an explicit tint colour that has to be
@@ -152,6 +174,12 @@ static BOOL isCaptionButtonHit(WPARAM code) {
 #ifndef DWMWA_COLOR_DEFAULT
 #define DWMWA_COLOR_DEFAULT 0xFFFFFFFF
 #endif
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+/* DWM_WINDOW_CORNER_PREFERENCE wire values (avoid depending on a 22H2 SDK). */
+#define NUCLEUS_DWMWCP_DEFAULT    0
+#define NUCLEUS_DWMWCP_DONOTROUND 1
 
 /* Backdrop styles below this are "no backdrop": DWMSBT_AUTO (0) leaves the
  * choice to DWM, which means none for an ordinary window, and DWMSBT_NONE (1)
@@ -310,6 +338,7 @@ static DWORD resolveTintGradient(DecoState *state) {
 }
 
 static void applyCaptionColors(HWND hwnd, DecoState *state);
+static void applyFrameMargins(HWND hwnd, DecoState *state);
 
 /* Turns a backdrop window back into a plain opaque themed one, immediately —
  * the last composited image before a close must be the theme colour, not
@@ -319,13 +348,13 @@ static void revertBackdropForClose(HWND hwnd, DecoState *state) {
     if (!state || !state->backdropActive) return;
     state->backdropActive = FALSE;
     state->accentActive = FALSE;
+    state->sheetOfGlass = FALSE;
     int none = 1; /* DWMSBT_NONE */
     DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &none, sizeof(none));
     resolveLegacyBackdropApis();
     applyAccentAcrylic(hwnd, FALSE, 0);
     applyLegacyMica(hwnd, FALSE);
-    MARGINS margins = { 0, 0, 0, 1 };
-    DwmExtendFrameIntoClientArea(hwnd, &margins);
+    applyFrameMargins(hwnd, state);
     applyCaptionColors(hwnd, state);
     HDC dc = GetDC(hwnd);
     RECT rc;
@@ -347,8 +376,70 @@ static void applyCaptionColors(HWND hwnd, DecoState *state) {
     COLORREF themed = state ? state->bgColor : RGB(255, 255, 255);
     COLORREF caption = backdrop ? (COLORREF)DWMWA_COLOR_NONE : themed;
     COLORREF border = backdrop ? (COLORREF)DWMWA_COLOR_DEFAULT : themed;
+    /* Fullscreen: the borderless window covers the monitor exactly, so any
+     * fill DWM still draws for these attributes shows as a 1px contour of
+     * the wrong colour around the content — the issue-413 white edge (worst
+     * with a backdrop, where the border is otherwise the light system
+     * default). */
+    if (state && state->isFullscreen) {
+        caption = (COLORREF)DWMWA_COLOR_NONE;
+        border = (COLORREF)DWMWA_COLOR_NONE;
+    }
     DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
     DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
+}
+
+/* The DwmExtendFrameIntoClientArea margins for the current mode. Windowed
+ * keeps the 1px bottom extension that preserves the DWM drop shadow (or the
+ * full sheet of glass while a DWM backdrop tier is live). Fullscreen drops
+ * the 1px band: with the window covering the monitor it composites as a
+ * light hairline along the bottom edge (issue 413). */
+static void applyFrameMargins(HWND hwnd, DecoState *state) {
+    BOOL sheet = state && state->sheetOfGlass;
+    BOOL fs = state && state->isFullscreen;
+    MARGINS margins;
+    margins.cxLeftWidth    = sheet ? -1 : 0;
+    margins.cxRightWidth   = sheet ? -1 : 0;
+    margins.cyTopHeight    = sheet ? -1 : 0;
+    margins.cyBottomHeight = sheet ? -1 : (fs ? 0 : 1);
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+}
+
+/* Borderless fullscreen is deliberately NOT sized exactly to the monitor:
+ * when a window's client rect matches the screen, the graphics driver / DWM
+ * promote its swapchain to independent flip ("fullscreen optimization").
+ * The promotion and every later demotion (popup, alt-tab, toggle) briefly
+ * composites DWM's stale cached frame — the issue-413 dual ghost — and on
+ * some stacks leaves a light 1px contour. AMD drivers apply this heuristic
+ * on the client rectangle alone, ignoring window styles entirely (measured
+ * by the Godot team: godotengine/godot#63500), so the only reliable opt-out
+ * is to overhang the screen by a couple of pixels and clip them back off
+ * with a window region — the same mechanism Godot's multiwindow fullscreen
+ * uses (_get_screen_expand_offset + SetWindowRgn). */
+#define FS_EXPAND_PX 2
+
+/* Picks the edge the fullscreen overhang hangs off: the bottom, unless
+ * another monitor sits directly below (the overhang should stay off every
+ * screen), then the right. Both occupied: bottom — the window region keeps
+ * the overhang invisible there too. */
+static void getFullscreenExpandOffset(
+    HMONITOR hMon, const MONITORINFO *mi, int *dx, int *dy)
+{
+    POINT below;
+    below.x = (mi->rcMonitor.left + mi->rcMonitor.right) / 2;
+    below.y = mi->rcMonitor.bottom + 1;
+    POINT right;
+    right.x = mi->rcMonitor.right + 1;
+    right.y = (mi->rcMonitor.top + mi->rcMonitor.bottom) / 2;
+    HMONITOR mBelow = MonitorFromPoint(below, MONITOR_DEFAULTTONULL);
+    HMONITOR mRight = MonitorFromPoint(right, MONITOR_DEFAULTTONULL);
+    if (mBelow == NULL || mBelow == hMon) {
+        *dx = 0; *dy = FS_EXPAND_PX;
+    } else if (mRight == NULL || mRight == hMon) {
+        *dx = FS_EXPAND_PX; *dy = 0;
+    } else {
+        *dx = 0; *dy = FS_EXPAND_PX;
+    }
 }
 
 static DecoState *getState(HWND hwnd) {
@@ -383,6 +474,52 @@ static BOOL isOwnedTaoPopup(HWND root, HWND owner) {
         currentOwner = GetWindow(currentOwner, GW_OWNER);
     }
     return FALSE;
+}
+
+/* ── JVM upcall for the fullscreen transition ─────────────────────────── */
+/* Cached in nativeInstallDecoration (the first JNI call with an env). Same
+ * pattern as NucleusTaoMetal.m's ensureMetalJVMCached. */
+static JavaVM   *sDecoJVM = NULL;
+static jclass    sDecoBridgeClass = NULL;   /* global ref */
+static jmethodID sDecoOnFullscreenSize = NULL;
+
+static void ensureDecoJVMCached(JNIEnv *env) {
+    if (sDecoJVM) return;
+    if ((*env)->GetJavaVM(env, &sDecoJVM) != JNI_OK) { sDecoJVM = NULL; return; }
+    jclass local = (*env)->FindClass(env,
+        "dev/nucleusframework/window/tao/ffi/NativeTaoWindowsDecoBridge");
+    if (local) {
+        sDecoBridgeClass = (jclass)(*env)->NewGlobalRef(env, local);
+        (*env)->DeleteLocalRef(env, local);
+        sDecoOnFullscreenSize = (*env)->GetStaticMethodID(
+            env, sDecoBridgeClass, "onFullscreenSizeChanged", "(JII)V");
+    }
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
+/* Calls NativeTaoWindowsDecoBridge.onFullscreenSizeChanged(hwnd, w, h) and
+ * BLOCKS until the JVM has rendered + presented at that size. Invoked from
+ * WM_WINDOWPOSCHANGED inside the fullscreen toggle's geometry change, on
+ * the Tao main thread — the JVM render runs re-entrantly on this stack, so
+ * the frame exists before the geometry change returns to the caller. */
+static void notifyFullscreenSizeChanged(HWND hwnd, int w, int h) {
+    if (!sDecoJVM || !sDecoBridgeClass || !sDecoOnFullscreenSize) return;
+    JNIEnv *env = NULL;
+    jint status = (*sDecoJVM)->GetEnv(sDecoJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sDecoJVM)->AttachCurrentThreadAsDaemon(sDecoJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
+    }
+    if (!env) return;
+    (*env)->CallStaticVoidMethod(env, sDecoBridgeClass, sDecoOnFullscreenSize,
+        (jlong)(uintptr_t)hwnd, (jint)w, (jint)h);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+    }
 }
 
 /* WndProc subclass */
@@ -489,6 +626,30 @@ static LRESULT CALLBACK decoWndProc(
         }
         return 1;
 
+
+    /* Fullscreen toggle: render + present the new-size frame synchronously,
+     * INSIDE the geometry change, before Tao's async RESIZED event would
+     * ever run. Tao's handler runs first so its cached size stays
+     * consistent. Only the (near-)final size is forwarded — intermediate
+     * frame-recalc geometries live for microseconds inside the win32 call. */
+    case WM_WINDOWPOSCHANGED: {
+        if (state->fsTransitionActive) {
+            LRESULT result = CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+            RECT rc;
+            if (GetClientRect(hwnd, &rc) && rc.right > 0 && rc.bottom > 0) {
+                int dw = (int)rc.right - state->fsExpectedW;
+                if (dw < 0) dw = -dw;
+                int dh = (int)rc.bottom - state->fsExpectedH;
+                if (dh < 0) dh = -dh;
+                /* Tolerance: the exit target is an estimate. */
+                if (dw <= 64 && dh <= 64) {
+                    notifyFullscreenSizeChanged(hwnd, (int)rc.right, (int)rc.bottom);
+                }
+            }
+            return result;
+        }
+        break;
+    }
 
     case WM_NCCALCSIZE: {
         if (!wParam) break;
@@ -739,9 +900,13 @@ JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
 {
-    (void)env; (void)clazz;
+    (void)clazz;
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return;
+
+    /* Prime the native → JVM upcall for the fullscreen-transition prepare:
+     * it fires from WM_WINDOWPOSCHANGED with no JNIEnv of its own. */
+    ensureDecoJVMCached(env);
 
     DecoState *existing = getState(hwnd);
     if (existing) {
@@ -990,12 +1155,17 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBac
         }
     }
 
-    MARGINS margins;
-    margins.cxLeftWidth    = sheetOfGlass ? -1 : 0;
-    margins.cxRightWidth   = sheetOfGlass ? -1 : 0;
-    margins.cyTopHeight    = sheetOfGlass ? -1 : 0;
-    margins.cyBottomHeight = sheetOfGlass ? -1 : 1;
-    DwmExtendFrameIntoClientArea(hwnd, &margins);
+    if (state) {
+        state->sheetOfGlass = sheetOfGlass;
+        applyFrameMargins(hwnd, state);
+    } else {
+        MARGINS margins;
+        margins.cxLeftWidth    = sheetOfGlass ? -1 : 0;
+        margins.cxRightWidth   = sheetOfGlass ? -1 : 0;
+        margins.cyTopHeight    = sheetOfGlass ? -1 : 0;
+        margins.cyBottomHeight = sheetOfGlass ? -1 : 1;
+        DwmExtendFrameIntoClientArea(hwnd, &margins);
+    }
 
     /* Re-resolve the caption: it is DWM's while a backdrop shows, and the
      * themed color again once the backdrop is gone. */
@@ -1079,6 +1249,69 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetSta
     if (state) state->startupBackgroundErase = enabled ? TRUE : FALSE;
 }
 
+/* Estimated client size after the fullscreen exit restore. Exact for the
+ * normal case (WM_NCCALCSIZE keeps the full top and the default side/bottom
+ * frame); the maximized case approximates with the work area. */
+static void estimateRestoredClientSize(HWND hwnd, DecoState *state, int *w, int *h) {
+    if (state->savedPlacement.showCmd == SW_SHOWMAXIMIZED) {
+        HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi;
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfoW(hMon, &mi);
+        *w = mi.rcWork.right - mi.rcWork.left;
+        *h = mi.rcWork.bottom - mi.rcWork.top;
+    } else {
+        UINT dpi = getDpi(hwnd);
+        int fx = getSystemMetrics(SM_CXSIZEFRAME, dpi)
+               + getSystemMetrics(SM_CXPADDEDBORDERWIDTH, dpi);
+        int fy = getSystemMetrics(SM_CYSIZEFRAME, dpi)
+               + getSystemMetrics(SM_CXPADDEDBORDERWIDTH, dpi);
+        RECT nr = state->savedPlacement.rcNormalPosition;
+        *w = (nr.right - nr.left) - 2 * fx;
+        *h = (nr.bottom - nr.top) - fy;
+    }
+}
+
+/* Target client size of the NEXT fullscreen toggle as [width, height], so
+ * the caller can pre-layout (warm the Compose measure/layout at the final
+ * size without presenting) before nativeSetFullscreen. NULL on a would-be
+ * no-op. Enter is exact (monitor + overhang); exit is an estimate — the
+ * synchronous WM_WINDOWPOSCHANGED prepare renders at the REAL size. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetFullscreenTargetSize(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean fullscreen)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return NULL;
+    DecoState *state = getState(hwnd);
+    if (!state) return NULL;
+    if ((fullscreen && state->isFullscreen) || (!fullscreen && !state->isFullscreen)) return NULL;
+
+    jint targetSize[2] = { 0, 0 };
+    if (fullscreen) {
+        HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi;
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfoW(hMon, &mi);
+        int expandX = 0, expandY = 0;
+        getFullscreenExpandOffset(hMon, &mi, &expandX, &expandY);
+        targetSize[0] = (mi.rcMonitor.right - mi.rcMonitor.left) + expandX;
+        targetSize[1] = (mi.rcMonitor.bottom - mi.rcMonitor.top) + expandY;
+    } else {
+        int w = 0, h = 0;
+        estimateRestoredClientSize(hwnd, state, &w, &h);
+        targetSize[0] = w;
+        targetSize[1] = h;
+    }
+
+    if (targetSize[0] <= 0 || targetSize[1] <= 0) return NULL;
+    jintArray arr = (*env)->NewIntArray(env, 2);
+    if (!arr) return NULL;
+    (*env)->SetIntArrayRegion(env, arr, 0, 2, targetSize);
+    return arr;
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetFullscreen(
     JNIEnv *env, jclass clazz, jlong hwndLong, jboolean fullscreen)
@@ -1118,14 +1351,31 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetFul
 
         state->isFullscreen = TRUE;
 
-        LONG style = state->savedStyle
-            & ~(LONG)(WS_CAPTION | WS_THICKFRAME | WS_MAXIMIZE);
-        SetWindowLongW(hwnd, GWL_STYLE, style);
+        /* The window KEEPS its WS_CAPTION | WS_THICKFRAME styles — same as
+         * Windows Terminal's fullscreen. Stripping them detaches the DWM
+         * frame, and every re-attach on exit paints 1-3 compositions of the
+         * legacy GDI caption + basic frame regardless of call order
+         * (captured on this machine). The styles are invisible in
+         * fullscreen anyway: WM_NCCALCSIZE returns the full window as
+         * client, WM_NCHITTEST disables the resize borders, and
+         * WM_SYSCOMMAND blocks move/size. Only WS_MAXIMIZE is dropped, so
+         * the fullscreen geometry is not fighting a zoomed state. */
+        if (state->savedStyle & WS_MAXIMIZE) {
+            SetWindowLongW(hwnd, GWL_STYLE, state->savedStyle & ~(LONG)WS_MAXIMIZE);
+        }
 
-        LONG exStyle = state->savedExStyle
-            & ~(LONG)(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE
-                     | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
-        SetWindowLongW(hwnd, GWL_EXSTYLE, exStyle);
+        /* Drop every DWM adornment BEFORE the geometry jump, so no
+         * intermediate composition still carries the windowed frame at the
+         * fullscreen size: the 1px bottom frame extension (a light hairline
+         * once the window covers the monitor), the caption/border fills
+         * (the white contour, COLOR_DEFAULT in backdrop mode), and the
+         * rounded-corner clip (anti-aliased light corners on a
+         * rectangular-content screen). */
+        applyFrameMargins(hwnd, state);
+        applyCaptionColors(hwnd, state);
+        int corner = NUCLEUS_DWMWCP_DONOTROUND;
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner, sizeof(corner));
 
         /* Cover the monitor as a NON-topmost window (HWND_NOTOPMOST), exactly
          * matching SDL's borderless-fullscreen pattern. We deliberately do NOT
@@ -1138,26 +1388,80 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetFul
          * above it and DWM composes normally. The taskbar still hides because
          * the shell auto-hides it for a foreground window that covers the whole
          * monitor — no topmost required (this is exactly what SDL relies on). */
+        /* Overhang the monitor by FS_EXPAND_PX on an edge with no adjacent
+         * monitor (the overhang lands off-screen, so it is invisible): a
+         * client rect that exactly matches the screen is what triggers the
+         * driver's exclusive / independent-flip promotion (see
+         * FS_EXPAND_PX). Deliberately NO SetWindowRgn clip: a region'd
+         * window loses its DWM frame and is rendered in BASIC mode — the
+         * exit transition then flashes the classic GDI caption and a black
+         * surface while DWM re-takes the window (captured on this machine).
+         * SWP_NOCOPYBITS keeps USER32 from bit-blitting the old windowed
+         * client into the new rect (the issue-413 dual ghost). */
+        int monW = mi.rcMonitor.right - mi.rcMonitor.left;
+        int monH = mi.rcMonitor.bottom - mi.rcMonitor.top;
+        int expandX = 0, expandY = 0;
+        getFullscreenExpandOffset(hMon, &mi, &expandX, &expandY);
+
+        /* The WM_WINDOWPOSCHANGED this generates re-enters the JVM
+         * synchronously (decoWndProc), rendering + presenting the
+         * fullscreen frame before SetWindowPos returns. */
+        state->fsTransitionActive = TRUE;
+        state->fsExpectedW = monW + expandX;
+        state->fsExpectedH = monH + expandY;
         SetWindowPos(hwnd, HWND_NOTOPMOST,
             mi.rcMonitor.left, mi.rcMonitor.top,
-            mi.rcMonitor.right - mi.rcMonitor.left,
-            mi.rcMonitor.bottom - mi.rcMonitor.top,
-            SWP_FRAMECHANGED);
+            monW + expandX, monH + expandY,
+            SWP_FRAMECHANGED | SWP_NOCOPYBITS);
+        state->fsTransitionActive = FALSE;
 
+        /* Wait for DWM to composite the new geometry before letting window
+         * transitions animate again: a re-enable racing the composition
+         * lets DWM animate the stale windowed frame into place. One flush
+         * is at most one composition pass — no cloak, no hide. */
+        DwmFlush();
         BOOL enableTransitions = FALSE;
         DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */,
             &enableTransitions, sizeof(enableTransitions));
     } else {
         if (!state->isFullscreen) return;
 
+        BOOL disableTransitions = TRUE;
+        DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */,
+            &disableTransitions, sizeof(disableTransitions));
+
         state->isFullscreen = FALSE;
 
-        SetWindowLongW(hwnd, GWL_EXSTYLE, state->savedExStyle);
-        LONG restoreStyle = state->savedStyle & ~(LONG)WS_MAXIMIZE;
-        SetWindowLongW(hwnd, GWL_STYLE, restoreStyle);
+        /* Reassert the windowed DWM adornments the enter path dropped —
+         * before the geometry restore, so the very first windowed
+         * composition already has the themed border/caption back (a stale
+         * fullscreen COLOR_NONE otherwise left a bare or accent-coloured
+         * contour after exit). */
+        applyFrameMargins(hwnd, state);
+        applyCaptionColors(hwnd, state);
+        int corner = NUCLEUS_DWMWCP_DEFAULT;
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner, sizeof(corner));
+
+        /* No styles to restore — they were never stripped (see the enter
+         * path): the DWM frame stays attached across the whole toggle, so
+         * the legacy-caption / basic-frame flash cannot happen. The
+         * placement restore alone re-applies the saved geometry (and
+         * SW_SHOWMAXIMIZED re-adds WS_MAXIMIZE itself). The synchronous
+         * prepare renders the windowed-size frame inside the restore, so
+         * DWM never composites the stale fullscreen frame cropped into the
+         * small window. */
+        state->fsTransitionActive = TRUE;
+        estimateRestoredClientSize(hwnd, state, &state->fsExpectedW, &state->fsExpectedH);
         SetWindowPlacement(hwnd, &state->savedPlacement);
         SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
+            SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_NOCOPYBITS);
+        state->fsTransitionActive = FALSE;
+
+        DwmFlush();
+        BOOL enableTransitions = FALSE;
+        DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */,
+            &enableTransitions, sizeof(enableTransitions));
     }
 }
 

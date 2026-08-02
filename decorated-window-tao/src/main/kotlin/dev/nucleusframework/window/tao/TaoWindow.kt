@@ -4,6 +4,7 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.mutableStateOf
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
@@ -457,6 +458,22 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetMinimized(handle, minimized)
     }
 
+    // Windows fullscreen toggle: invoked with (targetW, targetH, fullscreen)
+    // BEFORE the geometry change, so the render pipeline can pre-lay-out at
+    // the final size (nothing is presented). The synchronous
+    // WM_WINDOWPOSCHANGED prepare inside nativeSetFullscreen then only has
+    // to re-draw — fast enough to finish within the geometry change.
+    private val fullscreenPrepareListeners = CopyOnWriteArrayList<(Int, Int, Boolean) -> Unit>()
+
+    /**
+     * Windows only: registers the fullscreen pre-layout hook, invoked with
+     * the target client size and target state before the toggle's geometry
+     * change.
+     */
+    public fun onFullscreenPrepare(block: (width: Int, height: Int, fullscreen: Boolean) -> Unit) {
+        fullscreenPrepareListeners += block
+    }
+
     /** Borderless fullscreen on the current monitor.
      *
      * On Windows we route through the WndProc subclass (saves WINDOWPLACEMENT,
@@ -468,11 +485,28 @@ public class TaoWindow internal constructor(
         if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
             val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
             if (hwnd != 0L) {
-                NativeTaoWindowsDecoBridge.nativeSetFullscreen(hwnd, fullscreen)
+                setFullscreenWindows(hwnd, fullscreen)
                 return
             }
         }
         NativeTaoBridge.nativeSetFullscreen(handle, fullscreen)
+    }
+
+    private fun setFullscreenWindows(
+        hwnd: Long,
+        fullscreen: Boolean,
+    ) {
+        // Pre-layout is main-thread only: the prepare hook renders on this
+        // stack, and the EGL context lives on the Tao loop thread. An
+        // off-thread caller still gets a correct (if less atomic) toggle
+        // via the async RESIZED event.
+        if (Thread.currentThread() === TaoMainDispatcher.taoMainThread) {
+            val t = NativeTaoWindowsDecoBridge.nativeGetFullscreenTargetSize(hwnd, fullscreen)
+            if (t != null && t.size == 2 && t.all { it > 0 }) {
+                fullscreenPrepareListeners.forEach { it.invoke(t[0], t[1], fullscreen) }
+            }
+        }
+        NativeTaoWindowsDecoBridge.nativeSetFullscreen(hwnd, fullscreen)
     }
 
     public fun setAlwaysOnTop(alwaysOnTop: Boolean) {

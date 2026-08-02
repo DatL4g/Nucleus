@@ -742,6 +742,85 @@ internal class TaoComposeSceneHostWindows(
         scene?.compositionLocalContext = context
     }
 
+    /**
+     * Fullscreen-toggle pre-layout: measures + lays out the scene at the
+     * TARGET client size WITHOUT presenting anything — the draw goes into a
+     * throwaway recording canvas. Called before the toggle's geometry
+     * change so the synchronous WM_WINDOWPOSCHANGED prepare (see
+     * [NativeTaoWindowsDecoBridge.onFullscreenSizeChanged]) only has to
+     * re-draw an already-laid-out scene, which keeps it within the geometry
+     * change instead of leaving DWM a stale frame to composite. The Windows
+     * analog of the macOS `windowWillEnterFullScreen:` prepare (issue 413).
+     */
+    fun fullscreenPreLayout(
+        targetWidthPx: Int,
+        targetHeightPx: Int,
+    ) {
+        val sc = scene ?: return
+        if (targetWidthPx <= 0 || targetHeightPx <= 0) return
+        sc.size = IntSize(targetWidthPx, targetHeightPx)
+        // Apply pending snapshot writes (the chrome flip pushed just before
+        // this call) so the warmed layout already has the right chrome.
+        flushingDispatcher.drain()
+        frameClock.sendFrame(System.nanoTime())
+        flushingDispatcher.drain()
+        val recorder = org.jetbrains.skia.PictureRecorder()
+        try {
+            val canvas =
+                recorder.beginRecording(
+                    org.jetbrains.skia.Rect
+                        .makeWH(targetWidthPx.toFloat(), targetHeightPx.toFloat()),
+                )
+            sc.render(canvas.asComposeCanvas(), System.nanoTime())
+            recorder.finishRecordingAsPicture().close()
+        } finally {
+            recorder.close()
+        }
+    }
+
+    /**
+     * The fullscreen-transition render (invoked synchronously from the deco
+     * WndProc's WM_WINDOWPOSCHANGED). Presents at swap interval 0: a
+     * vsync-paced present would line up BEHIND the frames already queued in
+     * the flip-model swapchain, reaching the screen 1-3 vblanks after the
+     * geometry change no matter how early it was rendered — an interval-0
+     * present replaces the queued frame instead.
+     */
+    fun fullscreenTransitionResized(
+        widthPxNew: Int,
+        heightPxNew: Int,
+    ) {
+        if (attachmentHandle == 0L) {
+            onResized(widthPxNew, heightPxNew)
+            return
+        }
+        NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+        try {
+            if (widthPxNew != widthPx || heightPxNew != heightPx) {
+                // Resize the child + immediately present a themed clear:
+                // DWM sees the HWND resize right away but the resized
+                // swapchain's first buffer only lands at the next present —
+                // a composition falling into that gap otherwise shows an
+                // uninitialized black buffer (captured on the exit path).
+                // The sub-ms clear shrinks the gap and colours it.
+                NativeTaoGlBridge.nativeResize(attachmentHandle, widthPxNew, heightPxNew, scale)
+                val clearArgb =
+                    if (transparentBackgroundState.value) {
+                        backdropTintArgbState.value
+                    } else {
+                        clearColorArgbState.value
+                    }
+                NativeTaoGlBridge.nativeClearPresent(attachmentHandle, clearArgb)
+                // Raw GL clear-color/scissor calls happened behind Skia's
+                // state cache; resync before the Skia render below.
+                directContext?.resetGLAll()
+            }
+            onResized(widthPxNew, heightPxNew)
+        } finally {
+            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+        }
+    }
+
     fun onResized(
         widthPxNew: Int,
         heightPxNew: Int,
