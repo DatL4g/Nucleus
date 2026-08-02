@@ -25,12 +25,11 @@ import sys
 import time
 from collections import defaultdict
 
-import gi
+# GLib only — no gi.require_version("Gtk"): the CI runner installs the AT-SPI
+# stack without the GTK typelib, and the probe never touches GTK.
+from gi.repository import GLib
 
-gi.require_version("Gtk", "3.0")
-from gi.repository import GLib  # noqa: E402
-
-import pyatspi  # noqa: E402
+import pyatspi
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
