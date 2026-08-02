@@ -35,6 +35,18 @@ internal object NativeTaoWindowsDecoBridge {
     )
 
     /**
+     * Fully borderless DWM chrome for overlay/ghost windows
+     * (`DecoratedWindow(undecorated = true)`). Suppresses caption/border
+     * colours and the 1px shadow frame extension so a transparent client has
+     * no system contour.
+     */
+    @JvmStatic
+    external fun nativeSetBorderlessChrome(
+        hwnd: Long,
+        borderless: Boolean,
+    )
+
+    /**
      * Applies the whole window theme atomically: `WM_ERASEBKGND` fill, DWM
      * caption/border colors, `DWMWA_USE_IMMERSIVE_DARK_MODE`, and the
      * Windows 10 acrylic tint when that fallback is live. [isDark] arrives

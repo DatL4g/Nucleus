@@ -64,8 +64,35 @@ public fun ApplicationScope.DecoratedWindow(
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
     isDialog: Boolean = false,
-    /** Fully borderless window (no traffic lights on macOS) — for overlays/ghosts. */
+    /**
+     * Fully borderless window — for overlays/ghosts (drag previews, HUDs).
+     *
+     * - macOS: drops native traffic lights / title-bar chrome.
+     * - Windows / Linux: skips the Compose CSD outline
+     *   ([rememberUndecoratedWindowBorder]); on Linux also disables the
+     *   client-side drop-shadow subsurface. Default `false` keeps the usual
+     *   custom-chrome frame.
+     *
+     * Pair with [transparent] for a vanilla-Compose-like see-through overlay.
+     */
     undecorated: Boolean = false,
+    /**
+     * Full-window per-pixel transparency (#416). Creation-time only.
+     *
+     * When `true`, the Tao top-level is built with `with_transparent` so
+     * alpha-0 pixels composite the desktop (macOS `NSWindow.opaque = false`,
+     * Windows DWM blur-behind empty region, Linux ARGB visual). Fully opaque
+     * style / TitleBar / [WindowBackground] colours are coerced to alpha-0 for
+     * the **clear** only — widgets still paint themselves — so empty client
+     * regions show the desktop. Semi-transparent colours still tint.
+     *
+     * Prefer custom chrome over stock [TitleBar] when you want a mostly
+     * see-through window; TitleBar paints its own bar but no longer fills the
+     * empty client via the clear path.
+     *
+     * For a fully borderless ghost (no CSD outline), also pass [undecorated].
+     */
+    transparent: Boolean = false,
     /**
      * Linux only: popup overlay of another window (wl_subsurface on Wayland —
      * client-positionable; parent-relative coordinates). Ignored elsewhere.
@@ -164,6 +191,7 @@ public fun ApplicationScope.DecoratedWindow(
                     maximized = state.placement == WindowPlacement.Maximized,
                     isDialog = isDialog,
                     undecorated = undecorated,
+                    transparent = transparent,
                     popupFor = popupFor,
                     onPreviewKeyEvent = { latestPreview(it) },
                     onKeyEvent = { latestKey(it) },
@@ -178,7 +206,9 @@ public fun ApplicationScope.DecoratedWindow(
                             // The hoisted style writes its own layer, never the
                             // resolved state: `WindowBackground` / `TitleBar`
                             // (the content layer) always outrank it, whatever
-                            // the recomposition order.
+                            // the recomposition order. Fully-transparent windows
+                            // coerce opaque style to alpha-0 inside
+                            // [WindowClearColorLayers] (#416).
                             clearColorLayers?.setStyle(backgroundArgb)
                         }
                         latestContent.invoke(this)

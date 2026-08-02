@@ -191,6 +191,8 @@ pub(crate) fn run_event_loop_blocking() {
                     maximized,
                     popup_of,
                     skip_taskbar,
+                    transparent,
+                    undecorated_shadow,
                 } => {
                     #[allow(unused_mut)]
                     let mut builder = WindowBuilder::new()
@@ -204,22 +206,36 @@ pub(crate) fn run_event_loop_blocking() {
                     // attribute — tao re-derives GWL_EXSTYLE from its
                     // WindowFlags on every state change, so a post-creation
                     // style poke is clobbered on the next activation.
+                    // Also wire undecorated DWM drop-shadow (tao default true;
+                    // borderless overlays pass false so no soft contour).
                     #[cfg(target_os = "windows")]
                     {
                         use tao::platform::windows::WindowBuilderExtWindows;
-                        builder = builder.with_skip_taskbar(skip_taskbar);
+                        builder = builder
+                            .with_skip_taskbar(skip_taskbar)
+                            .with_undecorated_shadow(undecorated_shadow);
+                    }
+                    // macOS: NSWindow.hasShadow — same intent as Windows
+                    // undecorated_shadow. Borderless transparent overlays
+                    // pass false so AppKit does not draw a soft contour.
+                    #[cfg(target_os = "macos")]
+                    {
+                        use tao::platform::macos::WindowBuilderExtMacOS;
+                        builder = builder.with_has_shadow(undecorated_shadow);
+                        let _ = skip_taskbar;
                     }
                     // Linux: GTK skip-taskbar + skip-pager hints
                     // (_NET_WM_STATE_SKIP_TASKBAR). Effective on X11 and
                     // XWayland; silently ignored on native Wayland, which has
                     // no client-side taskbar opt-out protocol.
+                    // Undecorated shadow is a Win/mac concept; Linux uses the
+                    // CSD shadow subsurface gated separately in the host.
                     #[cfg(target_os = "linux")]
                     {
                         use tao::platform::unix::WindowBuilderExtUnix;
                         builder = builder.with_skip_taskbar(skip_taskbar);
+                        let _ = undecorated_shadow;
                     }
-                    #[cfg(target_os = "macos")]
-                    let _ = skip_taskbar;
                     // Linux: build cursor-following overlays as GTK_WINDOW_POPUP
                     // transient children — on Wayland GDK maps them as
                     // `wl_subsurface`s, the only client-positionable window
@@ -240,18 +256,14 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                     #[cfg(not(target_os = "linux"))]
                     let _ = popup_of;
-                    // Linux: request an ARGB visual so the GTK window's X
-                    // visual matches the canonical visual that Mesa's EGL
-                    // exposes through its EGLConfigs. Without this, GDK
-                    // assigns a non-canonical 24-bit RGB visual and
-                    // `eglCreateWindowSurface` fails with EGL_BAD_CONFIG
-                    // because no EGLConfig advertises that visual ID.
-                    // The GLX path is unaffected — its `glXChooseVisual`
-                    // already requests ALPHA_SIZE=8, and ARGB GTK lets the
-                    // helper render directly into the parent without the
-                    // child-window fallback.
-                    #[cfg(target_os = "linux")]
-                    {
+                    // Full-window transparency (#416): tao sets NSWindow.opaque=NO
+                    // (macOS), DWM blur-behind empty region (Windows), ARGB visual
+                    // (Linux). Linux always needs with_transparent for the EGL
+                    // canonical visual even when the app did not ask for a
+                    // see-through window — without it Mesa fails eglCreateWindowSurface.
+                    // The app-level flag still drives the Kotlin clear path via
+                    // host `fullyTransparent`; builder just needs the ARGB path.
+                    if transparent || cfg!(target_os = "linux") {
                         builder = builder.with_transparent(true);
                     }
                     let window = builder.build(target);

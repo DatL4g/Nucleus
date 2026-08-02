@@ -265,6 +265,17 @@ pub(crate) enum UserEvent {
         // XWayland, ignored on native Wayland. Ignored on macOS (Dock hiding
         // goes through the activation policy).
         skip_taskbar: bool,
+        // Full-window per-pixel transparency (#416). Maps to tao's
+        // `WindowBuilder::with_transparent(true)` so alpha-0 pixels composite
+        // the desktop. Linux always requests an ARGB visual for EGL regardless
+        // of this flag (canonical visual); the flag still controls whether the
+        // host starts with an alpha-0 clear and keeps the top-level non-opaque.
+        transparent: bool,
+        // Drop shadow for borderless windows. Windows:
+        // `with_undecorated_shadow` (DWM + outer-rect inset). macOS:
+        // `with_has_shadow` (NSWindow). False for borderless overlays.
+        // Ignored on Linux (CSD shadow is host-gated).
+        undecorated_shadow: bool,
     },
     SetVisible {
         handle: u64,

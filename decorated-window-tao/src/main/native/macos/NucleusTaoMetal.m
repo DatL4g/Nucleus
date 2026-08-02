@@ -96,19 +96,19 @@ static const char kTaoPassthroughViewKey = 13;
 // Last themed fallback background ARGB. Applied to NSWindow and CAMetalLayer so
 // AppKit fullscreen/title-bar animations never reveal the default white window.
 static const char kTaoBackgroundArgbKey = 14;
-// NSNumber(int): window transparency mode (only OFF and REGIONS are shipped).
-//   0 = opaque (normal themed background)
-//   1 = regions — the WINDOW stays opaque (WindowServer then feeds
-//       behind-window materials the desktop-tinted wallpaper backdrop, like
-//       System Settings' sidebar — real windows behind never show through),
-//       but the CAMetalLayer goes transparent so the in-window material
-//       views show wherever Compose leaves alpha-0 pixels.
-// Full-window non-opaque glass was deliberately never exposed: Apple's
-// materials are for in-window panes (windowGlassRegion), not the whole window.
+// NSNumber(int): single window transparency mode.
+//   0 OFF     — opaque themed background
+//   1 REGIONS — window stays opaque (System Settings-style materials get a
+//               wallpaper-only backdrop); CAMetalLayer is non-opaque so
+//               in-window material panes show through alpha-0 Compose pixels
+//   2 FULL    — full-window per-pixel transparency (#416): window non-opaque,
+//               desktop composites through alpha-0 pixels
+// FULL is creation-time and is never demoted by glass REGIONS/OFF requests.
 static const char kTaoTransparentModeKey = 16;
 
 #define TAO_TRANSPARENCY_OFF     0
 #define TAO_TRANSPARENCY_REGIONS 1
+#define TAO_TRANSPARENCY_FULL    2
 
 // Same metrics as decorated-window-jni's applyConstraints — keeps the
 // traffic-lights at the same offsets Apple's own apps use.
@@ -392,6 +392,18 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
     int mode = taoTransparencyMode(window);
     NSNumber *stored = objc_getAssociatedObject(window, &kTaoBackgroundArgbKey);
     jint argb = stored != nil ? stored.intValue : (jint)0xFFFFFFFF;
+    if (mode == TAO_TRANSPARENCY_FULL) {
+        // #416: non-opaque window; ARGB (incl. alpha) on NSWindow; layers clear
+        // so Compose clear alpha is what the compositor sees.
+        window.opaque = NO;
+        window.backgroundColor = colorFromArgb(argb);
+        clearLayerBackgrounds(window, view);
+        NucleusTaoMetalAttachment *att = attachmentForWindow(window);
+        if (att != NULL && att->layer != nil) {
+            att->layer.opaque = NO;
+        }
+        return;
+    }
     if (mode == TAO_TRANSPARENCY_REGIONS) {
         // Window keeps the themed color (it IS opaque — that is what makes
         // WindowServer feed the materials the wallpaper-only backdrop), but
@@ -403,22 +415,36 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
     applyWindowBackgroundColor(window, view, argb);
 }
 
-// Glass-region transparency path: moves the window between OFF and REGIONS.
+// Single transparency-mode applier: OFF / REGIONS / FULL.
+// FULL is sticky for the window lifetime of a DecoratedWindow(transparent=true):
+// glass REGIONS/OFF must not demote it (would re-opaque the top-level).
 static void taoApplyWindowTransparencyMode(NSWindow *win, NSView *view, int mode) {
+    if (win == nil) return;
+    int current = taoTransparencyMode(win);
+    if (current == TAO_TRANSPARENCY_FULL && mode != TAO_TRANSPARENCY_FULL) {
+        // Keep FULL. Glass still wants clear layers for material panes.
+        if (mode == TAO_TRANSPARENCY_REGIONS) {
+            NucleusTaoMetalAttachment *att = attachmentForWindow(win);
+            if (att != NULL && att->layer != nil) {
+                att->layer.opaque = NO;
+            }
+            clearLayerBackgrounds(win, view);
+        }
+        return;
+    }
+
     objc_setAssociatedObject(win, &kTaoTransparentModeKey,
                              @(mode),
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    // The window always stays opaque: that is precisely what makes the system
-    // give its behind-window materials the System Settings-style
-    // desktop-tinted backdrop rather than compositing whatever is behind.
-    win.opaque = YES;
+
+    // REGIONS needs an opaque window for System Settings materials.
+    // FULL needs a non-opaque window so the desktop composites through.
+    win.opaque = (mode == TAO_TRANSPARENCY_FULL) ? NO : YES;
+
     // The CAMetalLayer is only ever made non-opaque, never opaque again: a
     // live layer keeps already-issued opaque drawables, and the first frames
     // after flipping back render alpha-0 pixels as solid black. Leaving it
-    // non-opaque costs nothing once the window itself is opaque again — the
-    // window background is painted underneath — and it lets a transparency
-    // mode be turned off and on freely, which the region ref-counting relies
-    // on.
+    // non-opaque costs nothing once the window itself is opaque again.
     NucleusTaoMetalAttachment *att = attachmentForWindow(win);
     if (att != NULL && att->layer != nil && mode != TAO_TRANSPARENCY_OFF) {
         att->layer.opaque = NO;
@@ -1593,12 +1619,51 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowTransp
     dispatch_block_t apply = ^{
         NSWindow *win = view.window;
         if (win == nil) return;
-        taoApplyWindowTransparencyMode(
-            win, view,
-            enabled == JNI_TRUE ? TAO_TRANSPARENCY_REGIONS : TAO_TRANSPARENCY_OFF);
+        // Glass regions: REGIONS on, OFF when the last region releases.
+        // No-op demotion if FULL is sticky (#416).
+        int current = taoTransparencyMode(win);
+        if (enabled == JNI_TRUE) {
+            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_REGIONS);
+        } else if (current == TAO_TRANSPARENCY_REGIONS) {
+            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_OFF);
+        }
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetFullyTransparent(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean enabled) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        // #416: FULL mode on the single transparency-mode slot.
+        if (enabled == JNI_TRUE) {
+            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_FULL);
+        } else if (taoTransparencyMode(win) == TAO_TRANSPARENCY_FULL) {
+            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_OFF);
+        }
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeIsWindowOpaque(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return JNI_TRUE;
+    __block jboolean result = JNI_TRUE;
+    dispatch_block_t read = ^{
+        NSWindow *win = view.window;
+        result = (win != nil && win.opaque) ? JNI_TRUE : JNI_FALSE;
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return result;
 }
 
 // ── Glass regions: hosted NSSplitViewController (the Apple pattern) ──────

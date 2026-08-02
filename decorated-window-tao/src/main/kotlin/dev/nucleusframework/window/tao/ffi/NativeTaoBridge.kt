@@ -134,6 +134,16 @@ internal object NativeTaoBridge {
         // XWayland, ignored on native Wayland (no taskbar opt-out protocol).
         // Ignored on macOS (Dock hiding uses the activation policy).
         skipTaskbar: Boolean,
+        // Full-window per-pixel transparency (#416). Creation-time only —
+        // maps to tao `with_transparent`. Pair with an alpha-0 clear
+        // (`WindowBackground(Color.Transparent)` or the transparent=true
+        // default style path) so the desktop shows through empty regions.
+        transparent: Boolean,
+        // Drop shadow for borderless windows. Windows: DWM undecorated shadow
+        // (outer-rect inset). macOS: NSWindow.hasShadow. Ghost overlays pass
+        // false (`DecoratedWindow(undecorated = true)`). Ignored on Linux
+        // (CSD shadow is gated in the host).
+        undecoratedShadow: Boolean,
     )
 
     @JvmStatic

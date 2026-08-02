@@ -100,6 +100,10 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
 internal class TaoComposeSceneHostLinux(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
+    // Full-window per-pixel transparency (#416). Creation-time; Linux always
+    // builds with an ARGB visual for EGL, and this flag starts the clear at
+    // alpha 0 so empty client areas show the desktop.
+    private val fullyTransparent: Boolean = false,
 ) : AbstractTaoComposeSceneHost() {
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
@@ -108,13 +112,15 @@ internal class TaoComposeSceneHostLinux(
      * ARGB color the render loop clears the surface to each frame, pushed in
      * via [LocalRequestedClearColor] by the themed window (window background)
      * and by `TitleBar` (resolved title-bar background). Defaults to opaque
-     * white until the first composition. The
-     * post-render carve ([applyFrameDecoration]) re-clears the CSD shadow
+     * white until the first composition (alpha 0 when [fullyTransparent]).
+     * The post-render carve ([applyFrameDecoration]) re-clears the CSD shadow
      * margins and rounded corners to transparent, so the drop shadow still
      * composites over clean transparency regardless of this clear color.
      */
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
-        androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
+        androidx.compose.runtime.mutableStateOf(
+            if (fullyTransparent) 0 else 0xFFFFFFFF.toInt(),
+        )
 
     /** App-level pre-dispatch hook. See [TaoComposeSceneHost.previewKeyHandler]. */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null

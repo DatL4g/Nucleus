@@ -85,6 +85,11 @@ public object TaoApplication {
         // skip-taskbar hint (X11/XWayland only). Must be set at creation
         // (tao builder attribute); see NativeTaoBridge.
         skipTaskbar: Boolean = false,
+        // Full-window per-pixel transparency (#416). Creation-time only.
+        transparent: Boolean = false,
+        // Drop shadow on borderless windows (Windows DWM / macOS hasShadow).
+        // Set false for overlays (`DecoratedWindow(undecorated)`).
+        undecoratedShadow: Boolean = true,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
         val window = TaoWindow(handle, isResizable = resizable, isPopup = popupOf != null)
@@ -100,6 +105,8 @@ public object TaoApplication {
             maximized,
             popupOf?.handle ?: 0L,
             skipTaskbar,
+            transparent,
+            undecoratedShadow,
         )
         return window
     }
