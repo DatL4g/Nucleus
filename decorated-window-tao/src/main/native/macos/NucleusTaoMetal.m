@@ -160,6 +160,7 @@ static void ensureTaoMenuBarEventHandler(void);
 static JavaVM *sMetalJVM = NULL;
 static jclass sMetalBridgeClass = NULL;       // global ref
 static jmethodID sMetalOnOffsetChanged = NULL;
+static jmethodID sMetalOnFullscreenPrepare = NULL;
 static atomic_bool sMetalCallbacksEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool sMetalShutdownInProgress = ATOMIC_VAR_INIT(false);
 
@@ -174,6 +175,8 @@ static void ensureMetalJVMCached(JNIEnv *env) {
             (*env)->DeleteLocalRef(env, local);
             sMetalOnOffsetChanged = (*env)->GetStaticMethodID(
                 env, sMetalBridgeClass, "onMenuBarOffsetChanged", "(JF)V");
+            sMetalOnFullscreenPrepare = (*env)->GetStaticMethodID(
+                env, sMetalBridgeClass, "onFullscreenPrepare", "(JII)V");
             atomic_store(&sMetalCallbacksEnabled, true);
         }
     });
@@ -204,6 +207,36 @@ static void notifyMenuBarOffsetChanged(jlong nsViewPtr, float offset) {
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnOffsetChanged,
                                  nsViewPtr, (jfloat)offset);
     if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
+}
+
+// Calls NativeMetalBridge.onFullscreenPrepare(nsViewPtr, widthPx, heightPx)
+// and BLOCKS until the JVM side has presented that frame. Invoked from
+// `windowWillEnterFullScreen:` on the macOS main thread — the same thread the
+// Tao loop and the Compose host run on, so the host's blocking render runs
+// re-entrantly on this stack. That is the point: AppKit snapshots the window
+// as soon as this notification finishes, so the frame has to exist by then
+// (#327). No-op if the JVM side never registered a prepare for this view.
+static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx) {
+    if (!atomic_load(&sMetalCallbacksEnabled)) return;
+    if (!sMetalJVM || !sMetalBridgeClass || !sMetalOnFullscreenPrepare) return;
+
+    JNIEnv *env = NULL;
+    jint status = (*sMetalJVM)->GetEnv(sMetalJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sMetalJVM)->AttachCurrentThreadAsDaemon(sMetalJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
+    }
+    if (!env) return;
+
+    (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnFullscreenPrepare,
+                                 nsViewPtr, widthPx, heightPx);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
         (*env)->ExceptionClear(env);
     }
 }
@@ -253,6 +286,13 @@ typedef struct {
     // accurate; if render + present overruns a refresh it ends up in the past
     // and Metal presents immediately (graceful — not a hard 1:1 vsync).
     _Atomic uint64_t next_present_host_time;
+
+    // View size in points just before entering fullscreen. AppKit restores
+    // this frame on the way out, so it is the *final* layout for the exit
+    // transition — the size we must have rendered before AppKit snapshots
+    // (see willExitFS / #327). Zero until the first fullscreen entry.
+    double windowed_w_points;
+    double windowed_h_points;
 } NucleusTaoMetalAttachment;
 
 #define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
@@ -840,14 +880,38 @@ static void removeMenuBarMonitor(NSWindow *window) {
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         w.toolbar = nil;
     }
-    // Anchor the drawable top-left so AppKit's snapshot-stretch animation
-    // doesn't enlarge our 36 dp title bar visually. The unfilled area picks
-    // up the layer / window background.
+    // Render the final fullscreen layout NOW, then let AppKit scale it.
+    //
+    // AppKit resizes the window to its final size and snapshots it as soon as
+    // this notification returns, then stretches that snapshot for the whole
+    // ~550ms animation. Left alone, the snapshot holds the previous, smaller
+    // buffer: pinned top-left it sits 1:1 in the corner of an already
+    // fullscreen-sized window (frozen, then a snap at the end), and scaled it
+    // blows up past its final size (measured: a 28 dp bar reaching 1.74x
+    // before popping back). Neither is what AppKit's own apps do — they ramp
+    // the *final* layout from compressed to 1:1 (#327).
+    //
+    // So: hand the JVM the size the window is about to take and block until it
+    // has presented that frame, then ask for Resize gravity. The snapshot now
+    // holds the fullscreen layout, AppKit scales it down into the current
+    // frame and grows it to 1:1 — the native ramp. Exit needs no prepare: its
+    // pre-transition buffer is already the large one (see willExitFS).
     NucleusTaoMetalAttachment *att = [self attachment];
     if (att != NULL && att->layer != nil) {
+        // Capture before the prepare below resizes us: this is the frame
+        // AppKit will restore on exit, i.e. the exit transition's final layout.
+        NSSize windowed = _view.bounds.size;
+        att->windowed_w_points = windowed.width;
+        att->windowed_h_points = windowed.height;
+        NSScreen *screen = w.screen ?: [NSScreen mainScreen];
+        CGFloat scale = w.backingScaleFactor > 0 ? w.backingScaleFactor : screen.backingScaleFactor;
+        NSSize target = screen.frame.size;
+        notifyFullscreenPrepare((jlong)(uintptr_t)(__bridge void *) _view,
+                                (jint) lround(target.width * scale),
+                                (jint) lround(target.height * scale));
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
-        att->layer.contentsGravity = kCAGravityTopLeft;
+        att->layer.contentsGravity = kCAGravityResize;
         [CATransaction commit];
     }
     applyStoredWindowBackground(w, _view);
@@ -860,13 +924,25 @@ static void removeMenuBarMonitor(NSWindow *window) {
     // Tear down the menu bar monitor before the exit animation so AppKit
     // can transition its native chrome without our monitor racing it.
     removeMenuBarMonitor(w);
-    // Same gravity trick as willEnterFS: pin the drawable top-left so the
-    // shrink-animation doesn't crop the content visually.
+    // Mirror of willEnterFS: the transition snapshot has to hold the *final*
+    // layout, and on the way out that is the windowed one AppKit is about to
+    // restore — not the fullscreen buffer we currently hold. Measured against
+    // a native AppKit baseline, exiting stretches the windowed layout up and
+    // shrinks it to 1:1 (bar height 13 -> 16 -> 13); leaving the fullscreen
+    // buffer in place instead compresses it and pops at the end (#327).
     NucleusTaoMetalAttachment *att = [self attachment];
     if (att != NULL && att->layer != nil) {
+        if (att->windowed_w_points > 0 && att->windowed_h_points > 0) {
+            CGFloat scale = w.backingScaleFactor > 0
+                ? w.backingScaleFactor
+                : [NSScreen mainScreen].backingScaleFactor;
+            notifyFullscreenPrepare((jlong)(uintptr_t)(__bridge void *) _view,
+                                    (jint) lround(att->windowed_w_points * scale),
+                                    (jint) lround(att->windowed_h_points * scale));
+        }
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
-        att->layer.contentsGravity = kCAGravityTopLeft;
+        att->layer.contentsGravity = kCAGravityResize;
         [CATransaction commit];
     }
     applyStoredWindowBackground(w, _view);
@@ -1001,6 +1077,12 @@ static void ensureFrameClassLoaded(JNIEnv *env) {
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttach(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    // Prime the native -> JVM callback plumbing for every window, not just the
+    // ones that happen to install a menu-bar monitor: the fullscreen-transition
+    // prepare (#327) fires from an AppKit notification with no JNIEnv of its
+    // own, so the JavaVM has to be cached by then.
+    ensureMetalJVMCached(env);
+
 
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     NTLOG("nativeAttach view=%p", view);

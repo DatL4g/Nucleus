@@ -135,7 +135,7 @@ public object TaoHeadfulTestSuiteMain {
                 settle()
                 check(bounds() != null) { "window must survive a handled close request" }
             },
-        ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all()
+        ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }

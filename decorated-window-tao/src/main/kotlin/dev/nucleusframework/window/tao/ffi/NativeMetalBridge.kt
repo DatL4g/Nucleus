@@ -62,6 +62,46 @@ internal object NativeMetalBridge {
         menuBarOffsetFlows.getOrPut(nsViewPtr) { MutableStateFlow(0f) }.value = offset
     }
 
+    // ── Fullscreen transition prepare (macOS) ────────────────────────────
+    //
+    // AppKit resizes the window to its final size and snapshots it inside the
+    // `windowWillEnterFullScreen:` dispatch, then stretches that snapshot for
+    // the whole ~550ms animation. Anything rendered after the notification
+    // returns is too late — the snapshot already holds the previous, smaller
+    // buffer, which is why the content used to look frozen and undersized and
+    // then snap into place (#327).
+    //
+    // The native `willEnterFS` handler therefore calls [onFullscreenPrepare]
+    // *synchronously*, before returning, with the size the window is about to
+    // take. The host renders one blocking frame at that size so the snapshot
+    // captures the final layout; AppKit then scales it down into the current
+    // frame and grows it to 1:1 — the ramp AppKit's own apps show.
+
+    private val fullscreenPrepares = ConcurrentHashMap<Long, (Int, Int) -> Unit>()
+
+    fun setFullscreenPrepare(
+        nsViewPtr: Long,
+        block: ((widthPx: Int, heightPx: Int) -> Unit)?,
+    ) {
+        if (nsViewPtr == 0L) return
+        if (block == null) fullscreenPrepares.remove(nsViewPtr) else fullscreenPrepares[nsViewPtr] = block
+    }
+
+    /**
+     * Called from native on the macOS main thread, inside
+     * `windowWillEnterFullScreen:`. Runs on the caller's stack on purpose:
+     * the frame has to be presented before this returns.
+     */
+    @JvmStatic
+    fun onFullscreenPrepare(
+        nsViewPtr: Long,
+        widthPx: Int,
+        heightPx: Int,
+    ) {
+        if (widthPx <= 0 || heightPx <= 0) return
+        fullscreenPrepares[nsViewPtr]?.invoke(widthPx, heightPx)
+    }
+
     // ── VSync pacing (CVDisplayLink, AWT/skiko MetalVSyncer pattern) ──
     //
     // A CVDisplayLink runs continuously; [nativeVSyncWait] blocks the calling

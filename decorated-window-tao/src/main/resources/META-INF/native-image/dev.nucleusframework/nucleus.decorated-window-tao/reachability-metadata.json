@@ -137,6 +137,14 @@
                         "long",
                         "float"
                     ]
+                },
+                {
+                    "name": "onFullscreenPrepare",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int"
+                    ]
                 }
             ]
         },

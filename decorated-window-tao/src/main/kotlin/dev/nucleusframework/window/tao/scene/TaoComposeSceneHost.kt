@@ -289,6 +289,14 @@ internal class TaoComposeSceneHost(
 
         scale = initialMacOsScaleFactor(window)
 
+        // Present the fullscreen layout before AppKit snapshots the window for
+        // its transition animation. Runs re-entrantly on the AppKit main
+        // thread from inside `windowWillEnterFullScreen:` — see
+        // NativeMetalBridge.onFullscreenPrepare and #327.
+        NativeMetalBridge.setFullscreenPrepare(nsViewHandle) { targetW, targetH ->
+            prepareFullscreenFrame(targetW, targetH)
+        }
+
         // CRITICAL: provide our own MonotonicFrameClock (BroadcastFrameClock)
         // in the scene's coroutineContext. Without one, Compose's recomposer
         // can't tell when a frame has finished and re-fires `invalidate` after
@@ -537,6 +545,29 @@ internal class TaoComposeSceneHost(
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
         window.requestRedraw()
+    }
+
+    /**
+     * Resizes the scene to the size the window is about to take and presents
+     * one frame synchronously. Called from AppKit's
+     * `windowWillEnterFullScreen:` (via [NativeMetalBridge.onFullscreenPrepare])
+     * so the transition snapshot holds the final layout instead of the previous
+     * one — see #327. The regular [onResized] follows right after with the same
+     * size and short-circuits.
+     */
+    private fun prepareFullscreenFrame(
+        targetWidthPx: Int,
+        targetHeightPx: Int,
+    ) {
+        if (attachmentHandle == 0L) return
+        if (targetWidthPx <= 0 || targetHeightPx <= 0) return
+        if (targetWidthPx == widthPx && targetHeightPx == heightPx) return
+        widthPx = targetWidthPx
+        heightPx = targetHeightPx
+        NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
+        scene?.size = IntSize(widthPx, heightPx)
+        updateWindowInfoSize()
+        renderFrameBlocking()
     }
 
     /**
@@ -1268,6 +1299,9 @@ internal class TaoComposeSceneHost(
 
     fun detach() {
         shutdownA11yScheduler()
+        // Drop the transition hook before the scene goes: a late
+        // willEnterFS would otherwise re-enter a torn-down host.
+        NativeMetalBridge.setFullscreenPrepare(nsViewHandle, null)
         // Stop driving frames first: after this no new replay is submitted.
         frameDispatcher?.cancel()
         frameDispatcher = null
