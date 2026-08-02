@@ -203,6 +203,25 @@ internal object NativeMetalBridge {
     )
 
     /**
+     * Full-window per-pixel transparency (#416). Sets the single native
+     * transparency mode to FULL (`NSWindow.opaque = NO`, clear layers) so
+     * alpha-0 Compose pixels composite the desktop. Glass REGIONS requests
+     * cannot demote FULL. Creation-time only in practice; call after Metal attach.
+     */
+    @JvmStatic
+    external fun nativeSetFullyTransparent(
+        nsViewPtr: Long,
+        enabled: Boolean,
+    )
+
+    /**
+     * Current `NSWindow.isOpaque` for the window owning [nsViewPtr]. Used by
+     * the #416 headful probe. Returns `true` when the view has no window yet.
+     */
+    @JvmStatic
+    external fun nativeIsWindowOpaque(nsViewPtr: Long): Boolean
+
+    /**
      * Inserts a hosted `NSSplitViewController` pane region below the content
      * view — AppKit backs it with the wallpaper-tinted system material
      * (System Settings sidebar look). [kindOrdinal] is

@@ -93,6 +93,12 @@ private const val DEFAULT_CLEAR_ARGB = 0xFFFFFFFF.toInt()
  * writer so a surviving `WindowBackground` is restored when `TitleBar`
  * leaves composition instead of wiping the slot to null.
  *
+ * When [fullyTransparent] is true (#416), fully opaque ARGB values are coerced
+ * to alpha-0 so a default white theme or TitleBar chrome colour cannot fill
+ * the empty client and hide the desktop. Semi-transparent colours still tint.
+ * Compose widgets keep painting their own backgrounds; this only affects the
+ * Skia / native clear under unpainted regions.
+ *
  * Every write re-resolves into the host state *synchronously, inside the
  * caller's SideEffect* — so the first composition has fully themed the host
  * before the window's first blocking render and `show()`.
@@ -101,8 +107,9 @@ private const val DEFAULT_CLEAR_ARGB = 0xFFFFFFFF.toInt()
  */
 internal class WindowClearColorLayers(
     private val hostClearColor: androidx.compose.runtime.MutableState<Int>,
+    private val fullyTransparent: Boolean = false,
 ) {
-    private var style: Int = DEFAULT_CLEAR_ARGB
+    private var style: Int = if (fullyTransparent) 0 else DEFAULT_CLEAR_ARGB
 
     /** Insertion-ordered content writers; last entry is the active content. */
     private val contentWriters = LinkedHashMap<Any, Int>()
@@ -113,7 +120,7 @@ internal class WindowClearColorLayers(
     val observableResolved: androidx.compose.runtime.State<Int> get() = hostClearColor
 
     fun setStyle(argb: Int) {
-        style = argb
+        style = coerce(argb)
         push()
     }
 
@@ -126,7 +133,7 @@ internal class WindowClearColorLayers(
         argb: Int,
     ) {
         contentWriters.remove(key)
-        contentWriters[key] = argb
+        contentWriters[key] = coerce(argb)
         push()
     }
 
@@ -134,6 +141,9 @@ internal class WindowClearColorLayers(
     fun clearContent(key: Any) {
         if (contentWriters.remove(key) != null) push()
     }
+
+    private fun coerce(argb: Int): Int =
+        if (fullyTransparent && ((argb ushr 24) and 0xFF) == 0xFF) 0 else argb
 
     private fun push() {
         hostClearColor.value = resolved
@@ -228,6 +238,9 @@ internal fun ApplicationScope.openDecoratedWindow(
     // Fully borderless window: no native chrome at all — on macOS this drops the
     // traffic-light buttons too. For overlay/ghost windows (drag previews, HUDs).
     undecorated: Boolean = false,
+    // Full-window per-pixel transparency (#416). Creation-time only — see
+    // DecoratedWindow(transparent = …).
+    transparent: Boolean = false,
     // Linux only: make this window a popup overlay of [popupFor]
     // (GTK_WINDOW_POPUP transient → wl_subsurface on Wayland, the only
     // client-positionable window kind under xdg-shell). Positions are
@@ -297,6 +310,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             // hiddenFromDock via the activation policy in
             // TaoComposeSceneHost.attach() instead.
             skipTaskbar = hiddenFromDock,
+            transparent = transparent,
         )
 
     // Compose Hot Reload: the agent only auto-wraps AWT `ComposeWindow`/
@@ -331,6 +345,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             onKeyEvent,
             initialCompositionLocalContext,
             nativePopupLayers,
+            transparent,
             hotReloadContent,
         )
     }
@@ -352,11 +367,18 @@ internal fun ApplicationScope.openDecoratedWindow(
             onKeyEvent,
             initialCompositionLocalContext,
             nativePopupLayers,
+            transparent,
             hotReloadContent,
         )
     }
 
-    val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle, hiddenFromDock = hiddenFromDock)
+    val host =
+        TaoComposeSceneHost(
+            window,
+            macOSStyle = macOSStyle,
+            hiddenFromDock = hiddenFromDock,
+            fullyTransparent = transparent,
+        )
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
@@ -431,7 +453,13 @@ internal fun ApplicationScope.openDecoratedWindow(
             }
         }
         host.setContent {
-            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
+            val clearColorLayers =
+                remember {
+                    WindowClearColorLayers(
+                        host.clearColorArgbState,
+                        fullyTransparent = transparent,
+                    )
+                }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
@@ -583,9 +611,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     onKeyEvent: (KeyEvent) -> Boolean,
     initialCompositionLocalContext: CompositionLocalContext?,
     nativePopupLayers: Boolean,
+    transparent: Boolean,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
-    val host = TaoComposeSceneHostLinux(window)
+    val host = TaoComposeSceneHostLinux(window, fullyTransparent = transparent)
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
@@ -640,7 +669,13 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         // the X11 XID via NativeTaoBridge.nativeLinuxHandles().
         a11yController.attach()
         host.setContent {
-            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
+            val clearColorLayers =
+                remember {
+                    WindowClearColorLayers(
+                        host.clearColorArgbState,
+                        fullyTransparent = transparent,
+                    )
+                }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
@@ -956,9 +991,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     onKeyEvent: (KeyEvent) -> Boolean,
     initialCompositionLocalContext: CompositionLocalContext?,
     nativePopupLayers: Boolean,
+    transparent: Boolean,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
-    val host = TaoComposeSceneHostWindows(window)
+    val host = TaoComposeSceneHostWindows(window, fullyTransparent = transparent)
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
@@ -1020,7 +1056,13 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.attach()
         a11yController.attach()
         host.setContent {
-            val clearColorLayers = remember { WindowClearColorLayers(host.clearColorArgbState) }
+            val clearColorLayers =
+                remember {
+                    WindowClearColorLayers(
+                        host.clearColorArgbState,
+                        fullyTransparent = transparent,
+                    )
+                }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,

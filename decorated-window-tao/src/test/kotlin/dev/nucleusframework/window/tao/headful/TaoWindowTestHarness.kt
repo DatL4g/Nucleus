@@ -25,6 +25,17 @@ internal class TaoWindowTestCase(
     val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
     /** Platforms the case runs on; empty = all. */
     val skip: () -> String? = { null },
+    /**
+     * When true (default), the suite paints a full-size DarkGray chrome under
+     * [content]. Cases that need an empty / alpha-cleared client (e.g. fully
+     * transparent window probes) set this to false.
+     */
+    val paintDefaultBackground: Boolean = true,
+    /**
+     * Forwarded to [dev.nucleusframework.window.tao.DecoratedWindow]'s
+     * `transparent` parameter (#416). Creation-time only.
+     */
+    val transparent: Boolean = false,
     /** Optional extra window content composed inside the DecoratedWindow. */
     val content: @Composable TaoDecoratedWindowScope.() -> Unit = {},
     val driver: suspend TaoWindowTestScope.() -> Unit,

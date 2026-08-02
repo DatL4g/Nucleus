@@ -188,10 +188,15 @@ public object TaoHeadfulTestSuiteMain {
                     DecoratedWindow(
                         onCloseRequest = { /* cases drive their own lifecycle */ },
                         title = "tao-headful: ${case.name}",
+                        transparent = case.transparent,
                     ) {
                         // Default chrome surface; cases may paint over it via
                         // [TaoWindowTestCase.content] (scaffold, backdrop, …).
-                        Box(Modifier.fillMaxSize().background(Color.DarkGray))
+                        // Fully-transparent probes opt out so the Skia clear is
+                        // what the compositor sees in empty regions.
+                        if (case.paintDefaultBackground) {
+                            Box(Modifier.fillMaxSize().background(Color.DarkGray))
+                        }
                         case.content(this)
                         val w = window
                         LaunchedEffect(w) { windowHolder.value = w }

@@ -224,6 +224,9 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // back to transparent after rendering, so the drop shadow is unaffected.
     // Keyed content stack: co-composed WindowBackground survives when this
     // TitleBar is removed (clearContent only drops this writer).
+    // Fully transparent windows (#416): WindowClearColorLayers coerces opaque
+    // chrome colours to alpha-0 for the clear only — the TitleBar still paints
+    // its own bar; empty client regions stay see-through.
     val titleBarBackground by style.colors.backgroundFor(currentState)
     val clearColorLayers = LocalWindowClearColorLayers.current
     val clearColorKey = remember { Any() }

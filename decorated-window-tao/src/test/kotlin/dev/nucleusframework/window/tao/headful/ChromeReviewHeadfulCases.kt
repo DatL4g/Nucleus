@@ -15,6 +15,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.Platform
@@ -27,8 +28,10 @@ import dev.nucleusframework.window.WindowsBackdrop
 import dev.nucleusframework.window.WindowsBackdropStyle
 import dev.nucleusframework.window.newFullscreenControls
 import dev.nucleusframework.window.noWindowDrag
+import dev.nucleusframework.window.tao.LocalRequestedGlassBackground
 import dev.nucleusframework.window.tao.LocalRequestedTransparentBackground
 import dev.nucleusframework.window.tao.LocalWindowClearColorLayers
+import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.windowDragArea
@@ -58,6 +61,9 @@ internal object ChromeReviewHeadfulCases {
             noWindowDragBlocksAncestorDragArea(),
             hideBarZerosControlsInsetsInFullscreen(),
             fullscreenToggleVisualCapture(),
+            fullyTransparentWindowIssue416(),
+            fullyTransparentSurvivesTitleBarIssue416(),
+            fullyTransparentHonoursSemiTintIssue416(),
         )
 
     /**
@@ -494,5 +500,177 @@ internal object ChromeReviewHeadfulCases {
                 }
             },
         )
+    }
+
+    /**
+     * Issue #416 — baseline: `DecoratedWindow(transparent = true)` alone
+     * (opaque theme style coerced to alpha-0 clear) + non-opaque top-level.
+     * No AWT Robot — host clear + macOS `isOpaque`.
+     */
+    private fun fullyTransparentWindowIssue416(): TaoWindowTestCase {
+        val resolvedClear = AtomicInteger(Int.MIN_VALUE)
+        val glassArmed = AtomicBoolean(false)
+        val backdropTransparentArmed = AtomicBoolean(false)
+        val sawLocals = AtomicBoolean(false)
+        return TaoWindowTestCase(
+            name = "#416 fully transparent Tao window",
+            paintDefaultBackground = false,
+            transparent = true,
+            content = {
+                // No WindowBackground / TitleBar: only the style layer + coerce policy.
+                val layers = LocalWindowClearColorLayers.current
+                val glass = LocalRequestedGlassBackground.current
+                val backdrop = LocalRequestedTransparentBackground.current
+                SideEffect {
+                    resolvedClear.set(layers?.resolved ?: 0)
+                    glassArmed.set(glass?.value == true)
+                    backdropTransparentArmed.set(backdrop?.value == true)
+                    sawLocals.set(true)
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.TopStart,
+                ) {
+                    Box(Modifier.size(48.dp).background(Color(0xFFFF00AA)))
+                }
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                awaitUntil("composition locals published") { sawLocals.get() }
+                settle(400)
+                assertTransparentClearAndNative(resolvedClear.get(), glassArmed.get(), backdropTransparentArmed.get())
+                System.err.println("[#416/tao] VERDICT: OK — transparent alone (style coerce + native)")
+            },
+        )
+    }
+
+    /**
+     * Regression for the TitleBar footgun: stock TitleBar used to write an
+     * opaque chrome colour into the clear stack and paint the empty client
+     * solid. Under transparent=true the clear must stay alpha-0 (TitleBar
+     * still paints its own bar pixels).
+     */
+    private fun fullyTransparentSurvivesTitleBarIssue416(): TaoWindowTestCase {
+        val resolvedClear = AtomicInteger(Int.MIN_VALUE)
+        val sawLocals = AtomicBoolean(false)
+        return TaoWindowTestCase(
+            name = "#416 transparent survives TitleBar clear",
+            paintDefaultBackground = false,
+            transparent = true,
+            content = {
+                TitleBar()
+                val layers = LocalWindowClearColorLayers.current
+                SideEffect {
+                    resolvedClear.set(layers?.resolved ?: 0)
+                    sawLocals.set(true)
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(top = 40.dp, start = 24.dp),
+                    contentAlignment = Alignment.TopStart,
+                ) {
+                    Box(Modifier.size(48.dp).background(Color(0xFFFF00AA)))
+                }
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                awaitUntil("composition locals published") { sawLocals.get() }
+                settle(500)
+                val clear = resolvedClear.get()
+                val clearAlpha = (clear ushr 24) and 0xFF
+                System.err.println(
+                    "[#416/titlebar] clear ARGB=0x${clear.toUInt().toString(16)} alpha=$clearAlpha " +
+                        "platform=${Platform.Current}",
+                )
+                check(clearAlpha == 0) {
+                    "TitleBar wrote opaque clear under transparent=true: " +
+                        "0x${clear.toUInt().toString(16)} — empty client would hide the desktop"
+                }
+                if (isMac && NativeMetalBridge.isLoaded) {
+                    val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
+                    check(nsView != 0L)
+                    check(!NativeMetalBridge.nativeIsWindowOpaque(nsView)) {
+                        "NSWindow re-opaqued under TitleBar + transparent=true"
+                    }
+                }
+                System.err.println("[#416/titlebar] VERDICT: OK — TitleBar does not kill transparent clear")
+            },
+        )
+    }
+
+    /**
+     * Semi-transparent WindowBackground must keep its alpha (coerce only
+     * targets fully opaque ARGB), so apps can tint a see-through window.
+     */
+    private fun fullyTransparentHonoursSemiTintIssue416(): TaoWindowTestCase {
+        val resolvedClear = AtomicInteger(Int.MIN_VALUE)
+        val sawLocals = AtomicBoolean(false)
+        // 50% white tint — alpha must survive.
+        val tint = Color(0x80FFFFFF)
+        val tintArgb = tint.toArgb()
+        return TaoWindowTestCase(
+            name = "#416 transparent keeps semi-transparent WindowBackground",
+            paintDefaultBackground = false,
+            transparent = true,
+            content = {
+                WindowBackground(tint)
+                val layers = LocalWindowClearColorLayers.current
+                SideEffect {
+                    resolvedClear.set(layers?.resolved ?: 0)
+                    sawLocals.set(true)
+                }
+                Box(Modifier.size(48.dp).background(Color(0xFFFF00AA)))
+            },
+            driver = {
+                awaitUntil("window mapped") { bounds() != null }
+                awaitUntil("composition locals published") { sawLocals.get() }
+                settle(400)
+                val clear = resolvedClear.get()
+                System.err.println(
+                    "[#416/tint] clear ARGB=0x${clear.toUInt().toString(16)} " +
+                        "expected=0x${tintArgb.toUInt().toString(16)}",
+                )
+                check(clear == tintArgb) {
+                    "semi-transparent WindowBackground was coerced away: " +
+                        "got 0x${clear.toUInt().toString(16)}, expected 0x${tintArgb.toUInt().toString(16)}"
+                }
+                System.err.println("[#416/tint] VERDICT: OK — semi tint preserved under transparent=true")
+            },
+        )
+    }
+
+    private fun TaoWindowTestScope.assertTransparentClearAndNative(
+        clear: Int,
+        glassArmed: Boolean,
+        backdropTransparentArmed: Boolean,
+    ) {
+        val clearAlpha = (clear ushr 24) and 0xFF
+        System.err.println(
+            "[#416/tao] clear ARGB=0x${clear.toUInt().toString(16)} alpha=$clearAlpha " +
+                "glassArmed=$glassArmed backdropTransparentArmed=$backdropTransparentArmed " +
+                "platform=${Platform.Current}",
+        )
+        check(clearAlpha == 0) {
+            "transparent window clear is not alpha-0: 0x${clear.toUInt().toString(16)}"
+        }
+        check(!glassArmed) {
+            "glassBackgroundState armed — regional glass is not full-window transparency"
+        }
+        check(!backdropTransparentArmed) {
+            "transparentBackgroundState armed without WindowsBackdrop — unexpected"
+        }
+        if (isMac && NativeMetalBridge.isLoaded) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
+            check(nsView != 0L) { "NSView handle missing for #416 probe" }
+            val opaque = NativeMetalBridge.nativeIsWindowOpaque(nsView)
+            System.err.println("[#416/tao] NSWindow.isOpaque=$opaque")
+            check(!opaque) {
+                "NSWindow still opaque under DecoratedWindow(transparent=true) — " +
+                    "desktop cannot composite through"
+            }
+        }
     }
 }

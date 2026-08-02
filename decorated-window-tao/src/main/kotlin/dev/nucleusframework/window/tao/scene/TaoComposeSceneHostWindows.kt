@@ -76,6 +76,9 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
 internal class TaoComposeSceneHostWindows(
     private val window: TaoWindow,
     private val coroutineContext: CoroutineContext = EmptyCoroutineContext,
+    // Full-window per-pixel transparency (#416). Creation-time; pairs with
+    // tao `with_transparent` (DWM blur-behind empty region).
+    private val fullyTransparent: Boolean = false,
 ) : AbstractTaoComposeSceneHost() {
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
@@ -87,16 +90,22 @@ internal class TaoComposeSceneHostWindows(
      * white until the first composition. Aligns
      * the Windows host with macOS / Linux (and the AWT backends) so a Compose
      * region without an explicit background matches the chrome color instead
-     * of a hardcoded white.
+     * of a hardcoded white. Fully transparent windows start at alpha 0.
      */
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
-        androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
+        androidx.compose.runtime.mutableStateOf(
+            if (fullyTransparent) 0 else 0xFFFFFFFF.toInt(),
+        )
 
     /**
      * Whether the client area must stay transparent — set while a DWM system
      * backdrop is applied (see `WindowsBackdrop`). The render loop then clears
-     * to alpha 0 instead of [clearColorArgbState], so the backdrop shows
-     * wherever Compose paints nothing.
+     * to the backdrop tint instead of [clearColorArgbState], so the material
+     * shows wherever Compose paints nothing.
+     *
+     * Fully transparent windows (#416) do **not** arm this flag: they clear
+     * with [clearColorArgbState] (alpha-0 by default) on a top-level that
+     * already has tao's DWM blur-behind empty region.
      *
      * The Windows counterpart of the macOS host's `glassBackgroundState`;
      * unlike macOS the surface needs no native flag to carry alpha — the ANGLE
@@ -804,13 +813,7 @@ internal class TaoComposeSceneHostWindows(
                 // uninitialized black buffer (captured on the exit path).
                 // The sub-ms clear shrinks the gap and colours it.
                 NativeTaoGlBridge.nativeResize(attachmentHandle, widthPxNew, heightPxNew, scale)
-                val clearArgb =
-                    if (transparentBackgroundState.value) {
-                        backdropTintArgbState.value
-                    } else {
-                        clearColorArgbState.value
-                    }
-                NativeTaoGlBridge.nativeClearPresent(attachmentHandle, clearArgb)
+                NativeTaoGlBridge.nativeClearPresent(attachmentHandle, resolveClientClearArgb())
                 // Raw GL clear-color/scissor calls happened behind Skia's
                 // state cache; resync before the Skia render below.
                 directContext?.resetGLAll()
@@ -1032,13 +1035,11 @@ internal class TaoComposeSceneHostWindows(
             // While a system backdrop is active the clear is the app's tint
             // layer over the DWM material (0 = raw material); otherwise the
             // opaque themed background.
-            surface.canvas.clear(
-                if (transparentBackgroundState.value) {
-                    backdropTintArgbState.value
-                } else {
-                    clearColorArgbState.value
-                },
-            )
+            // Backdrop mode: tint over the DWM material (0 = raw material).
+            // Fully transparent without a backdrop: use the resolved clear
+            // colour (alpha-0 by default, or a semi-transparent WindowBackground).
+            // Opaque windows: themed clear as usual.
+            surface.canvas.clear(resolveClientClearArgb())
             sc.render(surface.canvas.asComposeCanvas(), now)
             // `flushAndSubmit` issues the glFlush that commits the frame to
             // the back buffer; the present happens below, after the overlay/
@@ -1389,6 +1390,18 @@ internal class TaoComposeSceneHostWindows(
      *
      * Idempotent; a later detach() finds nothing to do.
      */
+    /**
+     * Clear colour for the next present: backdrop tint while a system material
+     * is armed, otherwise the resolved clear (alpha-0 for fully transparent
+     * windows, themed otherwise).
+     */
+    private fun resolveClientClearArgb(): Int =
+        if (transparentBackgroundState.value) {
+            backdropTintArgbState.value
+        } else {
+            clearColorArgbState.value
+        }
+
     fun prepareClose() {
         if (hwnd == 0L || !transparentBackgroundState.value) return
         NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)

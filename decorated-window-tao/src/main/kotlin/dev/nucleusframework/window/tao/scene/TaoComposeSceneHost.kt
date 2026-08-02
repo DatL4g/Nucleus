@@ -94,6 +94,9 @@ internal class TaoComposeSceneHost(
     private val macOSStyle: MacOSStyle = MacOSStyle.Auto,
     // macOS-only: hide this app's Dock icon (app-wide activation policy).
     private val hiddenFromDock: Boolean = false,
+    // Full-window per-pixel transparency (#416). Creation-time; pairs with
+    // tao `with_transparent` so alpha-0 Skia clears show the desktop.
+    private val fullyTransparent: Boolean = false,
 ) : AbstractTaoComposeSceneHost() {
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
@@ -103,8 +106,12 @@ internal class TaoComposeSceneHost(
     // composables update it so any Compose region without an explicit
     // background — most visibly animation gaps around fullscreen/title-bar
     // transitions — matches the active chrome instead of flashing white.
+    // Fully transparent windows start at alpha 0 so empty client areas show
+    // the desktop before the first composition rewrites the style layer.
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
-        androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
+        androidx.compose.runtime.mutableStateOf(
+            if (fullyTransparent) 0 else 0xFFFFFFFF.toInt(),
+        )
 
     // Behind-window glass background (see NativeMetalBridge.nativeSetGlassBackground).
     // While active, the render loop clears the Skia surface to transparent so
@@ -273,6 +280,14 @@ internal class TaoComposeSceneHost(
         val handle = NativeMetalBridge.nativeAttach(nsView)
         require(handle != 0L) { "Failed to attach CAMetalLayer to NSView" }
         attachmentHandle = handle
+
+        // #416: keep NSWindow non-opaque and layers clear after attach.
+        // tao already set opaque=false at builder time; our background / glass
+        // paths must not force it back to YES.
+        if (fullyTransparent) {
+            NativeMetalBridge.nativeSetFullyTransparent(nsView, true)
+            NativeMetalBridge.nativeSetWindowBackgroundColor(nsView, clearColorArgbState.value)
+        }
 
         // Render loop, AWT/skiko MetalVSyncer pattern: a FrameDispatcher
         // (coalescing) drives one frame per `invalidate`; each frame renders then
