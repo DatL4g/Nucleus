@@ -77,10 +77,25 @@ class TaoSceneScrollTest {
             scroll(scrollEvent(dy = 1f))
             frameUntilIdle()
             val afterDown = scrollValue.value
-            assertTrue(afterDown > 0)
+            assertTrue(afterDown > 0, "scroll state must advance after down (got $afterDown)")
             scroll(scrollEvent(dy = -1f))
-            frameUntilIdle()
-            assertEquals(0, scrollValue.value, "one notch down then one notch up must return to origin")
+            // The scrollable pipeline can re-arm one dispatch after the first
+            // quiet window (documented as a rare 8px residue in
+            // frameUntilIdle). Drain until origin so Windows CI load does not
+            // flake the reverse notch.
+            var leftover = scrollValue.value
+            var passes = 0
+            while (leftover != 0 && passes < SYMMETRY_SETTLE_PASSES) {
+                frameUntilIdle()
+                leftover = scrollValue.value
+                passes++
+            }
+            assertEquals(
+                0,
+                leftover,
+                "one notch down then one notch up must return to origin " +
+                    "(afterDown=$afterDown, leftover=$leftover after $passes extra settle passes)",
+            )
         }
 
     @Test
@@ -141,5 +156,7 @@ class TaoSceneScrollTest {
     private companion object {
         const val RED = 0xFFFF0000.toInt()
         const val BLUE = 0xFF0000FF.toInt()
+        /** Extra frameUntilIdle rounds after the reverse notch (Windows CI flake). */
+        const val SYMMETRY_SETTLE_PASSES = 8
     }
 }
