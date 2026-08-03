@@ -36,6 +36,12 @@ abstract class JvmApplication {
 
     abstract fun jvmArgs(vararg jvmArgs: String)
 
+    /**
+     * HotSpot garbage collector for the JVM distribution and the `run` task.
+     * `null` (the default) leaves the choice to JVM ergonomics. See [GarbageCollector].
+     */
+    abstract var garbageCollector: GarbageCollector?
+
     abstract val nativeDistributions: JvmApplicationDistributions
 
     abstract fun nativeDistributions(fn: Action<JvmApplicationDistributions>)

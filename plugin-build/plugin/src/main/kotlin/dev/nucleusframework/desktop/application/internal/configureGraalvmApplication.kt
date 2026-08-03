@@ -826,6 +826,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedMaxHeapSizePercent = graalvm.maxHeapSizePercent.get()
             inputs.property("maxHeapSize", resolvedMaxHeapSize ?: "")
             inputs.property("maxHeapSizePercent", resolvedMaxHeapSizePercent)
+            val resolvedGarbageCollector = graalvm.garbageCollector.orNull
+            inputs.property("garbageCollector", resolvedGarbageCollector?.name ?: "")
             // Rerun the compile when the PGO mode or the recorded profile changes — the args are
             // assembled in doFirst, so they are not tracked as inputs by themselves.
             inputs.property("pgoMode", resolvedPgoMode)
@@ -860,10 +862,10 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 // toolchain, and it must only happen when a native image is actually built.
                 val resolvedGraalvmHome = graalvmHome.get()
 
-                // PGO flags are Oracle GraalVM-only: community toolchains (GraalVM CE, Liberica
-                // NIK, Mandrel) reject --pgo/--pgo-instrument as unknown options. Gate on the
+                // PGO, obfuscation and --gc=G1 are Oracle GraalVM-only: community toolchains
+                // (GraalVM CE, Liberica NIK, Mandrel) reject them as unknown options. Gate on the
                 // resolved toolchain so a committed profile never breaks builds on those JDKs.
-                val pgoSupported = isOracleGraalvm(File(resolvedGraalvmHome))
+                val oracleGraalvm = isOracleGraalvm(File(resolvedGraalvmHome))
 
                 // Build args at execution time so that outputs from dependent tasks
                 // (static analysis dir, metadata repo dirs file, …) exist on disk.
@@ -894,15 +896,28 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // and stays forward-compatible. Placed before user buildArgs (last wins).
                         add("--enable-native-access=ALL-UNNAMED")
 
-                        // Default runtime max heap. Serial GC otherwise defaults to 80% of RAM;
-                        // bake a desktop-appropriate ceiling (JVM parity, ~25%) instead. Baked as a
-                        // default — still overridable at runtime with -Xmx. An absolute size wins
-                        // over the percentage. Placed before user buildArgs so an explicit override wins.
-                        if (resolvedMaxHeapSize != null) {
-                            add("-R:MaxHeapSize=$resolvedMaxHeapSize")
-                        } else {
-                            add("-R:MaximumHeapSizePercent=$resolvedMaxHeapSizePercent")
-                        }
+                        // Garbage collector + default runtime max heap. Serial GC otherwise defaults
+                        // to 80% of RAM; bake a desktop-appropriate ceiling (JVM parity, ~25%)
+                        // instead. Baked as a default — still overridable at runtime with -Xmx. An
+                        // absolute size wins over the percentage, and the percentage option name
+                        // depends on the collector. Placed before user buildArgs so an explicit
+                        // override wins.
+                        val gcResolution =
+                            resolveNativeImageGc(
+                                requested = resolvedGarbageCollector,
+                                isOracleGraalvm = oracleGraalvm,
+                                isLinux = currentOS == OS.Linux,
+                                graalvmHome = resolvedGraalvmHome,
+                            )
+                        gcResolution.warning?.let { logger.warn(it) }
+                        gcResolution.gc?.let { logger.lifecycle("Garbage collector: ${it.id}") }
+                        addAll(
+                            nativeImageGcArgs(
+                                gc = gcResolution.gc,
+                                maxHeapSize = resolvedMaxHeapSize,
+                                maxHeapSizePercent = resolvedMaxHeapSizePercent,
+                            ),
+                        )
 
                         // Opt out of Oracle GraalVM's default ML-inferred PGO profile. Placed before
                         // user buildArgs so an explicit override there still wins.
@@ -913,7 +928,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // PGO: either instrument (collect a profile) or apply a recorded one.
                         when {
                             resolvedPgoMode == "instrument" -> {
-                                check(pgoSupported) {
+                                check(oracleGraalvm) {
                                     "PGO instrumentation requires Oracle GraalVM " +
                                         "(--pgo-instrument is not available in GraalVM CE, Liberica NIK or " +
                                         "Mandrel). Current toolchain: $resolvedGraalvmHome. " +
@@ -927,7 +942,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                 )
                             }
                             resolvedPgoMode != "off" && resolvedPgoEnabled && resolvedPgoProfile.exists() -> {
-                                if (pgoSupported) {
+                                if (oracleGraalvm) {
                                     add("--pgo=${resolvedPgoProfile.absolutePath}")
                                     logger.lifecycle("PGO: applying recorded profile $resolvedPgoProfile")
                                 } else {
@@ -943,7 +958,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // symbols embedded in the image; reflection/JNI names from the reachability
                         // metadata are preserved automatically, so it is safe with the JNI backends.
                         if (resolvedAdvancedObfuscation) {
-                            if (pgoSupported) {
+                            if (oracleGraalvm) {
                                 // Future GraalVM releases require experimental options to be
                                 // explicitly unlocked; do it now to future-proof and silence the warning.
                                 add("-H:+UnlockExperimentalVMOptions")

@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.dsl.GarbageCollector
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplication
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationBuildTypes
@@ -72,6 +73,8 @@ internal open class JvmApplicationInternal
         final override fun jvmArgs(vararg jvmArgs: String) {
             data.jvmArgs.addAll(jvmArgs)
         }
+
+        final override var garbageCollector: GarbageCollector? by data::garbageCollector
 
         final override val nativeDistributions: JvmApplicationDistributions by data::nativeDistributions
 

@@ -1,5 +1,7 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.GarbageCollector
 import dev.nucleusframework.desktop.application.dsl.GraalvmDistribution
+import dev.nucleusframework.desktop.application.dsl.NativeImageGarbageCollector
 import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -39,6 +41,19 @@ nucleus.application {
     // its stable build JDK. The forked process is what gets measured — not the daemon.
     providers.gradleProperty("runJavaHome").orNull?.let { javaHome = it }
 
+    // Collector under test, shared by the JVM and AOT sides of the shootout: -Pgc=serial|parallel|g1|z.
+    // Unset leaves JVM ergonomics (G1 here) and native-image's default (Serial GC) in charge, which
+    // is what makes the two runtimes' GC choice worth pinning explicitly when comparing them.
+    val benchmarkGc = providers.gradleProperty("gc").orNull?.lowercase()
+    garbageCollector =
+        when (benchmarkGc) {
+            "serial" -> GarbageCollector.SERIAL
+            "parallel" -> GarbageCollector.PARALLEL
+            "g1" -> GarbageCollector.G1
+            "z" -> GarbageCollector.Z
+            else -> null
+        }
+
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
@@ -59,6 +74,12 @@ nucleus.application {
                 "s" -> NativeImageOptimization.SIZE
                 else -> NativeImageOptimization.LEVEL_3
             }
+        // Native images bake their collector in at build time. -Pgc=g1 is the only value with a
+        // native counterpart (Oracle GraalVM on Linux, which this demo already opts into); every
+        // other value leaves the image on the default Serial GC.
+        if (benchmarkGc == "g1") {
+            garbageCollector = NativeImageGarbageCollector.G1
+        }
         // PGO (Oracle GraalVM): `runWithPgoInstrument` records graalvm/pgo/default.iprof, applied
         // automatically by every later build — no configuration needed. True PGO replaces
         // ML-inferred PGO. Opt out (pure -O3) with -Pnucleus.graalvm.pgo=off.
