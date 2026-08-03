@@ -117,7 +117,9 @@ object DeepLinkHandler {
     }
 
     private fun parseUriFromArgs(args: Array<String>) {
-        val raw = args.firstOrNull { it.contains("://") } ?: return
+        // Accept hierarchical (`myapp://host`) and opaque (`myapp:?q=1`) forms.
+        // The previous `://` filter dropped valid scheme-only URIs (issue #414).
+        val raw = args.firstOrNull(::isDeepLinkArg) ?: return
         try {
             val parsed = URI(raw)
             debugLog { "Received URI via CLI args: $parsed" }
@@ -181,4 +183,26 @@ object DeepLinkHandler {
     private fun errorLog(msg: () -> String) {
         errorln { "[$TAG] ${msg()}" }
     }
+}
+
+/**
+ * Whether [arg] looks like a deep-link URI (RFC 3986 scheme).
+ *
+ * Matches `scheme:` for any valid scheme so opaque URIs such as
+ * `myapp:?queryParam=123` are accepted alongside hierarchical
+ * `myapp://host/path` forms. Windows drive paths (`C:\…`, `D:/…`)
+ * are rejected even though they contain a colon.
+ */
+internal fun isDeepLinkArg(arg: String): Boolean {
+    val colon = arg.indexOf(':')
+    if (colon <= 0) return false
+    val scheme = arg.substring(0, colon)
+    if (!scheme[0].isLetter()) return false
+    if (scheme.any { !it.isLetterOrDigit() && it != '+' && it != '-' && it != '.' }) return false
+    // Windows absolute paths: single-letter scheme + \ or /
+    if (scheme.length == 1 && arg.length > colon + 1) {
+        val next = arg[colon + 1]
+        if (next == '\\' || next == '/') return false
+    }
+    return true
 }
