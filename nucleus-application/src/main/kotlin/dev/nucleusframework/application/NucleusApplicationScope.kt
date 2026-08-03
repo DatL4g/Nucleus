@@ -17,6 +17,13 @@ import dev.nucleusframework.window.tao.ApplicationScope as TaoApplicationScope
  * Extends Compose's [AwtApplicationScope] so libraries scoped to the plain
  * Compose application scope (e.g. tray composables) work inside
  * [nucleusApplication] blocks without Nucleus-specific overloads.
+ *
+ * Composables that rely on AWT under the hood (Compose's `Tray`, `Window`, …)
+ * are only supported on the AWT backends (JNI / JBR). On the Tao backend the
+ * process runs without an AWT event loop and the native event loop owns the
+ * main thread, so calling them compiles but is unsupported — AWT would
+ * initialize off-thread (deadlock-prone on macOS). Use AWT-free alternatives
+ * (e.g. ComposeNativeTray) with Tao.
  */
 @Stable
 sealed interface NucleusApplicationScope : AwtApplicationScope {
