@@ -20,7 +20,9 @@ dependencies {
     api(project(":aot-runtime"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
-    implementation(libs.compose.desktop.common)
+    // api: NucleusApplicationScope extends Compose's ApplicationScope, so the
+    // supertype must be visible on consumers' compile classpath.
+    api(libs.compose.desktop.common)
 
     // An app ships exactly one backend at runtime — by construction (their
     // imports overlap, so coexistence is unsupported). We compile against

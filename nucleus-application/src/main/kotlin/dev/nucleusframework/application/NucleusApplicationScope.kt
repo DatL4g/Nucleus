@@ -13,11 +13,22 @@ import dev.nucleusframework.window.tao.ApplicationScope as TaoApplicationScope
  * Backend-agnostic scope exposed by [nucleusApplication]. The two concrete
  * subtypes wrap the AWT / Tao application scopes so [DecoratedWindow] can
  * dispatch on `when (this)` without leaking backend types into user code.
+ *
+ * Extends Compose's [AwtApplicationScope] so libraries scoped to the plain
+ * Compose application scope (e.g. tray composables) work inside
+ * [nucleusApplication] blocks without Nucleus-specific overloads.
+ *
+ * Composables that rely on AWT under the hood (Compose's `Tray`, `Window`, …)
+ * are only supported on the AWT backends (JNI / JBR). On the Tao backend the
+ * process runs without an AWT event loop and the native event loop owns the
+ * main thread, so calling them compiles but is unsupported — AWT would
+ * initialize off-thread (deadlock-prone on macOS). Use AWT-free alternatives
+ * (e.g. ComposeNativeTray) with Tao.
  */
 @Stable
-sealed interface NucleusApplicationScope {
+sealed interface NucleusApplicationScope : AwtApplicationScope {
     /** Posts an exit request to the underlying event loop. */
-    fun exitApplication()
+    override fun exitApplication()
 
     /** The backend currently driving this scope. Never [NucleusBackend.Auto]. */
     val backend: NucleusBackend
