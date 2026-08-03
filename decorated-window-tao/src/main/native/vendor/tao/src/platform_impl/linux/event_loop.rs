@@ -45,7 +45,9 @@ use super::{
   keyboard,
   monitor::{self, MonitorHandle},
   taskbar, util,
-  window::{WindowId, WindowRequest},
+  window::{
+    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, WindowId, WindowRequest,
+  },
 };
 
 use taskbar::TaskbarIndicator;
@@ -545,6 +547,106 @@ impl<T: 'static> EventLoop<T> {
             let _ = fullscreen;
             let _ = is_wayland;
 
+            // PATCH(nucleus): hidden-titlebar CSD — keep the embedder the
+            // SINGLE resize authority over the shadow ring. GtkWindow's own
+            // frame regions treat only a thin outer band of the ring as a
+            // resize edge and the rest as a TITLE region, so a press there
+            // starts a compositor MOVE grab (the window slides with the
+            // pointer instead of resizing — which side "wins" depended on
+            // exactly where the cursor was). The generic `::event` signal is
+            // RUN_LAST: this user handler runs BEFORE GtkWindow's class
+            // handler, so returning Stop for ring presses suppresses GTK's
+            // title-move/edge machinery entirely. The press/release/motion is
+            // re-forwarded to the embedder channel here (Stop also suppresses
+            // the specific button/motion signals connected below), translated
+            // to content coordinates, where the Compose edge band resolves the
+            // ring to the nearest edge and drives `drag_resize_window`.
+            let tx_clone = event_tx.clone();
+            window.connect_event(move |window, ev| {
+              if !is_csd_hidden_titlebar(window) {
+                return glib::Propagation::Proceed;
+              }
+              let ring_pos = |window: &gtk::Window, x: f64, y: f64| {
+                let (cx, cy, cw, ch) = content_geometry(window);
+                let inside = x >= cx as f64
+                  && y >= cy as f64
+                  && x < (cx + cw) as f64
+                  && y < (cy + ch) as f64;
+                if inside {
+                  None
+                } else {
+                  Some((x - cx as f64, y - cy as f64))
+                }
+              };
+              match ev.event_type() {
+                gdk::EventType::ButtonPress | gdk::EventType::ButtonRelease => {
+                  let (Some((x, y)), Some(button)) = (ev.coords(), ev.button()) else {
+                    return glib::Propagation::Proceed;
+                  };
+                  // Ring events are delivered on GTK's input-only border-strip
+                  // GdkWindows with strip-LOCAL coordinates — normalize to the
+                  // toplevel space before the ring test.
+                  let (x, y) = event_coords_to_toplevel(window, ev.window(), x, y);
+                  let Some((tx_x, tx_y)) = ring_pos(window, x, y) else {
+                    return glib::Propagation::Proceed;
+                  };
+                  let scale_factor = window.scale_factor();
+                  let pressed = ev.event_type() == gdk::EventType::ButtonPress;
+                  // Ship the position first so the embedder's press-time edge
+                  // hit-test sees the ring coordinates it is about to act on.
+                  let _ = tx_clone.send(Event::WindowEvent {
+                    window_id: RootWindowId(id),
+                    event: WindowEvent::CursorMoved {
+                      position: LogicalPosition::new(tx_x, tx_y)
+                        .to_physical(scale_factor as f64),
+                      device_id: DEVICE_ID,
+                      modifiers: ModifiersState::empty(),
+                    },
+                  });
+                  let _ = tx_clone.send(Event::WindowEvent {
+                    window_id: RootWindowId(id),
+                    event: WindowEvent::MouseInput {
+                      button: match button {
+                        1 => MouseButton::Left,
+                        2 => MouseButton::Middle,
+                        3 => MouseButton::Right,
+                        _ => MouseButton::Other(button as u16),
+                      },
+                      state: if pressed {
+                        ElementState::Pressed
+                      } else {
+                        ElementState::Released
+                      },
+                      device_id: DEVICE_ID,
+                      modifiers: ModifiersState::empty(),
+                    },
+                  });
+                  glib::Propagation::Stop
+                }
+                gdk::EventType::MotionNotify => {
+                  let Some((x, y)) = ev.coords() else {
+                    return glib::Propagation::Proceed;
+                  };
+                  let (x, y) = event_coords_to_toplevel(window, ev.window(), x, y);
+                  let Some((tx_x, tx_y)) = ring_pos(window, x, y) else {
+                    return glib::Propagation::Proceed;
+                  };
+                  let scale_factor = window.scale_factor();
+                  let _ = tx_clone.send(Event::WindowEvent {
+                    window_id: RootWindowId(id),
+                    event: WindowEvent::CursorMoved {
+                      position: LogicalPosition::new(tx_x, tx_y)
+                        .to_physical(scale_factor as f64),
+                      device_id: DEVICE_ID,
+                      modifiers: ModifiersState::empty(),
+                    },
+                  });
+                  glib::Propagation::Stop
+                }
+                _ => glib::Propagation::Proceed,
+              }
+            });
+
             let tx_clone = event_tx.clone();
             window.connect_delete_event(move |_, _| {
               if let Err(e) = tx_clone.send(Event::WindowEvent {
@@ -573,7 +675,15 @@ impl<T: 'static> EventLoop<T> {
                 log::warn!("Failed to send window moved event to event channel: {}", e);
               }
 
-              let (w, h) = event.size();
+              // PATCH(nucleus): with hidden-titlebar CSD the configure event
+              // reports the full decorated surface (theme shadow margins
+              // included) — subtract the decoration insets for the client-area
+              // size the embedder actually renders (fresh, unlike
+              // `gtk_window_get_size` which reads the previous GdkWindow size
+              // and lags one configure during interactive resizes). Identity
+              // when CSD is off.
+              let (ew, eh) = event.size();
+              let (w, h) = super::window::configure_client_size(window, ew, eh);
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::Resized(
@@ -650,6 +760,17 @@ impl<T: 'static> EventLoop<T> {
               // targeting, where global coordinates don't exist).
               let scale_factor = window.scale_factor();
               let (x, y) = crossing.position();
+              // PATCH(nucleus): hidden-titlebar CSD — normalize border-strip
+              // GdkWindow coordinates to the toplevel, then shift into
+              // content-area coordinates so the embedder's (0,0) stays the
+              // visible window corner.
+              let (x, y) = if is_csd_hidden_titlebar(window) {
+                let (x, y) = event_coords_to_toplevel(window, crossing.window(), x, y);
+                let (cx, cy, _, _) = content_geometry(window);
+                (x - cx as f64, y - cy as f64)
+              } else {
+                (x, y)
+              };
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorMoved {
@@ -676,6 +797,16 @@ impl<T: 'static> EventLoop<T> {
                 // (SetCapture) already behave this way.
                 let scale_factor = window.scale_factor();
                 let (x, y) = motion.position();
+                // PATCH(nucleus): hidden-titlebar CSD — translate from
+                // decorated-surface to content-area coordinates (see the
+                // crossing handler above).
+                let (x, y) = if is_csd_hidden_titlebar(window) {
+                  let (x, y) = event_coords_to_toplevel(window, motion.window(), x, y);
+                  let (cx, cy, _, _) = content_geometry(window);
+                  (x - cx as f64, y - cy as f64)
+                } else {
+                  (x, y)
+                };
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
                   event: WindowEvent::CursorMoved {

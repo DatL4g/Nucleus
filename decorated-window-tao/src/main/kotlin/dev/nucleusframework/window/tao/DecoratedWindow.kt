@@ -72,9 +72,9 @@ private val hiddenFromDockLogger: java.util.logging.Logger =
  * three Tao hosts (macOS / Windows / Linux) so a Compose region without an
  * explicit background matches the chrome color on every platform — mirroring
  * the AWT backends' `Modifier.background(titleBarBackground)` in
- * `DecoratedWindowBody`. On Linux the host still carves the CSD shadow margins
- * and rounded corners back to transparent after rendering, so the drop shadow
- * is unaffected. Defaults to opaque white until the first composition.
+ * `DecoratedWindowBody`. On Linux the host still carves the rounded corners
+ * back to transparent after rendering. Defaults to opaque white until the
+ * first composition.
  */
 internal val LocalWindowClearColorLayers =
     staticCompositionLocalOf<WindowClearColorLayers?> { null }
@@ -235,7 +235,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     maximized: Boolean = false,
     isDialog: Boolean = false,
     // Fully borderless: macOS drops traffic lights; Win/Linux skip the Compose
-    // CSD outline (and Linux CSD shadow). For overlays/ghosts (drag previews, HUDs).
+    // CSD outline. For overlays/ghosts (drag previews, HUDs).
     undecorated: Boolean = false,
     // Full-window per-pixel transparency (#416). Creation-time only — see
     // DecoratedWindow(transparent = …).
@@ -293,6 +293,8 @@ internal fun ApplicationScope.openDecoratedWindow(
             // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
             // the user's [TitleBar] composable, mirroring decorated-window-jni.
             // `undecorated` opts out entirely (borderless, no traffic lights).
+            // Linux still gets the native GTK drop shadow through
+            // `undecoratedShadow` below (yaru.dart-style hidden-titlebar CSD).
             decorations = !undecorated && Platform.Current == Platform.MacOS,
             resizable = resizable,
             visible = false, // we show after first paint
@@ -627,14 +629,11 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     host.nativePopupLayers = nativePopupLayers
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
-    // GTK-style CSD drop shadow (approach B — dedicated wl_subsurface). On by
-    // default; the host gates it to Wayland non-popup windows (X11 stays flat)
-    // and it degrades to no-op if the compositor lacks wl_shm / an RGBA visual.
-    // Kill switch: NUCLEUS_TAO_LINUX_SHADOW=0. See docs/linux-csd-shadow-subsurface.md.
-    // Fully borderless overlays (`undecorated`) drop the shadow too.
-    host.decorationShadowEnabled =
-        !undecorated &&
-        System.getenv("NUCLEUS_TAO_LINUX_SHADOW") != "0"
+    // Yaru-style hidden-titlebar CSD (native GTK shadow ring): created via
+    // `undecoratedShadow = !undecorated` at openWindow time; the host aligns
+    // the frame radius and extends the resize band over the ring. Only
+    // effective on Wayland non-popup windows.
+    host.nativeCsdDecorations = !undecorated
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────
@@ -830,8 +829,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     // mid-grab focus-in would unmask the focus-out that follows, leaving the
     // chrome inactive for the rest of the drag (X11 does not toggle, which is
     // why it only shows on Wayland). The compositor withholds pointer events
-    // for the whole grab, so their return is the reliable grab-ended signal —
-    // same rule [TaoComposeSceneHostLinux] uses for the CSD shadow.
+    // for the whole grab, so their return is the reliable grab-ended signal.
     var lastFocused = true
 
     // The host owns the grab state for BOTH interactive moves and resizes (it

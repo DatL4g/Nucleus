@@ -222,6 +222,28 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeLinuxGtkWindow(handle: Long): Long
 
+    /**
+     * Linux only: origin of the content area (the child GTK allocated inside
+     * any client-side decorations) in logical toplevel coordinates, packed as
+     * `(x shl 32) or (y and 0xffffffff)`. `(0, 0)` for plain undecorated
+     * windows; the GTK theme's shadow margins when the yaru-style
+     * hidden-titlebar CSD is active. Feed into
+     * [NativeTaoEglBridge.nativeSetContentOffset].
+     */
+    @JvmStatic
+    external fun nativeLinuxContentOrigin(handle: Long): Long
+
+    /**
+     * Linux only: rounds the GTK-drawn CSD frame (decoration node + window
+     * background) to [radiusPx] on all four corners via a `GtkCssProvider`,
+     * so the native frame matches the Compose-carved content corners exactly.
+     */
+    @JvmStatic
+    external fun nativeLinuxSetCsdCornerRadius(
+        handle: Long,
+        radiusPx: Int,
+    )
+
     /** Scale factor encoded as `(scale * 1000) as Int` to keep a single signature. */
     @JvmStatic
     external fun nativeScaleFactor(handle: Long): Int

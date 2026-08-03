@@ -36,7 +36,6 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
-import dev.nucleusframework.window.tao.deco.TaoWindowShadowLinux
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
 import dev.nucleusframework.window.tao.event.taoKeyEvent
@@ -90,10 +89,13 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
  * Threading: every public method runs on the thread that owns the Tao event
  * loop. EGL contexts are per-thread, so all rendering must stay there.
  *
- * Tao on Linux always paints native window decorations through GTK; we
- * therefore leave `decorations = true` on this backend (see [DecoratedWindow]).
- * The user's [TitleBar] composable still works as a sub-bar inside the content
- * area — same shape as the macOS path before custom-chrome was added.
+ * Decorations on Linux follow the yaru.dart pattern: the GTK toplevel stays
+ * `decorated` with a hidden `GtkHeaderBar` installed via
+ * `gtk_window_set_titlebar()` (Wayland, non-popup), so GTK itself draws the
+ * native theme drop shadow / rounded corners / resize border while the
+ * user's [TitleBar] composable renders the visible chrome inside the content
+ * area. The EGL content subsurface is positioned at GTK's content-area origin
+ * (see [applyContentOffset]); X11 keeps the flat undecorated presentation.
  */
 @OptIn(InternalComposeUiApi::class)
 @Suppress("LargeClass", "TooManyFunctions")
@@ -113,9 +115,8 @@ internal class TaoComposeSceneHostLinux(
      * via [LocalRequestedClearColor] by the themed window (window background)
      * and by `TitleBar` (resolved title-bar background). Defaults to opaque
      * white until the first composition (alpha 0 when [fullyTransparent]).
-     * The post-render carve ([applyFrameDecoration]) re-clears the CSD shadow
-     * margins and rounded corners to transparent, so the drop shadow still
-     * composites over clean transparency regardless of this clear color.
+     * The post-render carve ([applyFrameDecoration]) re-clears the rounded
+     * corners to transparent regardless of this clear color.
      */
     val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
         androidx.compose.runtime.mutableStateOf(
@@ -316,62 +317,44 @@ internal class TaoComposeSceneHostLinux(
     /**
      * True while a compositor-driven interactive resize/move drag is in
      * flight. The compositor's grab makes GTK report a focus-out for the
-     * whole drag, but a native GTK window keeps its focused shadow while
-     * being resized or moved — so focus loss is masked for the shadow while
-     * this is set. Cleared when focus comes back (the grab ended) or on the
-     * next real button press (events only reach us once the grab is over).
+     * whole drag, but a native GTK window keeps its active appearance while
+     * being resized or moved — so focus loss is masked while this is set.
+     * Cleared when focus comes back (the grab ended) or on the next real
+     * button press (events only reach us once the grab is over).
      */
     private var compositorDragActive = false
 
     /**
      * Whether a compositor move or resize grab is currently in flight. Read by
      * [dev.nucleusframework.window.tao.openDecoratedWindow] to hold the
-     * chrome's active appearance for the duration of the grab, the same way
-     * the CSD shadow does.
+     * chrome's active appearance for the duration of the grab.
      */
     internal val isCompositorGrabActive: Boolean
         get() = compositorDragActive
-
-    /**
-     * True while a compositor **move** grab has the drop shadow in synchronized
-     * mode.
-     *
-     * The shadow rides a sibling `wl_subsurface` at a negative offset that
-     * deliberately overflows the toplevel's window geometry (that is how it
-     * avoids growing the surface / shifting the input coordinate system). In its
-     * normal desync mode Mutter/GNOME computes interactive-move damage from the
-     * window geometry, which excludes that overflow, so the shadow "frame" is
-     * never repainted at the old position while the window is dragged — it traces
-     * behind until the grab ends and a full repaint clears it (issue #383).
-     * Flipping the shadow subsurface to sync for the duration of the move makes
-     * it part of the toplevel's atomic surface tree, so the compositor moves and
-     * repaints it together with the window; it is restored to desync the instant
-     * the grab ends. Move-only: a resize grab keeps the shadow desync (it tracks
-     * the resizing frame, which stays inside the repainted region).
-     */
-    private var shadowSyncedForMove = false
 
     /** True while the EGL attachment is torn down because the window is hidden. */
     private var gpuSuspended: Boolean = false
 
     /**
-     * Opt-in GTK-style CSD drop shadow (approach B — dedicated wl_subsurface,
-     * Wayland only). Set by [dev.nucleusframework.window.tao.DecoratedWindow]
-     * before [attach]. No-op on X11 / popups.
+     * True when this window was created with the yaru-style hidden-titlebar
+     * CSD (decorated GTK toplevel + hidden GtkHeaderBar → GTK draws the native
+     * shadow ring). Set by [dev.nucleusframework.window.tao.DecoratedWindow]
+     * before [attach]; only effective on Wayland non-popup windows — the
+     * native layer never latches CSD elsewhere.
      */
-    var decorationShadowEnabled: Boolean = false
+    var nativeCsdDecorations: Boolean = false
 
-    /**
-     * Drop-shadow controller: measures theme margins, tracks the focus
-     * cross-fade, and produces the nine-slice shadow tile that
-     * [commitShadow] uploads into the native shadow subsurface. Inactive
-     * (all calls no-op) until [initShadow] succeeds on Wayland.
-     */
-    val windowShadow = TaoWindowShadowLinux(::requestRedrawCoalesced)
+    /** Whether the GTK-drawn CSD frame (shadow ring) is live for this window. */
+    private val isCsdActive: Boolean
+        get() = nativeCsdDecorations && attachedKind == 2 && !window.isPopup
 
     fun attach() {
         attachGpu()
-        initShadow()
+        if (isCsdActive) {
+            // Round the GTK frame to the same radius as the Compose corner
+            // carve so the native decoration and the content coincide.
+            NativeTaoBridge.nativeLinuxSetCsdCornerRadius(window.handle, cornerRadiusPx)
+        }
 
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val dndManager =
@@ -1000,6 +983,24 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
+     * Keeps the content subsurface aligned with GTK's content area. With the
+     * yaru-style hidden-titlebar CSD (Wayland, non-popup), GTK draws its
+     * native drop shadow into the toplevel surface and allocates the content
+     * child at (marginLeft, marginTop); the EGL subsurface must sit exactly
+     * there. (0,0) otherwise — and after maximize/fullscreen/tile, where GTK
+     * collapses the margins. Called once per rendered frame; both the origin
+     * query and the native set are cheap, and the C side no-ops when the
+     * offset is unchanged.
+     */
+    private fun applyContentOffset() {
+        if (attachmentHandle == 0L || attachedKind != 2 || window.handle == 0L) return
+        val packed = NativeTaoBridge.nativeLinuxContentOrigin(window.handle)
+        val xLogical = (packed shr 32).toInt()
+        val yLogical = packed.toInt()
+        NativeTaoEglBridge.nativeSetContentOffset(attachmentHandle, xLogical, yLogical)
+    }
+
+    /**
      * Applies (or clears) the rounded-rectangle XShape on the GL surface.
      * Called on every resize and any time the maximized/fullscreen flag may
      * have changed. Mirrors `decorated-window-core/DecoratedWindowCore.kt`'s
@@ -1062,14 +1063,10 @@ internal class TaoComposeSceneHostLinux(
         // NB: do NOT clear compositorDragActive on focus-in here. GNOME toggles
         // keyboard focus *during* a compositor resize/move grab, and clearing on
         // that mid-grab focus-in would unmask the following focus-out and flip
-        // the shadow to backdrop for the rest of the drag. The grab-ended signal
+        // the chrome inactive for the rest of the drag. The grab-ended signal
         // is real pointer input resuming (see [onPointerMove] / [onPointerButton]),
         // which the compositor withholds for the whole grab.
         windowInfo.isWindowFocused = focused
-        // Kick the 200ms normal↔backdrop shadow cross-fade (no-op when the
-        // shadow is inactive). Focus loss during a compositor resize/move grab
-        // keeps the focused shadow, like native GTK CSD windows.
-        windowShadow.onFocusChanged(focused || compositorDragActive)
     }
 
     private fun updateWindowInfoSize() {
@@ -1176,9 +1173,8 @@ internal class TaoComposeSceneHostLinux(
         // [LocalRequestedClearColor]) so any Compose region without an explicit
         // background matches the chrome color — aligned with the macOS / Windows
         // Tao hosts and the AWT backends, instead of showing the desktop through
-        // a transparent clear. The CSD shadow margins + rounded corners are carved
-        // back to transparent by [applyFrameDecoration] below, so the drop shadow
-        // still composites over clean transparency.
+        // a transparent clear. The rounded corners are carved back to
+        // transparent by [applyFrameDecoration] below.
         surface.canvas.clear(clearColorArgbState.value)
         sc.render(surface.canvas.asComposeCanvas(), now)
         applyFrameDecoration(surface.canvas)
@@ -1186,9 +1182,13 @@ internal class TaoComposeSceneHostLinux(
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
 
-        // Push the drop shadow (independent wl_shm subsurface) after the content
-        // swap was requested — no-op unless the shadow is active.
-        commitShadow()
+        // Re-align the content subsurface with GTK's content area AFTER the
+        // swap was requested, so the repositioning (which the native side
+        // applies with an explicit parent commit) lands in the compositor in
+        // the same frame as the newly-sized buffer — offset changes only ever
+        // accompany a size change (maximize/restore/tile collapse the CSD
+        // shadow margins).
+        applyContentOffset()
 
         // Drain popup-layer renderers after the host context was released.
         // Each layer binds its own private EGL context on this thread (the
@@ -1200,90 +1200,6 @@ internal class TaoComposeSceneHostLinux(
             val snapshot = popupRenderers.values.toList()
             for (render in snapshot) render()
         }
-    }
-
-    /**
-     * Arms the drop-shadow controller once the window is attached (Wayland
-     * only). The shadow rides a dedicated subsurface at a *negative* offset
-     * around the content — the content subsurface stays at (0,0), so input and
-     * resize are untouched. No WM margin / surface grow. Pixels are pushed
-     * per-frame by [commitShadow]. No-op on X11, popups, or when disabled.
-     */
-    private fun initShadow() {
-        if (!decorationShadowEnabled || window.isPopup || attachedKind != 2) return
-        val gtkPtr = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
-        if (gtkPtr == 0L) return
-        val radius = cornerRadiusPx.toFloat()
-        val armed =
-            windowShadow.initialize(
-                gtkWindowPtr = gtkPtr,
-                kind = attachedKind,
-                radiusTopLeft = radius,
-                radiusTopRight = radius,
-                radiusBottomRight = radius,
-                radiusBottomLeft = radius,
-            )
-        if (armed) requestRedrawCoalesced()
-    }
-
-    /**
-     * Uploads the current shadow to the native shadow subsurface. Called each
-     * rendered frame after the content swap; cheap when nothing changed (the
-     * controller reuses its cached tile and the native buffer is only
-     * reallocated on a size change). Hides the shadow while
-     * maximized/fullscreen/tiled.
-     */
-    private fun commitShadow() {
-        if (!windowShadow.isActive || attachmentHandle == 0L) return
-        // A compositor resize/move grab makes GTK report focus-out for the whole
-        // drag, but a native GTK CSD window keeps its focused shadow. The
-        // onFocusChanged masking can still let an edge through (event ordering),
-        // so re-assert focused every frame while the grab is live — idempotent
-        // once already targeting focused.
-        if (compositorDragActive) windowShadow.onFocusChanged(true)
-        val suspended = window.isMaximized || window.isFullscreen || window.isTiled
-        windowShadow.reconcile(suspended)
-        val insets = windowShadow.effectiveInsets
-        if (insets.isZero) {
-            NativeTaoEglBridge.nativeShadowHide(attachmentHandle)
-            return
-        }
-        val s = if (scale > 0f) scale else 1f
-        val tile = windowShadow.currentTile(s, System.nanoTime()) ?: return
-        // Shadow-inclusive surface size = visible content + margins (logical px),
-        // positioned at the negative margin offset so it rings the content.
-        val contentLogicalW = (widthPx / s).roundToInt()
-        val contentLogicalH = (heightPx / s).roundToInt()
-        NativeTaoEglBridge.nativeShadowCommit(
-            attachmentHandle,
-            tile.pixels,
-            tile.width,
-            tile.height,
-            tile.sliceLeft,
-            tile.sliceTop,
-            tile.sliceRight,
-            tile.sliceBottom,
-            contentLogicalW + insets.left + insets.right,
-            contentLogicalH + insets.top + insets.bottom,
-            s.roundToInt().coerceAtLeast(1),
-            -insets.left,
-            -insets.top,
-        )
-    }
-
-    /**
-     * Ends move-grab shadow sync (see [shadowSyncedForMove]): restores the
-     * shadow subsurface to desync and schedules a redraw so the next
-     * [commitShadow] re-commits it at the window's new position. No-op unless a
-     * move grab had it synced.
-     */
-    private fun endShadowMoveSync() {
-        if (!shadowSyncedForMove) return
-        shadowSyncedForMove = false
-        if (windowShadow.isActive && attachmentHandle != 0L) {
-            NativeTaoEglBridge.nativeShadowSetSync(attachmentHandle, false)
-        }
-        requestRedrawCoalesced()
     }
 
     /**
@@ -1325,10 +1241,8 @@ internal class TaoComposeSceneHostLinux(
      * the compositor blends the content behind those pixels — works
      * uniformly on X11 and Wayland (no XShape needed).
      *
-     * Without shadow margins the frame equals the surface and this clears
-     * exactly the four corner pieces (the historical behavior); with margins
-     * it additionally clears the whole margin band, so the GTK shadow drawn
-     * afterwards composites over clean transparency.
+     * The frame equals the surface, so this clears exactly the four corner
+     * pieces.
      *
      * The path is `surface_rect XOR rounded_frame_rect` via `EVEN_ODD` fill;
      * AA at the rounded edge stays in the destination, only the strictly
@@ -1381,8 +1295,6 @@ internal class TaoComposeSceneHostLinux(
         // [onFocusChanged].
         if (compositorDragActive) {
             compositorDragActive = false
-            endShadowMoveSync()
-            windowShadow.onFocusChanged(windowInfo.isWindowFocused)
         }
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
@@ -1419,18 +1331,9 @@ internal class TaoComposeSceneHostLinux(
      * reentrantly from inside the very Move dispatch that started the drag.
      */
     fun onNativeWindowDragStarted() {
-        // The move grab also steals the focus notify — keep the focused
-        // shadow for the whole drag (see [compositorDragActive]).
+        // The move grab also steals the focus notify — keep the active
+        // chrome for the whole drag (see [compositorDragActive]).
         compositorDragActive = true
-        // Flip the drop shadow to synchronized mode for the whole move grab so
-        // the compositor moves and repaints its overflowing sibling subsurface
-        // atomically with the window instead of leaving a trace at the old
-        // position (issue #383). Restored to desync when the grab ends (see
-        // [onPointerMove] / [endShadowMoveSync]).
-        if (windowShadow.isActive && attachmentHandle != 0L) {
-            shadowSyncedForMove = true
-            NativeTaoEglBridge.nativeShadowSetSync(attachmentHandle, true)
-        }
         // The compositor's interactive-move grab swallows the button release, so
         // neither the Compose scene nor the title-bar drag gesture ever see it:
         // the pointer stays "pressed" and the window ignores hover/clicks until a
@@ -1487,7 +1390,6 @@ internal class TaoComposeSceneHostLinux(
         // Any other real press means no compositor grab is in flight.
         if (pressed) {
             compositorDragActive = false
-            endShadowMoveSync()
         }
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
 
@@ -1533,13 +1435,27 @@ internal class TaoComposeSceneHostLinux(
         if (window.isFullscreen) return null
         if (window.isMaximized) return null
         val s = if (scale > 0f) scale else 1f
-        return resizeDecoration.hitTest(
-            xPx / s,
-            yPx / s,
-            (widthPx / s).toInt(),
-            (heightPx / s).toInt(),
-            forTouch,
-        )
+        var xl = xPx / s
+        var yl = yPx / s
+        val wl = (widthPx / s).toInt()
+        val hl = (heightPx / s).toInt()
+        // With the native CSD frame, GTK's shadow ring around the content is
+        // part of the window: a pointer inside the ring resolves to the
+        // nearest content edge so this band is the single resize authority
+        // over the whole frame — ring included — with no dead zone between
+        // the GTK margins and the Compose edge band.
+        val outside = xl < 0f || yl < 0f || xl >= wl || yl >= hl
+        if (isCsdActive && outside) {
+            val inRing =
+                xl >= -CSD_RING_MAX_LOGICAL &&
+                    yl >= -CSD_RING_MAX_LOGICAL &&
+                    xl <= wl + CSD_RING_MAX_LOGICAL &&
+                    yl <= hl + CSD_RING_MAX_LOGICAL
+            if (!inRing) return null
+            xl = xl.coerceIn(0f, (wl - 1).toFloat())
+            yl = yl.coerceIn(0f, (hl - 1).toFloat())
+        }
+        return resizeDecoration.hitTest(xl, yl, wl, hl, forTouch)
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
@@ -1888,7 +1804,6 @@ internal class TaoComposeSceneHostLinux(
 
     fun detach() {
         shutdownA11yScheduler()
-        windowShadow.dispose()
         textToolbar.hide()
         if (dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded &&
             window.handle != 0L
@@ -1947,6 +1862,13 @@ internal class TaoComposeSceneHostLinux(
     }
 
     private companion object {
+        /**
+         * How far outside the content (logical px) a pointer still counts as
+         * the CSD shadow ring for resize hit-testing. Theme margins run
+         * ~23-30px; anything farther is a stray coordinate from a drag grab.
+         */
+        private const val CSD_RING_MAX_LOGICAL: Float = 48f
+
         // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
         // `TRACKPAD_VALUE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f

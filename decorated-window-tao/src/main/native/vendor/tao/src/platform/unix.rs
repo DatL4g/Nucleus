@@ -163,6 +163,11 @@ pub trait WindowBuilderExtUnix {
   /// Whether to create a vertical `gtk::Box` and add it as the sole child of this window.
   /// Created by default.
   fn with_default_vbox(self, add: bool) -> WindowBuilder;
+
+  /// Nucleus patch: yaru.dart-style hidden-titlebar client-side decorations
+  /// (native GTK drop shadow with no visible titlebar). Wayland only; ignored
+  /// on X11. See `PlatformSpecificWindowBuilderAttributes::csd_hidden_titlebar`.
+  fn with_csd_hidden_titlebar(self, csd: bool) -> WindowBuilder;
 }
 
 impl WindowBuilderExtUnix for WindowBuilder {
@@ -210,6 +215,11 @@ impl WindowBuilderExtUnix for WindowBuilder {
 
   fn with_default_vbox(mut self, add: bool) -> WindowBuilder {
     self.platform_specific.default_vbox = add;
+    self
+  }
+
+  fn with_csd_hidden_titlebar(mut self, csd: bool) -> WindowBuilder {
+    self.platform_specific.csd_hidden_titlebar = csd;
     self
   }
 }

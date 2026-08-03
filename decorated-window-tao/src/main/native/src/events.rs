@@ -273,8 +273,9 @@ pub(crate) enum UserEvent {
         transparent: bool,
         // Drop shadow for borderless windows. Windows:
         // `with_undecorated_shadow` (DWM + outer-rect inset). macOS:
-        // `with_has_shadow` (NSWindow). False for borderless overlays.
-        // Ignored on Linux (CSD shadow is host-gated).
+        // `with_has_shadow` (NSWindow). Linux: yaru.dart-style hidden-titlebar
+        // CSD (`with_csd_hidden_titlebar`, Wayland only). False for borderless
+        // overlays.
         undecorated_shadow: bool,
     },
     SetVisible {

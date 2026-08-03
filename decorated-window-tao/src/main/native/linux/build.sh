@@ -107,8 +107,7 @@ build_widget() {
     local OUT="$OUT_DIR/libnucleus_tao_linux_widget.so"
     "$CC" -shared -fPIC -O2 -fvisibility=hidden \
         -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
-        "$SCRIPT_DIR/nucleus_tao_linux_widget.c" \
-        "$SCRIPT_DIR/nucleus_tao_linux_shadow.c" -ldl -lm \
+        "$SCRIPT_DIR/nucleus_tao_linux_widget.c" -ldl \
         -o "$OUT"
     strip --strip-unneeded "$OUT" || true
 }
