@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -479,106 +480,124 @@ private fun macTrafficLightInset(height: Dp): Dp {
 // `nativeConfigureChrome`, so clicks in the title bar reach Compose
 // undisturbed. The native side defers `performWindowDragWithEvent:` via
 // `dispatch_async`, mirroring JNI exactly.
+//
+// Deliberately does NOT opt into `sharePointerInputWithSiblings`: that flag is
+// read per layout node (`InnerNodeCoordinator` consults the immediate child's
+// chain), so it would not help the `TitleBarPlacement.Overlay` case it looks
+// like it addresses — but it WOULD let every overlapping sibling below a
+// `windowDragArea` (the macOS fullscreen bar, which is offset over the content
+// in the same Column; any app stacking chrome over content in a Box) receive
+// presses aimed at the opaque chrome. Pass-through is opted into explicitly,
+// at the scaffold level — see `Modifier.shareHitTestWithSiblings`.
+internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
+    pointerInput(window) { titleBarDragPointerLoop(window) }
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("CyclomaticComplexMethod")
-internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
-    pointerInput(window) {
-        val ctx = currentCoroutineContext()
-        awaitPointerEventScope {
-            var inUserControl = false
-            var pendingDrag = false
-            // Windows touch drag state lives in [TaoWindow] and is driven by
-            // raw Tao touch events (see `TaoComposeSceneHostWindows.onTouchInput`
-            // → `window.updateWindowsTitleBarTouchDrag(…)`), so the drag keeps
-            // running even if Compose's pointer pipeline routing is disrupted
-            // by the layout-size change of a `maximized → floating` restore.
-            while (ctx.isActive) {
-                val event = awaitPointerEvent(PointerEventPass.Final)
-                event.changes.forEach {
-                    val isTouch = it.type == androidx.compose.ui.input.pointer.PointerType.Touch
-                    if (!it.isConsumed && !inUserControl) {
-                        when (event.type) {
-                            PointerEventType.Press -> {
-                                val touchOnWindows =
-                                    isTouch &&
-                                        Platform.Current == Platform.Windows &&
-                                        NativeTaoWindowsDecoBridge.isLoaded
-                                // Only the primary button (or touch) may drag the window.
-                                // A secondary/middle press must not arm the drag: on Linux
-                                // `dragWindow()` starts an interactive compositor move grab
-                                // that swallows every subsequent pointer event.
-                                val isPrimaryOrTouch =
-                                    event.button == PointerButton.Primary || isTouch
-                                pendingDrag = isPrimaryOrTouch && !touchOnWindows
-                                if (touchOnWindows) {
-                                    // Fallback touch drag (no Aero Snap): only reached if the
-                                    // native WndProc did NOT capture this title-bar touch (it
-                                    // normally consumes the whole interaction from WM_POINTERDOWN
-                                    // and hands it to the OS move loop). Subsequent samples run
-                                    // via `TaoComposeSceneHostWindows.onTouchInput` →
-                                    // `window.updateWindowsTitleBarTouchDrag(...)`, applying
-                                    // `SetWindowPos` directly so the window still follows the
-                                    // finger even when the OS-driven path is unavailable.
-                                    val hwnd =
-                                        dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-                                            .nativeHwndHandle(window.handle)
-                                    val rect =
-                                        if (hwnd != 0L) {
-                                            NativeTaoWindowsDecoBridge
-                                                .nativeGetWindowRect(hwnd)
-                                        } else {
-                                            null
-                                        }
-                                    val screen =
-                                        if (hwnd != 0L) {
-                                            NativeTaoWindowsDecoBridge
-                                                .nativeClientToScreen(
-                                                    hwnd,
-                                                    it.position.x.toInt(),
-                                                    it.position.y.toInt(),
-                                                )
-                                        } else {
-                                            null
-                                        }
-                                    if (
-                                        rect != null &&
-                                        rect.size == WINDOW_RECT_COMPONENT_COUNT &&
-                                        screen != null &&
-                                        screen.size == SCREEN_POINT_COMPONENT_COUNT
-                                    ) {
-                                        window.beginWindowsTitleBarTouchDrag(
-                                            touchId = it.id.value,
-                                            hwnd = hwnd,
-                                            startScreenX = screen[0],
-                                            startScreenY = screen[1],
-                                            startOuterX = rect[0],
-                                            startOuterY = rect[1],
-                                            maximized =
-                                                NativeTaoWindowsDecoBridge
-                                                    .nativeIsMaximized(hwnd),
-                                        )
+private suspend fun PointerInputScope.titleBarDragPointerLoop(window: TaoWindow) {
+    val ctx = currentCoroutineContext()
+    awaitPointerEventScope {
+        var inUserControl = false
+        var pendingDrag = false
+        // Windows touch drag state lives in [TaoWindow] and is driven by
+        // raw Tao touch events (see `TaoComposeSceneHostWindows.onTouchInput`
+        // → `window.updateWindowsTitleBarTouchDrag(…)`), so the drag keeps
+        // running even if Compose's pointer pipeline routing is disrupted
+        // by the layout-size change of a `maximized → floating` restore.
+        while (ctx.isActive) {
+            val event = awaitPointerEvent(PointerEventPass.Final)
+            event.changes.forEach {
+                val isTouch = it.type == PointerType.Touch
+                if (!it.isConsumed && !inUserControl) {
+                    when (event.type) {
+                        PointerEventType.Press -> {
+                            val touchOnWindows =
+                                isTouch &&
+                                    Platform.Current == Platform.Windows &&
+                                    NativeTaoWindowsDecoBridge.isLoaded
+                            // Only the primary button (or touch) may drag the window.
+                            // A secondary/middle press must not arm the drag: on Linux
+                            // `dragWindow()` starts an interactive compositor move grab
+                            // that swallows every subsequent pointer event.
+                            val isPrimaryOrTouch =
+                                event.button == PointerButton.Primary || isTouch
+                            pendingDrag = isPrimaryOrTouch && !touchOnWindows
+                            if (touchOnWindows) {
+                                // Fallback touch drag (no Aero Snap): only reached if the
+                                // native WndProc did NOT capture this title-bar touch (it
+                                // normally consumes the whole interaction from WM_POINTERDOWN
+                                // and hands it to the OS move loop). Subsequent samples run
+                                // via `TaoComposeSceneHostWindows.onTouchInput` →
+                                // `window.updateWindowsTitleBarTouchDrag(...)`, applying
+                                // `SetWindowPos` directly so the window still follows the
+                                // finger even when the OS-driven path is unavailable.
+                                val hwnd =
+                                    dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+                                        .nativeHwndHandle(window.handle)
+                                val rect =
+                                    if (hwnd != 0L) {
+                                        NativeTaoWindowsDecoBridge
+                                            .nativeGetWindowRect(hwnd)
+                                    } else {
+                                        null
                                     }
+                                val screen =
+                                    if (hwnd != 0L) {
+                                        NativeTaoWindowsDecoBridge
+                                            .nativeClientToScreen(
+                                                hwnd,
+                                                it.position.x.toInt(),
+                                                it.position.y.toInt(),
+                                            )
+                                    } else {
+                                        null
+                                    }
+                                if (
+                                    rect != null &&
+                                    rect.size == WINDOW_RECT_COMPONENT_COUNT &&
+                                    screen != null &&
+                                    screen.size == SCREEN_POINT_COMPONENT_COUNT
+                                ) {
+                                    window.beginWindowsTitleBarTouchDrag(
+                                        touchId = it.id.value,
+                                        hwnd = hwnd,
+                                        startScreenX = screen[0],
+                                        startScreenY = screen[1],
+                                        startOuterX = rect[0],
+                                        startOuterY = rect[1],
+                                        maximized =
+                                            NativeTaoWindowsDecoBridge
+                                                .nativeIsMaximized(hwnd),
+                                    )
                                 }
                             }
-                            PointerEventType.Move ->
-                                if (pendingDrag) {
-                                    window.dragWindow()
-                                    pendingDrag = false
-                                }
-                            PointerEventType.Release -> {
+                        }
+                        PointerEventType.Move ->
+                            if (pendingDrag) {
+                                window.dragWindow()
                                 pendingDrag = false
                             }
-                        }
-                    } else {
-                        if (event.type == PointerEventType.Press) {
-                            inUserControl = true
+                        PointerEventType.Release -> {
                             pendingDrag = false
                         }
-                        if (event.type == PointerEventType.Release) {
-                            inUserControl = false
-                        }
+                    }
+                } else {
+                    // Someone else claimed this sample — a child gesture
+                    // detector, or (under an Overlay bar sharing its hit test)
+                    // a scrollable sibling below. Disarm: a consumer that stops
+                    // consuming mid-gesture — a list reaching its scroll limit —
+                    // would otherwise hand the still-pending drag a later
+                    // unconsumed Move and start a compositor move grab in the
+                    // middle of the scroll.
+                    pendingDrag = false
+                    if (event.type == PointerEventType.Press) {
+                        inUserControl = true
+                    }
+                    if (event.type == PointerEventType.Release) {
+                        inUserControl = false
                     }
                 }
             }
         }
     }
+}

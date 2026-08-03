@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
 import dev.nucleusframework.window.tao.dnd.TaoSyntheticDndTest
 import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
@@ -49,6 +50,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneAnimationTest::class.java,
             TaoSceneSemanticsTest::class.java,
             TaoA11yProjectionTest::class.java,
+            TitleBarHitTestTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */

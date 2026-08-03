@@ -8,11 +8,16 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.PointerInputModifierNode
+import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.LocalTaoWindow
 
@@ -96,3 +101,50 @@ public fun Modifier.noWindowDrag(): Modifier =
     onPointerEvent(PointerEventType.Press, PointerEventPass.Main) { event ->
         event.changes.forEach { it.consume() }
     }
+
+/**
+ * Marks this layout so Compose hit testing continues to the siblings BELOW it
+ * instead of stopping at it — the layout still receives every pointer event.
+ *
+ * Backs [WindowScaffold]'s `TitleBarPlacement.Overlay(passThroughToContent = true)`:
+ * the title bar is composed on top of the window content, and by default the
+ * topmost sibling wins the hit test for its whole bounds, so interactive content
+ * merged into the title-bar band (e.g. a collapsed navigation pane's
+ * back/hamburger buttons) would never receive pointer events at all. With this
+ * marker the content below is hit-tested too; when it consumes a press (Main
+ * pass), the bar's own drag handler sees the consumption (Final pass) and does
+ * not start a window move.
+ *
+ * Opt-in only: applied unconditionally it makes a click on the opaque chrome
+ * activate whatever clickable content happens to flow underneath it.
+ *
+ * The sibling-sharing flag only acts at the level of the layout node whose own
+ * modifier chain carries it (`InnerNodeCoordinator` consults the immediate
+ * child's chain), which is why the scaffold applies it to the wrapper box of
+ * the bar slot — a flag deeper inside the bar's subtree would not propagate.
+ */
+internal fun Modifier.shareHitTestWithSiblings(): Modifier = this then ShareHitTestWithSiblingsElement
+
+private data object ShareHitTestWithSiblingsElement : ModifierNodeElement<ShareHitTestWithSiblingsNode>() {
+    override fun create(): ShareHitTestWithSiblingsNode = ShareHitTestWithSiblingsNode()
+
+    override fun update(node: ShareHitTestWithSiblingsNode) = Unit
+
+    override fun InspectorInfo.inspectableProperties() {
+        name = "shareHitTestWithSiblings"
+    }
+}
+
+private class ShareHitTestWithSiblingsNode :
+    Modifier.Node(),
+    PointerInputModifierNode {
+    override fun onPointerEvent(
+        pointerEvent: PointerEvent,
+        pass: PointerEventPass,
+        bounds: IntSize,
+    ) = Unit
+
+    override fun onCancelPointerInput() = Unit
+
+    override fun sharePointerInputWithSiblings(): Boolean = true
+}
