@@ -20,8 +20,17 @@ public sealed interface TitleBarPlacement {
      *
      * @param autoHideInFullscreen when `true`, the bar is not composed while
      * the window is fullscreen so the content is fully immersive.
+     * @param passThroughToContent when `true`, presses landing on the bar are
+     * ALSO hit-tested against the content below it, so controls the app merges
+     * into the title-bar band (a collapsed navigation pane's back/hamburger
+     * buttons, a tab strip) stay interactive through the overlay. Content that
+     * consumes the press vetoes the window drag, exactly like an interactive
+     * child of the bar itself. Off by default: with a full-bleed content layout
+     * (a list or an image scrolling behind the bar) it would make a click on
+     * the opaque chrome activate whatever sits underneath.
      */
     public data class Overlay(
         val autoHideInFullscreen: Boolean = true,
+        val passThroughToContent: Boolean = false,
     ) : TitleBarPlacement
 }

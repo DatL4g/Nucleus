@@ -189,7 +189,24 @@ public fun DecoratedWindowScope.WindowScaffold(
                     Box(modifier = modifier.weight(1f).fillMaxWidth()) {
                         content(PaddingValues(top = chromeInsets.titleBarHeight))
                         if (!hideBar) {
-                            Box(modifier = Modifier.align(Alignment.TopStart)) {
+                            // `passThroughToContent`: the bar floats over the
+                            // content, so by default it wins the hit test for
+                            // its whole band. Opting in shares the hit test with
+                            // the content sibling below, keeping controls the app
+                            // merged into the band interactive (see
+                            // Modifier.shareHitTestWithSiblings).
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .align(Alignment.TopStart)
+                                        .let {
+                                            if (titleBarPlacement.passThroughToContent) {
+                                                it.shareHitTestWithSiblings()
+                                            } else {
+                                                it
+                                            }
+                                        },
+                            ) {
                                 barSlot()
                             }
                         }

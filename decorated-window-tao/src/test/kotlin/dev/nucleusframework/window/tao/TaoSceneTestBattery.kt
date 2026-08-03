@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.TaoWindowResizableTest
 import dev.nucleusframework.window.tao.TaoWindowScrollTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
@@ -164,6 +165,27 @@ public object TaoSceneTestBattery {
         }
         run("TaoScenePointerTest: hover exit resets hover state via exitPointer") {
             TaoScenePointerTest().`hover exit resets hover state via exitPointer`()
+        }
+        run("TitleBarHitTestTest: opaque overlay bar does not leak clicks to the content below") {
+            TitleBarHitTestTest().`opaque overlay bar does not leak clicks to the content below`()
+        }
+        run("TitleBarHitTestTest: pass-through overlay bar keeps content in the bar band interactive") {
+            TitleBarHitTestTest().`pass-through overlay bar keeps content in the bar band interactive`()
+        }
+        run("TitleBarHitTestTest: content consuming the press vetoes the window drag") {
+            TitleBarHitTestTest().`content consuming the press vetoes the window drag`()
+        }
+        run("TitleBarHitTestTest: an unclaimed press on the bar still drags the window") {
+            TitleBarHitTestTest().`an unclaimed press on the bar still drags the window`()
+        }
+        run("TitleBarHitTestTest: a consumer that stops consuming mid-gesture never hands over the drag") {
+            TitleBarHitTestTest().`a consumer that stops consuming mid-gesture never hands over the drag`()
+        }
+        run("TitleBarHitTestTest: a drag gesture under a pass-through bar is not stolen by the window move") {
+            TitleBarHitTestTest().`a drag gesture under a pass-through bar is not stolen by the window move`()
+        }
+        run("TitleBarHitTestTest: a drag area does not leak clicks to an overlapping sibling") {
+            TitleBarHitTestTest().`a drag area does not leak clicks to an overlapping sibling`()
         }
         run("TaoSceneScrollTest: wheel down scrolls a vertical column") {
             TaoSceneScrollTest().`wheel down scrolls a vertical column`()
