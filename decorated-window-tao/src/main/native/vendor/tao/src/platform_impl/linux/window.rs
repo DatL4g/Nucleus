@@ -72,6 +72,105 @@ pub struct Window {
   css_provider: CssProvider,
 }
 
+/// PATCH(nucleus): true when this toplevel runs yaru.dart-style hidden-titlebar
+/// CSD (decorated GtkWindow + hidden GtkHeaderBar installed via
+/// `gtk_window_set_titlebar`). Set as gobject data at creation so the
+/// event-loop signal handlers (which only hold the GtkWindow) can read it.
+pub(crate) fn is_csd_hidden_titlebar<W: IsA<gtk::Window>>(window: &W) -> bool {
+  unsafe {
+    window
+      .as_ref()
+      .data::<bool>("nucleus_csd_hidden_titlebar")
+      .map(|ptr| *ptr.as_ref())
+      .unwrap_or(false)
+  }
+}
+
+/// PATCH(nucleus): content-area geometry of a toplevel, in toplevel-widget
+/// logical coordinates: `(x, y, w, h)` of the child (default vbox) GTK
+/// allocated inside the client-side decorations. For a hidden-titlebar CSD
+/// window this excludes the theme's shadow margins (and the 0-height hidden
+/// header bar); for a plain undecorated window it is `(0, 0, window size)`.
+/// The embedder positions its EGL subsurface at `(x, y)` and sizes its buffer
+/// to `(w, h)`, and pointer coordinates are translated by `(-x, -y)` so the
+/// content keeps a (0,0) origin — the same net effect as a Flutter view being
+/// a regular GTK child inside the decorated window.
+pub(crate) fn content_geometry<W: IsA<gtk::Window>>(window: &W) -> (i32, i32, i32, i32) {
+  let window = window.as_ref();
+  if let Some(child) = window.child() {
+    let alloc = child.allocation();
+    // Before the first size-allocate pass the child reports a 1×1 dummy
+    // allocation at (0,0) — fall back to the window size so early callers
+    // (initial inner_size snapshot) don't see garbage.
+    if alloc.width() > 1 || alloc.height() > 1 {
+      return (alloc.x(), alloc.y(), alloc.width(), alloc.height());
+    }
+  }
+  let size = window.size();
+  (0, 0, size.0, size.1)
+}
+
+/// PATCH(nucleus): translates event coordinates into toplevel-GdkWindow
+/// coordinates. GTK3 CSD creates input-only child GdkWindows for the resize
+/// border strips (`GtkWindow.border_window[8]`); pointer events landing in
+/// the shadow ring are delivered on those children with STRIP-LOCAL
+/// coordinates (small values), while events over the content arrive on the
+/// toplevel GdkWindow. Walk the GdkWindow chain up to the widget's own
+/// window, accumulating each child's position, so callers always reason in
+/// one coordinate space. Identity when the event window IS the toplevel.
+pub(crate) fn event_coords_to_toplevel<W: IsA<gtk::Window>>(
+  window: &W,
+  event_window: Option<gtk::gdk::Window>,
+  x: f64,
+  y: f64,
+) -> (f64, f64) {
+  let Some(toplevel) = window.as_ref().window() else {
+    return (x, y);
+  };
+  let Some(mut w) = event_window else {
+    return (x, y);
+  };
+  let (mut ex, mut ey) = (x, y);
+  let mut hops = 0;
+  while w != toplevel && hops < 8 {
+    let (px, py) = w.position();
+    ex += px as f64;
+    ey += py as f64;
+    match w.parent() {
+      Some(parent) => w = parent,
+      None => break,
+    }
+    hops += 1;
+  }
+  (ex, ey)
+}
+
+/// PATCH(nucleus): client-area size for a configure event on a (possibly)
+/// hidden-titlebar CSD window. The configure reports the FULL surface size
+/// (theme shadow margins included); `gtk_window_get_size` would subtract the
+/// GTK-drawn decorations but reads the PREVIOUS GdkWindow size — one configure
+/// stale during an interactive resize. Instead subtract the decoration insets
+/// (full allocation − content-child allocation, stable between state changes)
+/// from the fresh configure size. Identity when CSD is off (insets are zero).
+pub(crate) fn configure_client_size<W: IsA<gtk::Window>>(
+  window: &W,
+  event_w: u32,
+  event_h: u32,
+) -> (u32, u32) {
+  if !is_csd_hidden_titlebar(window) {
+    return (event_w, event_h);
+  }
+  let widget = window.as_ref();
+  let walloc = widget.allocation();
+  let (_, _, cw, ch) = content_geometry(window);
+  let inset_w = (walloc.width() - cw).max(0);
+  let inset_h = (walloc.height() - ch).max(0);
+  (
+    event_w.saturating_sub(inset_w as u32).max(1),
+    event_h.saturating_sub(inset_h as u32).max(1),
+  )
+}
+
 /// Synthesized ids for popup windows, disjoint from GtkApplicationWindow ids
 /// (which start at 1 and grow slowly). High bit set to make collisions
 /// impossible in practice.
@@ -123,7 +222,34 @@ impl Window {
 
       let window = window_builder.build();
 
-      if is_wayland {
+      // Nucleus patch: yaru.dart-style hidden-titlebar CSD. The exact sequence
+      // the Flutter Linux runner + yaru_window_linux use: create a real
+      // GtkHeaderBar, show it, install it with gtk_window_set_titlebar()
+      // (this latches GTK3's internal `client_decorated` flag — GTK now draws
+      // the theme's `decoration` node: drop shadow, rounded corners and the
+      // invisible resize border), then gtk_widget_hide() it. Hiding the widget
+      // removes its height but does NOT un-latch CSD, so the window keeps the
+      // native shadow with zero visible titlebar. Wayland only — on X11 the
+      // embedder renders into the toplevel XID and would paint over GTK's
+      // frame pixels.
+      let csd_hidden_titlebar = pl_attribs.csd_hidden_titlebar && is_wayland;
+      if csd_hidden_titlebar {
+        let header = gtk::HeaderBar::new();
+        header.show();
+        window.set_titlebar(Some(&header));
+        header.hide();
+        // yaru.dart hides the header bar AFTER the window is mapped (from
+        // Dart), so it never meets gtk_widget_show_all. Tao shows windows
+        // with `show_all()`, which recursively re-shows hidden children —
+        // opt the header bar out so the hide sticks (44px of native
+        // titlebar would otherwise reappear above the embedder's chrome).
+        header.set_no_show_all(true);
+        unsafe {
+          // Read back by the event-loop handlers (Resized source, pointer
+          // translation) and by the content-geometry accessors below.
+          window.set_data("nucleus_csd_hidden_titlebar", true);
+        }
+      } else if is_wayland {
         WlHeader::setup(&window, &attributes.title);
       }
 
@@ -240,7 +366,12 @@ impl Window {
       }
     }
     window.set_visible(attributes.visible);
-    window.set_decorated(attributes.decorations);
+    // Nucleus patch: hidden-titlebar CSD requires the window to STAY decorated
+    // (gtk_window_set_decorated(FALSE) would stop GTK from drawing the
+    // decoration node — shadow included — even though CSD is latched). The
+    // embedder's own chrome replaces the (hidden) titlebar, exactly like a
+    // yaru.dart app drawing YaruWindowTitleBar in-view.
+    window.set_decorated(attributes.decorations || is_csd_hidden_titlebar(&window));
 
     if attributes.always_on_bottom {
       window.set_keep_below(attributes.always_on_bottom);
@@ -393,7 +524,12 @@ impl Window {
       inner_position_clone.0.store(x, Ordering::Release);
       inner_position_clone.1.store(y, Ordering::Release);
 
-      let (w, h) = event.size();
+      // PATCH(nucleus): with hidden-titlebar CSD the configure event reports
+      // the whole surface INCLUDING the theme's shadow margins — subtract the
+      // decoration insets to get the client-area size (see
+      // `configure_client_size`). Identity when CSD is off.
+      let (ew, eh) = event.size();
+      let (w, h) = configure_client_size(window, ew, eh);
       inner_size_clone.0.store(w as i32, Ordering::Release);
       inner_size_clone.1.store(h as i32, Ordering::Release);
 

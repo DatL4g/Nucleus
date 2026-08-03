@@ -3,7 +3,7 @@
 // tag returned in slot 0.
 
 use jni::objects::JClass;
-use jni::sys::{jlong, jlongArray};
+use jni::sys::{jint, jlong, jlongArray};
 use jni::JNIEnv;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
@@ -100,6 +100,77 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         }
     }
     out
+}
+
+/// Returns the origin of the content area — the child (default vbox) GTK
+/// allocated inside any client-side decorations — in logical toplevel
+/// coordinates, packed as `(x << 32) | (y & 0xffff_ffff)`. `(0, 0)` for plain
+/// undecorated windows; equal to the theme's shadow margins when the
+/// yaru.dart-style hidden-titlebar CSD is active. The EGL host positions the
+/// content `wl_subsurface` at this offset so it fills exactly the visible
+/// window area, leaving the margin ring to GTK's own shadow rendering.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeLinuxContentOrigin(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jlong {
+    use gtk::prelude::*;
+    use tao::platform::unix::WindowExtUnix;
+
+    let mut x: i32 = 0;
+    let mut y: i32 = 0;
+    if let Ok(guard) = WINDOWS.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(window) = map.get(&(handle as u64)) {
+                if let Some(child) = window.gtk_window().child() {
+                    let alloc = child.allocation();
+                    // Pre-first-allocate the child reports a 1×1 dummy at
+                    // (0,0) — the fallthrough (0,0) is the correct answer.
+                    if alloc.width() > 1 || alloc.height() > 1 {
+                        x = alloc.x();
+                        y = alloc.y();
+                    }
+                }
+            }
+        }
+    }
+    ((x as i64) << 32) | ((y as i64) & 0xffff_ffff)
+}
+
+/// Styles the GTK-drawn client-side decorations to match the embedder's
+/// chrome: rounds the decoration node (shadow frame outline) and the window
+/// background to `radius` px on all four corners, so the native frame and the
+/// Compose-carved content corners coincide exactly. Same mechanism
+/// yaru_window_linux uses for `setBackground` (a `GtkCssProvider` on the
+/// window's style context). No-op if the CSS fails to parse.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeLinuxSetCsdCornerRadius(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    radius: jint,
+) {
+    use gtk::prelude::*;
+    use tao::platform::unix::WindowExtUnix;
+
+    if let Ok(guard) = WINDOWS.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(window) = map.get(&(handle as u64)) {
+                let r = radius.max(0);
+                let provider = gtk::CssProvider::new();
+                let css = format!(
+                    "decoration {{ border-radius: {r}px; }} window.csd {{ border-radius: {r}px; }}",
+                );
+                if provider.load_from_data(css.as_bytes()).is_ok() {
+                    window
+                        .gtk_window()
+                        .style_context()
+                        .add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+                }
+            }
+        }
+    }
 }
 
 fn gdk_x11_display_for_window(window: &Window) -> Option<jlong> {

@@ -355,6 +355,34 @@ static GtkWidget *resolve_overlay_for_window(GtkWidget *gtk_window) {
 
 #define EXPORT JNIEXPORT __attribute__((visibility("default")))
 
+/**
+ * Loads GTK through the same RTLD_LOCAL dlopen path as every other entry
+ * point and returns its runtime version ("3.24.49"), or NULL when GTK is
+ * unavailable. Probe for the issue-#366 regression test: proves GTK was
+ * dlopen-ed and is functional in this process without leaking its
+ * dependency closure into the global symbol scope.
+ */
+EXPORT jstring JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeGtkVersion(
+    JNIEnv *env, jclass clazz)
+{
+    (void) clazz;
+    if (!ensure_gtk_loaded()) return NULL;
+    typedef unsigned int (*PFN_gtk_get_version)(void);
+    /* dlopen(NOLOAD) re-yields the handle the loader already holds — the
+     * lookup itself never maps a new copy of GTK. */
+    void *libgtk = dlopen("libgtk-3.so.0", RTLD_NOW | RTLD_LOCAL | RTLD_NOLOAD);
+    if (libgtk == NULL) libgtk = dlopen("libgtk-3.so", RTLD_NOW | RTLD_LOCAL | RTLD_NOLOAD);
+    if (libgtk == NULL) return NULL;
+    PFN_gtk_get_version get_major = (PFN_gtk_get_version) dlsym(libgtk, "gtk_get_major_version");
+    PFN_gtk_get_version get_minor = (PFN_gtk_get_version) dlsym(libgtk, "gtk_get_minor_version");
+    PFN_gtk_get_version get_micro = (PFN_gtk_get_version) dlsym(libgtk, "gtk_get_micro_version");
+    if (!get_major || !get_minor || !get_micro) return NULL;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%u.%u.%u", get_major(), get_minor(), get_micro());
+    return (*env)->NewStringUTF(env, buf);
+}
+
 EXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeAttach(
     JNIEnv *env, jclass clazz, jlong gtk_window_ptr, jlong widget_ptr)

@@ -220,8 +220,8 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // the desktop through the transparent CSD clear. This is the Tao
     // equivalent of the AWT NSWindow background that jbr/jni get for free from
     // the user's theme (see `DecoratedWindowBody`'s `Modifier.background`).
-    // On Linux the host still carves the CSD shadow margins / rounded corners
-    // back to transparent after rendering, so the drop shadow is unaffected.
+    // On Linux the host still carves the rounded corners back to transparent
+    // after rendering.
     // Keyed content stack: co-composed WindowBackground survives when this
     // TitleBar is removed (clearContent only drops this writer).
     // Fully transparent windows (#416): WindowClearColorLayers coerces opaque

@@ -69,8 +69,7 @@ public fun ApplicationScope.DecoratedWindow(
      *
      * - macOS: drops native traffic lights / title-bar chrome.
      * - Windows / Linux: skips the Compose CSD outline
-     *   ([rememberUndecoratedWindowBorder]); on Linux also disables the
-     *   client-side drop-shadow subsurface. Default `false` keeps the usual
+     *   ([rememberUndecoratedWindowBorder]). Default `false` keeps the usual
      *   custom-chrome frame.
      *
      * Pair with [transparent] for a vanilla-Compose-like see-through overlay.

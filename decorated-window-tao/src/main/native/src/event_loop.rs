@@ -228,13 +228,18 @@ pub(crate) fn run_event_loop_blocking() {
                     // (_NET_WM_STATE_SKIP_TASKBAR). Effective on X11 and
                     // XWayland; silently ignored on native Wayland, which has
                     // no client-side taskbar opt-out protocol.
-                    // Undecorated shadow is a Win/mac concept; Linux uses the
-                    // CSD shadow subsurface gated separately in the host.
+                    // `undecorated_shadow` maps to the yaru.dart-style
+                    // hidden-titlebar CSD: the toplevel stays decorated with a
+                    // hidden GtkHeaderBar installed via set_titlebar(), so GTK
+                    // draws the native theme drop shadow / rounded corners /
+                    // resize border around the embedder's own chrome. Wayland
+                    // only (ignored by tao on X11).
                     #[cfg(target_os = "linux")]
                     {
                         use tao::platform::unix::WindowBuilderExtUnix;
-                        builder = builder.with_skip_taskbar(skip_taskbar);
-                        let _ = undecorated_shadow;
+                        builder = builder
+                            .with_skip_taskbar(skip_taskbar)
+                            .with_csd_hidden_titlebar(undecorated_shadow);
                     }
                     // Linux: build cursor-following overlays as GTK_WINDOW_POPUP
                     // transient children — on Wayland GDK maps them as

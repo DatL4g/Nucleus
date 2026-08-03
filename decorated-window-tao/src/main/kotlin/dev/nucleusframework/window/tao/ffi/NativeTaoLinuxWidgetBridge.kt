@@ -22,6 +22,15 @@ internal object NativeTaoLinuxWidgetBridge {
         )
 
     /**
+     * Loads GTK through the same `RTLD_LOCAL` dlopen path as every other
+     * entry point and returns its runtime version (e.g. "3.24.49"), or null
+     * when GTK is unavailable. Probe for the issue-#366 regression test:
+     * proves GTK was dlopen-ed and is functional in this process.
+     */
+    @JvmStatic
+    external fun nativeGtkVersion(): String?
+
+    /**
      * Reparents [widgetPtr] (a raw `GtkWidget*` cast to Long) into a
      * `GtkFixed` lazily injected inside Tao's content `GtkBox`. No-op
      * if Tao's content isn't a GtkBox (other layout backends would
