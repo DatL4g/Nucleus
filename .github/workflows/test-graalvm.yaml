@@ -61,7 +61,7 @@ jobs:
         with:
           name: graalvm-${{ runner.os }}
           path: |
-            examples/nucleus-demo/build/compose/tmp/**/graalvm/output/**
+            examples/nucleus-demo/build/compose/binaries/**/graalvm-app/**
           if-no-files-found: warn
 
   # Runs the Tao test pyramid inside a GraalVM native image on all three OSes:
@@ -115,8 +115,10 @@ jobs:
           sleep 1
           # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
           # next to it, which the bare nativeCompile artifact lacks.
-          BIN=$(find examples/tao-native-test/build/compose/tmp/main/graalvm/output -type f -name 'tao-native-test' | head -1)
+          # Layout: compose/binaries/<appDirName>/graalvm-app/ (mirrors JVM distributable).
+          BIN=$(find examples/tao-native-test/build/compose/binaries -type f -name 'tao-native-test' | head -1)
           echo "binary: $BIN"
+          test -n "$BIN" && test -x "$BIN"
           "$BIN" battery
           "$BIN" headful
 
@@ -126,7 +128,9 @@ jobs:
         run: |
           # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
           # next to it, which the bare nativeCompile artifact lacks.
-          BIN=$(find examples/tao-native-test/build/compose/tmp/main/graalvm/output -type f \( -name 'tao-native-test' -o -name 'tao-native-test.exe' \) | head -1)
+          # Layout: compose/binaries/<appDirName>/graalvm-app/ (mirrors JVM distributable).
+          BIN=$(find examples/tao-native-test/build/compose/binaries -type f \( -name 'tao-native-test' -o -name 'tao-native-test.exe' \) | head -1)
           echo "binary: $BIN"
+          test -n "$BIN"
           "$BIN" battery
           "$BIN" headful
