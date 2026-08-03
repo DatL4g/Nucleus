@@ -25,6 +25,7 @@ import dev.nucleusframework.internal.utils.uppercaseFirstChar
 import org.gradle.api.DefaultTask
 import org.gradle.api.Project
 import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.file.Directory
 import org.gradle.api.file.FileCollection
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
@@ -61,6 +62,12 @@ private fun isOracleGraalvm(javaHome: File): Boolean = isOracleGraalvmInstallati
 // absolute paths (C:\Users\...) survive verbatim instead of being mangled by the tokenizer.
 private fun escapeNativeImageArgFileArgument(arg: String): String =
     "\"" + arg.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+// The GraalVM native app folder, placed under `compose/binaries/<appDirName>/graalvm-app`
+// to mirror the JVM distributable layout (`compose/binaries/<appDirName>/app`) instead of
+// hiding it in the build tmp dir.
+private val JvmApplicationContext.graalvmOutputDir: Provider<Directory>
+    get() = app.nativeDistributions.outputBaseDir.map { it.dir("$appDirName/graalvm-app") }
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 internal fun JvmApplicationContext.configureGraalvmApplication() {
@@ -158,6 +165,19 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             } else {
                 NucleusProperties.graalvmPgoMode(project.providers).orNull ?: "auto"
             }
+        }
+
+    // ── Quick build mode (dev) ──
+    // `runGraalvmNative` is the fast dev loop: it forces native-image's quick-build mode (`-Ob`),
+    // which skips most optimizations and slashes compile time, and also skips PGO/obfuscation.
+    // `runGraalvmNativeDistributable` (and the create/package tasks) use the configured
+    // optimization and full packaging. Detected from the invoked task name (like PGO instrument
+    // above) and tracked as a compile input so switching between quick and distributable
+    // re-compiles instead of serving the other mode's cached binary.
+    val quickBuildRunTaskName = "run${buildType.classifier.uppercaseFirstChar()}GraalvmNative"
+    val quickBuildRequested =
+        project.gradle.startParameter.taskNames.any {
+            it.substringAfterLast(':').equals(quickBuildRunTaskName, ignoreCase = true)
         }
 
     // ── Uber JAR (reuse existing task) ──
@@ -814,7 +834,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         NativeImageMarch.COMPATIBILITY
                     }
                 ).flag
-            val resolvedOptimizationFlag = graalvm.optimization.orNull?.flag
+            // Quick build (`-Ob`) wins over the configured optimization for the fast dev run.
+            val resolvedQuickBuild = quickBuildRequested
+            inputs.property("quickBuild", resolvedQuickBuild)
+            val resolvedOptimizationFlag =
+                if (resolvedQuickBuild) "-Ob" else graalvm.optimization.orNull?.flag
             val resolvedAllCharsets = graalvm.allCharsets.get()
             val resolvedMlProfileInference = graalvm.mlProfileInference.get()
             val resolvedPgoMode = pgoMode
@@ -882,6 +906,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         if (resolvedOptimizationFlag != null) {
                             add(resolvedOptimizationFlag)
                         }
+                        if (resolvedQuickBuild) {
+                            logger.lifecycle("Quick build mode (-Ob): fast dev compile, not for distribution")
+                        }
 
                         // Embed all JDK charsets when the app needs legacy encodings.
                         if (resolvedAllCharsets) {
@@ -941,6 +968,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                     "PGO: building instrumented image — run it to record ${resolvedPgoProfile.name}",
                                 )
                             }
+                            resolvedQuickBuild -> {
+                                // Applying a PGO profile on a -Ob (quick) build is contradictory —
+                                // quick build disables the optimizations PGO drives — and only slows
+                                // the dev loop. Skip it in quick mode.
+                                logger.lifecycle("Quick build: skipping PGO profile (dev run)")
+                            }
                             resolvedPgoMode != "off" && resolvedPgoEnabled && resolvedPgoProfile.exists() -> {
                                 if (oracleGraalvm) {
                                     add("--pgo=${resolvedPgoProfile.absolutePath}")
@@ -957,7 +990,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // Advanced symbol obfuscation (Oracle GraalVM only, experimental). Renames
                         // symbols embedded in the image; reflection/JNI names from the reachability
                         // metadata are preserved automatically, so it is safe with the JNI backends.
-                        if (resolvedAdvancedObfuscation) {
+                        // Skipped in quick-build mode — its two-phase build (+20–50%) defeats the
+                        // purpose of the fast dev loop, and obfuscation is a distributable concern.
+                        if (resolvedQuickBuild && resolvedAdvancedObfuscation) {
+                            logger.lifecycle("Quick build: skipping advanced obfuscation (dev run)")
+                        }
+                        if (resolvedAdvancedObfuscation && !resolvedQuickBuild) {
                             if (oracleGraalvm) {
                                 // Future GraalVM releases require experimental options to be
                                 // explicitly unlocked; do it now to future-proof and silence the warning.
@@ -1106,32 +1144,67 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         when (currentOS) {
             OS.MacOS -> {
                 val dir =
-                    appTmpDir.map {
-                        it.dir("graalvm/output/${resolvedMacBundleNameProvider().get()}.app/Contents/MacOS")
+                    graalvmOutputDir.map {
+                        it.dir("${resolvedMacBundleNameProvider().get()}.app/Contents/MacOS")
                     }
                 dir.map { it.file(imageName.get()) }
             }
             OS.Windows -> {
                 val dir =
-                    appTmpDir.map {
-                        it.dir("graalvm/output/${resolvedPackageNameProvider().get()}")
+                    graalvmOutputDir.map {
+                        it.dir(resolvedPackageNameProvider().get())
                     }
                 dir.map { it.file(binaryName.get()) }
             }
             OS.Linux -> {
                 val dir =
-                    appTmpDir.map {
-                        it.dir("graalvm/output/${resolvedPackageNameProvider().get()}")
+                    graalvmOutputDir.map {
+                        it.dir(resolvedPackageNameProvider().get())
                     }
                 dir.map { it.file(imageName.get()) }
             }
         }
 
+    // Task surface aligned with the JVM distribution pipeline:
+    //   createGraalvmNativeDistributable            ~ createDistributable
+    //   runGraalvmNativeDistributable               ~ runDistributable
+    //   packageGraalvmNativeDistributionForCurrentOS ~ packageDistributionForCurrentOS
+    //   runGraalvmNative                            ~ run (fast dev loop, -Ob quick build)
+    // `packageGraalvmNative` is the internal task that actually assembles the app folder
+    // (binary + skiko/AWT dylibs + icons + strip/codesign); the public tasks below wrap it.
+
+    tasks.register<DefaultTask>(
+        taskNameAction = "create",
+        taskNameObject = "graalvmNativeDistributable",
+    ) {
+        description = "Create the GraalVM native app distributable (self-contained folder) for the current OS"
+        dependsOn(packageGraalvmNative)
+    }
+
+    tasks.register<DefaultTask>(
+        taskNameAction = "package",
+        taskNameObject = "graalvmNativeDistributionForCurrentOS",
+    ) {
+        description = "Package the GraalVM native app distribution for the current OS"
+        dependsOn(packageGraalvmNative)
+    }
+
+    tasks.register<Exec>(
+        taskNameAction = "run",
+        taskNameObject = "graalvmNativeDistributable",
+    ) {
+        description = "Build and run the GraalVM native app distributable (configured optimization, full packaging)"
+        dependsOn(packageGraalvmNative)
+
+        executable = packagedBinaryFile.get().asFile.absolutePath
+        args = app.args
+    }
+
     tasks.register<Exec>(
         taskNameAction = "run",
         taskNameObject = "graalvmNative",
     ) {
-        description = "Build and run the GraalVM native image"
+        description = "Build and run the GraalVM native image in quick-build mode (-Ob) for fast dev iteration"
         dependsOn(packageGraalvmNative)
 
         executable = packagedBinaryFile.get().asFile.absolutePath
@@ -1202,8 +1275,8 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
 ): TaskProvider<DefaultTask> {
     val appBundleName = resolvedMacBundleNameProvider().map { "$it.app" }
     val appBundleDir =
-        appTmpDir.map { tmpDir ->
-            tmpDir.dir("graalvm/output/${appBundleName.get()}/Contents")
+        graalvmOutputDir.map { outDir ->
+            outDir.dir("${appBundleName.get()}/Contents")
         }
 
     val cleanAppBundle =
@@ -1213,7 +1286,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
         ) {
             description = "Remove stale .app bundle before rebuilding"
             mustRunAfter(nativeImageCompile)
-            delete(appTmpDir.map { it.dir("graalvm/output") })
+            delete(graalvmOutputDir)
         }
 
     val copyBinary =
@@ -1626,7 +1699,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             description = "Ad-hoc sign the entire .app bundle"
             dependsOn(codesignDylibs, copyBinary, fixRpath, stripBinary, copyInfoPlist, copyJawtToLib, copySkikoLib, copyIcon)
             copyFileAssociationIcons?.let { dependsOn(it) }
-            val bundleDir = appTmpDir.map { it.dir("graalvm/output/${appBundleName.get()}") }
+            val bundleDir = graalvmOutputDir.map { it.dir(appBundleName.get()) }
             commandLine("codesign", "--force", "--deep", "--sign", "-", bundleDir.get().asFile.absolutePath)
         }
 
@@ -1666,7 +1739,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
 ): TaskProvider<DefaultTask> {
-    val outputDir = appTmpDir.map { it.dir("graalvm/output/${resolvedPackageNameProvider().get()}") }
+    val outputDir = graalvmOutputDir.map { it.dir(resolvedPackageNameProvider().get()) }
 
     val copyBinary =
         tasks.register<Copy>(
@@ -1822,7 +1895,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
 ): TaskProvider<DefaultTask> {
-    val outputDir = appTmpDir.map { it.dir("graalvm/output/${resolvedPackageNameProvider().get()}") }
+    val outputDir = graalvmOutputDir.map { it.dir(resolvedPackageNameProvider().get()) }
 
     val copyBinary =
         tasks.register<Copy>(
@@ -1991,9 +2064,7 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
                 dependsOn(packageGraalvmNative, unpackDefaultResources)
 
                 // The app image root is the output directory from the native packaging step
-                appImageRoot.set(
-                    appTmpDir.map { it.dir("graalvm/output") },
-                )
+                appImageRoot.set(graalvmOutputDir)
 
                 destinationDir.set(
                     app.nativeDistributions.outputBaseDir.map {
