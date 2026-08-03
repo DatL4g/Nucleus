@@ -4,7 +4,6 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.snapshots.Snapshot
 import dev.nucleusframework.core.runtime.NucleusApp
-import dev.nucleusframework.window.tao.ffi.NativeTaoA11yWindowsBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -13,12 +12,11 @@ import java.util.logging.Logger
 
 private val a11yLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.a11y")
 
-/** Only the Linux backend (AccessKit) consumes partial snapshots; mac/win
- *  must always receive full snapshots otherwise small state diffs would be
- *  silently dropped by the no-op `nativeA11yApplyPartialSnapshot` stubs. */
+/** AccessKit backends (Linux AT-SPI + Windows UIA) consume partial snapshots.
+ *  macOS still rebuilds the full AX tree each push, so partials are disabled. */
 private val TAO_PARTIAL_SUPPORTED: Boolean =
     System.getProperty("os.name", "").lowercase().let { os ->
-        !os.contains("win") && !os.contains("mac") && !os.contains("darwin")
+        !os.contains("mac") && !os.contains("darwin")
     }
 
 /*
@@ -370,9 +368,9 @@ internal open class TaoAccessibilityController(
         nsView =
             when {
                 os.contains("win") -> {
-                    // Force-load nucleus_tao_a11y.dll so the Rust side can
-                    // resolve its exports via GetModuleHandleW.
-                    NativeTaoA11yWindowsBridge.isLoaded
+                    // AccessKit UIA lives inside nucleus_tao.dll (no sibling
+                    // a11y DLL). Handle is the HWND, same opaque key as macOS
+                    // NSView / Linux Tao window handle.
                     NativeTaoBridge.nativeHwndHandle(windowHandle)
                 }
                 os.contains("mac") || os.contains("darwin") ->
@@ -391,9 +389,7 @@ internal open class TaoAccessibilityController(
                 }
             }
         if (a11yDebug) {
-            val bridgeLoaded =
-                if (os.contains("win")) NativeTaoA11yWindowsBridge.isLoaded.toString() else "n/a"
-            a11yLogger.fine { "attach: os=$os bridgeLoaded=$bridgeLoaded handle=$nsView" }
+            a11yLogger.fine { "attach: os=$os handle=$nsView" }
         }
         if (nsView == 0L) return
         // Override AT-SPI's app name before the first Adapter spins up.
@@ -545,11 +541,9 @@ internal open class TaoAccessibilityController(
         // internal diff. The 50 % cutoff matches accesskit_consumer's own
         // batching threshold.
         //
-        // Only Linux (AccessKit) implements partial snapshots. On macOS and
-        // Windows `nativeA11yApplyPartialSnapshot` is a no-op stub, so a
-        // partial push silently disappears and small state changes (a single
-        // counter tick, a toggle) never reach the OS a11y tree. Always emit
-        // a full snapshot on those platforms.
+        // AccessKit (Linux + Windows) implements partial snapshots. On macOS
+        // `nativeA11yApplyPartialSnapshot` is a no-op stub, so partials would
+        // silently drop small state changes — always full-push there.
         val emitPartial = TAO_PARTIAL_SUPPORTED && toEmit.size * 2 < nodes.size
         if (!emitPartial) {
             val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes, focusId)
