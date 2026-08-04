@@ -138,7 +138,9 @@ abstract class GraalvmSettings
  * (innovation releases from `gds.oracle.com`, LTS and pinned releases from
  * `download.oracle.com`) and logs a licensing warning. On Intel macs, which both
  * distributions stopped shipping after 25.0.1, the plugin falls back to BellSoft Liberica
- * NIK (resolved through the BellSoft discovery API).
+ * NIK (resolved through the BellSoft discovery API). Only the JDK feature version carries
+ * over to that fallback — BellSoft ships the LTS line only, so an Intel mac gets the newest
+ * NIK 25.0.x even when [channel] selects an innovation release.
  *
  * A `GRAALVM_HOME` environment variable pointing at a valid GraalVM installation always
  * wins over the download — useful on CI where `setup-graalvm` already provisioned one.
@@ -147,7 +149,7 @@ abstract class GraalvmSettings
  * [distribution] still declares intent in that case, since it also gates the Oracle-only
  * tasks (`runWithPgoInstrument`).
  *
- * "latest" versions ("25", "25i1") are sticky once downloaded; delete the corresponding
+ * "latest" versions ("25", "25i2") are sticky once downloaded; delete the corresponding
  * directory under [installDir] to pick up a newer build.
  */
 abstract class GraalvmToolchainSettings
@@ -172,7 +174,7 @@ abstract class GraalvmToolchainSettings
 
         /**
          * Explicit GraalVM version, overriding [channel]: an innovation release
-         * (`"25i1"`), a feature version tracking the latest CPU (`"25"`), or a pinned
+         * (`"25i2"`), a feature version tracking the latest CPU (`"25"`), or a pinned
          * patch release (`"25.0.1"`).
          */
         val version: Property<String> = objects.nullableProperty()
